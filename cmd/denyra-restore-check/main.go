@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	denyrarestore "github.com/waxarsatia/denyra/internal/platform/restore"
+	"github.com/waxarsatia/denyra/internal/platform/upgrade"
 )
 
 func main() {
@@ -27,9 +29,59 @@ func run(ctx context.Context, arguments []string) error {
 		return create(arguments[1:])
 	case "verify":
 		return verify(ctx, arguments[1:])
+	case "schema-compatible":
+		return schemaCompatible(ctx, arguments[1:])
+	case "migration-smoke":
+		return migrationSmoke(ctx, arguments[1:])
 	default:
 		return fmt.Errorf("unknown command %q", arguments[0])
 	}
+}
+
+func migrationSmoke(ctx context.Context, arguments []string) error {
+	flags := flag.NewFlagSet("migration-smoke", flag.ContinueOnError)
+	root := flags.String("root", "", "absolute restored source root")
+	report := flags.String("report", "", "migration smoke report")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	versions, err := upgrade.SmokeMigrations(ctx, *root, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	encoded, err := json.MarshalIndent(map[string]any{"status": "PASSED", "database_versions": versions, "tested_at": time.Now().UTC()}, "", "  ")
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(*report, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o440)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(append(encoded, '\n')); err != nil {
+		_ = file.Close()
+		return err
+	}
+	return file.Close()
+}
+
+func schemaCompatible(ctx context.Context, arguments []string) error {
+	flags := flag.NewFlagSet("schema-compatible", flag.ContinueOnError)
+	currentGateway := flags.String("current-gateway", "", "current gateway database")
+	currentPipeline := flags.String("current-pipeline", "", "current pipeline database")
+	priorGateway := flags.String("prior-gateway", "", "prior gateway database")
+	priorPipeline := flags.String("prior-pipeline", "", "prior pipeline database")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	mode, err := upgrade.SelectRollback(ctx,
+		upgrade.DatabasePair{Current: *currentGateway, Prior: *priorGateway},
+		upgrade.DatabasePair{Current: *currentPipeline, Prior: *priorPipeline},
+	)
+	if err != nil {
+		return err
+	}
+	fmt.Println(mode)
+	return nil
 }
 
 func create(arguments []string) error {
