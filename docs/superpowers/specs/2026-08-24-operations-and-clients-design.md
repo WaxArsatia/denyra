@@ -128,7 +128,7 @@ Configuration tests cover defaults, TOML values, environment overrides, invalid 
 - synthetic FLAC fixtures generated with ffmpeg and FLAC tools
 - adapter contracts for Lidarr, slskd, SpotiFLAC, MusicBrainz, LRCLIB, SFTPGo, and Navidrome
 - Admin Web UI tests for Argon2id, generic authentication errors, CSRF, rotation, revocation, session expiry, HTMX fragments, stale `409`, and transactional audit writes
-- build tests for templ regeneration and vendored HTMX checksum
+- build tests for templ regeneration, vendored HTMX checksum, font and icon sprite artifact hashes, content-hashed asset path generation, and a source scan that fails on inline `style` attributes, inline `<style>` or `<script>` blocks, and evaluated HTMX attributes such as `hx-on` or `js:` expressions, plus an assertion on the rendered `htmx-config` values so that a CSP violation coming from library defaults rather than from source is also caught, and the `scripts/verify-tokens/` contrast assertion over the design token table in both modes
 
 Tests use no copyrighted audio.
 

@@ -1,8 +1,8 @@
-# Denisonic system foundation design
+# Denyra system foundation design
 
 ## Purpose
 
-Denisonic is a Docker Compose deployment for a personal FLAC library. Lidarr is the control plane and the only component allowed to rename, move, or import files into `/data/library`. Every automated or manual acquisition passes through controlled validation before Lidarr receives a Manual Import request.
+Denyra is a Docker Compose deployment for a personal FLAC library. Lidarr is the control plane and the only component allowed to rename, move, or import files into `/data/library`. Every automated or manual acquisition passes through controlled validation before Lidarr receives a Manual Import request.
 
 Public DNS, reverse proxies, public TLS, firewall rules, and Internet exposure are outside this design. The target host is one x86_64 Debian or Ubuntu system running Docker Engine and Compose v2. All media paths live on the same filesystem under `/data` so moves between acquisition, processing, quarantine, and library directories are atomic renames.
 
@@ -85,6 +85,8 @@ The media-pipeline runs separate listeners:
 
 The Admin Web UI uses plain HTTP. Its cookie is `HttpOnly`, `SameSite=Strict`, and `Path=/`, without `Secure`. Binding plain HTTP to every interface is an accepted security risk. Deployment and firewall controls determine who can reach the port.
 
+The Admin Web UI's visual language, route composition, interactive states, accessibility contract, Content Security Policy, and static asset delivery are specified in the controlled media pipeline design.
+
 Internal service ports are not published unless a user-facing function needs them. Navidrome, SFTPGo, and the Admin Web UI are the only server interfaces intended for host or LAN access. Public exposure remains out of scope.
 
 ## Central configuration
@@ -94,7 +96,7 @@ Both custom services load typed configuration in this order:
 ```text
 compiled explicit defaults
 < TOML config file
-< DENISONIC_* environment overrides
+< DENYRA_* environment overrides
 ```
 
 Durations require units such as `10s`, `30m`, and `6h`. Storage uses IEC units such as `20GiB`. Percentages use bounded decimal values. Unknown fields, invalid units, overflow, contradictory settings, missing pins, and invalid paths stop startup.
@@ -131,12 +133,29 @@ Approved server baseline:
 | Navidrome Lyrics Plugin | `7.2.0`, SHA-256 `a9196e5b4e2c2eb2aaccb9f35c9faf6f488fe9081ff5685b1556901686c7540f` |
 | Restic | `docker.io/restic/restic:0.19.1@sha256:08916bcda4a4435f9d9828ebb4e91bb7ada3d2c8a53699788930e0ae1bd4fa67` |
 | beets | `2.13.1` plus exact Python runtime, wheel, and transitive hashes |
+| Geist and Geist Mono | `1.7.2`, asset `geist-font-v1.7.2.zip` SHA-256 `7fc800d2ac6b92844895196e5041aca55d814c15db70c44f79b3b83ab82b04e2` |
+| Phosphor Core icons | `2.0.8`, npm tarball `core-2.0.8.tgz` SHA-256 `c4d7eca2a776229c2e33c6749e09dbea32f5f3a83171c7502b3bc52f887a3551` |
 
 The custom Go toolchain uses Go `1.27.0`, templ `0.3.1020`, HTMX `2.0.9`, and `mattn/go-sqlite3 v1.14.50`. The Go Linux amd64 archive SHA-256 is `675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685`.
 
+The Admin Web UI adds two frontend artifacts to the lock file. Both are verified against the digest above at build time, unpacked, embedded in the pipeline binary, and served from the pipeline itself.
+
+The Geist release contains its variable faces only as `.ttf` and ships `woff2` as static per-weight files. Converting the variable `.ttf` to `woff2` would add a font-tooling dependency to the build for no benefit, because the Admin Web UI type scale uses three weights. The build therefore extracts four static `woff2` faces and discards the rest of the archive:
+
+```text
+Geist-Regular.woff2
+Geist-Medium.woff2
+Geist-SemiBold.woff2
+GeistMono-Regular.woff2
+```
+
+The icon sprite is compiled at build time from the `assets/regular` SVG sources in the pinned Phosphor tarball, restricted to the glyphs the console actually references. No icon path is authored by hand, and no other Phosphor weight is compiled in.
+
+These are the only frontend assets. No other font, icon set, stylesheet, or script may be added without a lock update and the review it requires.
+
 The beets environment is resolved into a hash-locked dependency set. The build uses the exact Python runtime and artifacts and fails if the graph changes. OS packages come from an immutable Debian snapshot with exact versions. Dependency changes require an explicit lock update and compatibility tests. Nothing follows `latest` automatically.
 
-Denisonic builds derived Lidarr and Navidrome images from the pinned upstream manifests. The builds install the verified Lidarr.Plugin.Slskd and `nd-lyrics.ndp` artifacts without using a floating runtime installer. Plugin auto-update is disabled. The derived image digests are written back to the lock file before deployment.
+Denyra builds derived Lidarr and Navidrome images from the pinned upstream manifests. The builds install the verified Lidarr.Plugin.Slskd and `nd-lyrics.ndp` artifacts without using a floating runtime installer. Plugin auto-update is disabled. The derived image digests are written back to the lock file before deployment.
 
 ## Repository layout
 
@@ -164,6 +183,10 @@ internal/
       middleware/
       views/
       assets/
+        css/
+        fonts/
+        icons/
+        htmx/
     internalapi/
 migrations/
   gateway/
