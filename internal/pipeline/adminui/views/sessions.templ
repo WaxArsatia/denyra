@@ -1,0 +1,20 @@
+package views
+
+templ Sessions(page SessionsPage) { @Layout("Sessions", "sessions", page.Shell, SessionsContent(page)) }
+templ SessionsContent(page SessionsPage) {
+	<section id="sessions-fragment" aria-live="polite"><h1>Active sessions</h1>
+	if page.Error!="" {
+		<p class="notice error" role="alert">{ page.Error }</p>
+	}
+	<div class="table-wrap"><table><caption>Server-side sessions; raw tokens are never stored</caption><thead><tr><th>Session</th><th>Created</th><th>Expires</th><th>Current</th><th>Action</th></tr></thead><tbody>
+	for _, item := range page.Items {
+		<tr><td class="mono">{ item.ID }</td><td><time>{ FormatTime(item.CreatedAt) }</time></td><td><time>{ FormatTime(item.ExpiresAt) }</time></td><td>
+			if item.Current {
+				<span>Current</span>
+			}
+		</td><td><form method="post" action={ templ.SafeURL("/sessions/" + item.ID + "/revoke") }><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><button class="danger" type="submit">Revoke</button></form></td></tr>
+	}
+	</tbody></table></div>
+	<form class="section" method="post" action="/sessions/revoke-all"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><label><input type="checkbox" name="confirm" value="yes" required/> Revoke every session, including this one.</label><button class="danger" type="submit">Logout all</button></form>
+	</section>
+}

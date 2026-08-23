@@ -20,6 +20,12 @@ jobs:
         run: test -z "$(gofmt -l cmd internal migrations tests)"
       - name: Vet
         run: go vet ./...
+      - name: Regenerate templ views
+        run: go run github.com/a-h/templ/cmd/templ@v0.3.1020 generate
+      - name: Verify admin UI source and tokens
+        run: |
+          scripts/verify-ui-source.sh
+          go run ./scripts/verify-tokens
       - name: Tests with race detector
         run: go test -race ./...
       - name: Migration checksums

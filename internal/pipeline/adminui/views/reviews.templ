@@ -1,0 +1,29 @@
+package views
+
+import (
+	"fmt"
+	"net/url"
+)
+
+templ Reviews(page ReviewsPage) {
+	@Layout("Reviews", "reviews", page.Shell, ReviewsContent(page))
+}
+
+templ ReviewsContent(page ReviewsPage) {
+	<section id="reviews-fragment" aria-live="polite"><h1>Review queue</h1>
+		if page.Error != "" {
+			<p class="notice error" role="alert">{ page.Error }</p>
+		} else if len(page.Items) == 0 {
+			<p class="empty">No candidates require review.</p>
+		} else {
+			<div class="table-wrap"><table><caption>Release candidates awaiting a decision</caption><thead><tr><th>Candidate</th><th>Source</th><th>State</th><th>Revision</th><th>Job</th><th>Updated</th></tr></thead><tbody>
+				for _, item := range page.Items {
+					<tr><td><a class="mono" href={ templ.SafeURL("/reviews/" + item.CandidateID) }>{ item.CandidateID }</a></td><td>{ string(item.Source) }</td><td><span class={ "status " + StateClass(item.State) }>{ string(item.State) }</span></td><td class="mono">{ fmt.Sprint(item.Revision) }</td><td class="mono">{ item.JobID }</td><td><time>{ FormatTime(item.UpdatedAt) }</time></td></tr>
+				}
+			</tbody></table></div>
+			if page.Next != "" {
+				<p><a href={ templ.SafeURL("/reviews?cursor=" + url.QueryEscape(page.Next)) }>Next page</a></p>
+			}
+		}
+	</section>
+}

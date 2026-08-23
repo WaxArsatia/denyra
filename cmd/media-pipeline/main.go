@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/config"
+	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
+	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	"github.com/waxarsatia/denyra/internal/platform/fscheck"
@@ -73,6 +77,21 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				prepared.Config.Secrets.BootstrapAdmin.Value, prepared.Config.Secrets.BootstrapAdmin.Name,
 				prepared.Config.Sessions.PasswordMinLen, time.Now().UTC())
 			return err
+		},
+		BuildAdminHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
+			repositories := persistence.New(prepared.DB, time.Now)
+			bundle, err := assets.New()
+			if err != nil {
+				return nil, err
+			}
+			snapshot, err := config.NewSnapshot(prepared.Config, []byte(prepared.Config.Secrets.AuditKey.Value))
+			if err != nil {
+				return nil, err
+			}
+			auth := application.AuthService{Repository: repositories, AbsoluteExpiry: time.Duration(prepared.Config.Sessions.AbsoluteExpiry), PasswordMinLen: prepared.Config.Sessions.PasswordMinLen}
+			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
+				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
+				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}})
 		},
 	})
 }

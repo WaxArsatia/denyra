@@ -1,0 +1,23 @@
+package views
+
+import "github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
+
+templ Login(paths assets.Paths, failed bool) {
+	<!doctype html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>Sign in · Denyra</title><link rel="stylesheet" href={ paths.CSS }/>
+		</head>
+		<body class="login"><main class="login-panel"><h1>Denyra admin</h1><p class="muted">Internal operator console</p>
+			if failed {
+				<p class="notice error" role="alert">Authentication failed</p>
+			}
+			<form class="stack" method="post" action="/login">
+				<label>Username <input name="username" autocomplete="username" required/></label>
+				<label>Password <input type="password" name="password" autocomplete="current-password" required/></label>
+				<button class="primary" type="submit">Sign in</button>
+			</form>
+		</main></body>
+	</html>
+}

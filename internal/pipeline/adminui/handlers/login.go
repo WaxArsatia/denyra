@@ -2,33 +2,35 @@ package handlers
 
 import (
 	"errors"
-	"html/template"
 	"net/http"
 
+	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/middleware"
+	"github.com/waxarsatia/denyra/internal/pipeline/adminui/views"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 )
 
-type Login struct{ Auth application.AuthService }
+type Login struct {
+	Auth   application.AuthService
+	Assets assets.Paths
+}
 
-var loginTemplate = template.Must(template.New("login").Parse(`<!doctype html><html><body><main><h1>Denyra admin</h1>{{if .}}<p role="alert">Authentication failed</p>{{end}}<form method="post" action="/login"><label>Username<input name="username" autocomplete="username" required></label><label>Password<input type="password" name="password" autocomplete="current-password" required></label><button type="submit">Sign in</button></form></main></body></html>`))
-
-func (h Login) Get(writer http.ResponseWriter, _ *http.Request) {
+func (h Login) Get(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = loginTemplate.Execute(writer, false)
+	_ = views.Login(h.Assets, false).Render(request.Context(), writer)
 }
 
 func (h Login) Post(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 	if err := request.ParseForm(); err != nil {
-		h.renderFailure(writer)
+		h.renderFailure(writer, request)
 		return
 	}
 	credentials, err := h.Auth.Login(request.Context(), request.Form.Get("username"), request.Form.Get("password"))
 	if err != nil {
 		if errors.Is(err, application.ErrAuthentication) {
-			h.renderFailure(writer)
+			h.renderFailure(writer, request)
 			return
 		}
 		http.Error(writer, "internal error", http.StatusInternalServerError)
@@ -38,8 +40,8 @@ func (h Login) Post(writer http.ResponseWriter, request *http.Request) {
 	http.Redirect(writer, request, "/reviews", http.StatusSeeOther)
 }
 
-func (h Login) renderFailure(writer http.ResponseWriter) {
+func (h Login) renderFailure(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 	writer.WriteHeader(http.StatusUnauthorized)
-	_ = loginTemplate.Execute(writer, true)
+	_ = views.Login(h.Assets, true).Render(request.Context(), writer)
 }

@@ -36,7 +36,10 @@ func (h Account) ChangePassword(writer http.ResponseWriter, request *http.Reques
 func (h Account) Logout(writer http.ResponseWriter, request *http.Request) {
 	principal, ok := middleware.Principal(request)
 	if ok {
-		_ = h.Auth.Logout(request.Context(), principal)
+		if err := h.Auth.Logout(request.Context(), principal); err != nil {
+			http.Error(writer, "internal error", http.StatusInternalServerError)
+			return
+		}
 	}
 	middleware.ClearCookies(writer)
 	http.Redirect(writer, request, "/login", http.StatusSeeOther)
@@ -54,4 +57,22 @@ func (h Account) LogoutAll(writer http.ResponseWriter, request *http.Request) {
 	}
 	middleware.ClearCookies(writer)
 	http.Redirect(writer, request, "/login", http.StatusSeeOther)
+}
+
+func (h Account) Revoke(writer http.ResponseWriter, request *http.Request) {
+	principal, ok := middleware.Principal(request)
+	if !ok {
+		http.Error(writer, "authentication failed", http.StatusUnauthorized)
+		return
+	}
+	if err := h.Auth.Revoke(request.Context(), principal, request.PathValue("sessionID")); err != nil {
+		http.Error(writer, "session revocation failed", http.StatusBadRequest)
+		return
+	}
+	if request.PathValue("sessionID") == principal.SessionID {
+		middleware.ClearCookies(writer)
+		http.Redirect(writer, request, "/login", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(writer, request, "/sessions", http.StatusSeeOther)
 }

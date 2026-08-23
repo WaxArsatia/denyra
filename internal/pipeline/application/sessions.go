@@ -142,6 +142,20 @@ func (s AuthService) LogoutAll(ctx context.Context, principal Principal) error {
 	return s.Repository.RevokeAllSessions(ctx, principal.UserID, principal.UserID, "logout all", s.now())
 }
 
+func (s AuthService) Revoke(ctx context.Context, principal Principal, sessionID string) error {
+	isAdmin := false
+	for _, role := range principal.Roles {
+		if role == "admin" {
+			isAdmin = true
+			break
+		}
+	}
+	if !isAdmin {
+		return ErrAuthentication
+	}
+	return s.Repository.RevokeSession(ctx, sessionID, principal.UserID, "explicit admin revocation", s.now())
+}
+
 func (s AuthService) newSession(ctx context.Context, user UserRecord, action string) (SessionCredentials, error) {
 	if s.AbsoluteExpiry <= 0 {
 		return SessionCredentials{}, fmt.Errorf("absolute session expiry must be positive")

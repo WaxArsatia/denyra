@@ -1,0 +1,20 @@
+package views
+
+import "fmt"
+
+templ Acquisition(page AcquisitionPage) {
+	@Layout("Acquisition " + page.Evidence.JobID, "reviews", page.Shell, AcquisitionContent(page))
+}
+
+	templ AcquisitionContent(page AcquisitionPage) {
+	<section id="acquisition-fragment" aria-live="polite"><h1>Acquisition evidence</h1>
+		if page.Degraded {
+			<p class="notice" role="status">Gateway evidence is degraded. Pipeline candidate state is unaffected.</p>
+		}
+		if page.Error != "" {
+			<p class="notice error" role="alert">{ page.Error }</p>
+		} else {
+			<dl class="evidence"><dt>Job</dt><dd class="mono">{ page.Evidence.JobID }</dd><dt>State</dt><dd>{ page.Evidence.State }</dd><dt>Revision</dt><dd class="mono">{ fmt.Sprint(page.Evidence.Revision) }</dd><dt>Lidarr album</dt><dd class="mono">{ fmt.Sprint(page.Evidence.AlbumID) }</dd><dt>Release group</dt><dd class="mono">{ page.Evidence.ReleaseGroupID }</dd><dt>Observed</dt><dd><time>{ FormatTime(page.Evidence.ObservedAt) }</time></dd><dt>Evidence</dt><dd><code>{ string(page.Evidence.Evidence) }</code></dd></dl>
+		}
+	</section>
+}

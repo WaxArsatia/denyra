@@ -37,6 +37,8 @@ type Options struct {
 	ExternalDependencies []string
 	ServeAdmin           bool
 	Initialize           func(context.Context, *Prepared) error
+	BuildInternalHandler func(*Prepared) (http.Handler, error)
+	BuildAdminHandler    func(*Prepared) (http.Handler, error)
 	Now                  func() time.Time
 }
 
@@ -134,24 +136,40 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 
 	listeners := make([]net.Listener, 0, 2)
 	servers := make([]*http.Server, 0, 2)
-	addServer := func(address string) error {
+	addServer := func(address string, handler http.Handler) error {
 		listener, err := net.Listen("tcp", address)
 		if err != nil {
 			return err
 		}
 		listeners = append(listeners, listener)
 		servers = append(servers, &http.Server{
-			Handler:           health.Handler(prepared.Health),
+			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 			IdleTimeout:       30 * time.Second,
 		})
 		return nil
 	}
-	if err := addServer(prepared.Config.HTTP.InternalAddress); err != nil {
+	internalMux := http.NewServeMux()
+	internalMux.Handle("/health/", health.Handler(prepared.Health))
+	if options.BuildInternalHandler != nil {
+		handler, err := options.BuildInternalHandler(prepared)
+		if err != nil {
+			return fmt.Errorf("build internal handler: %w", err)
+		}
+		internalMux.Handle("/", handler)
+	}
+	if err := addServer(prepared.Config.HTTP.InternalAddress, internalMux); err != nil {
 		return fmt.Errorf("listen internal API: %w", err)
 	}
 	if options.ServeAdmin {
-		if err := addServer(prepared.Config.HTTP.AdminAddress); err != nil {
+		adminHandler := health.Handler(prepared.Health)
+		if options.BuildAdminHandler != nil {
+			adminHandler, err = options.BuildAdminHandler(prepared)
+			if err != nil {
+				return fmt.Errorf("build admin handler: %w", err)
+			}
+		}
+		if err := addServer(prepared.Config.HTTP.AdminAddress, adminHandler); err != nil {
 			for _, listener := range listeners {
 				_ = listener.Close()
 			}

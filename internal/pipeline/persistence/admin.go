@@ -1,0 +1,233 @@
+package persistence
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
+)
+
+func (r *Repositories) Reviews(ctx context.Context, limit int, cursor string) ([]application.ReviewSummary, string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,source,state,state_revision,COALESCE(gateway_job_id,''),updated_at
+		FROM candidates WHERE state IN ('REVIEW_REQUIRED','QUARANTINED') AND (?='' OR updated_at<?)
+		ORDER BY updated_at DESC,candidate_id DESC LIMIT ?`, cursor, cursor, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var items []application.ReviewSummary
+	for rows.Next() {
+		var item application.ReviewSummary
+		var source, state, updated string
+		if err := rows.Scan(&item.CandidateID, &source, &state, &item.Revision, &item.JobID, &updated); err != nil {
+			return nil, "", err
+		}
+		item.Source = domain.Source(source)
+		item.State, err = domain.ParseState(state)
+		if err != nil {
+			return nil, "", err
+		}
+		item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
+		if err != nil {
+			return nil, "", err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		next = items[limit-1].UpdatedAt.Format(time.RFC3339Nano)
+		items = items[:limit]
+	}
+	return items, next, nil
+}
+
+func (r *Repositories) Review(ctx context.Context, candidateID string) (application.ReviewDetail, error) {
+	candidate, err := r.Candidate(ctx, candidateID)
+	if err != nil {
+		return application.ReviewDetail{}, err
+	}
+	detail := application.ReviewDetail{Summary: application.ReviewSummary{CandidateID: candidate.ID, Source: candidate.Source, State: candidate.State, Revision: candidate.StateRevision, JobID: candidate.GatewayJobID, UpdatedAt: candidate.UpdatedAt}}
+	rows, err := r.DB.QueryContext(ctx, `SELECT scope,subject,classification,code,CAST(evidence_json AS TEXT),created_at FROM validation_results WHERE candidate_id=? ORDER BY created_at,id`, candidateID)
+	if err != nil {
+		return detail, err
+	}
+	for rows.Next() {
+		var row application.EvidenceRow
+		var created string
+		if err := rows.Scan(&row.Kind, &row.Subject, &row.Classification, &row.Code, &row.Details, &created); err != nil {
+			rows.Close()
+			return detail, err
+		}
+		row.OccurredAt, _ = time.Parse(time.RFC3339Nano, created)
+		detail.Files = append(detail.Files, row)
+	}
+	rows.Close()
+	rows, err = r.DB.QueryContext(ctx, `SELECT cf.relative_path,tm.medium_position,tm.track_position,tm.observed_duration_ms,tm.reference_duration_ms,tm.status,tm.recording_mbid,tm.release_track_mbid,tm.release_mbid FROM track_matches tm JOIN candidate_files cf ON cf.id=tm.candidate_file_id WHERE tm.candidate_id=? ORDER BY tm.medium_position,tm.track_position`, candidateID)
+	if err != nil {
+		return detail, err
+	}
+	for rows.Next() {
+		var row application.TrackEvidence
+		var reference sql.NullInt64
+		if err := rows.Scan(&row.Path, &row.Medium, &row.Track, &row.ObservedDurationMS, &reference, &row.Status, &row.RecordingMBID, &row.ReleaseTrackMBID, &detail.ReleaseMBID); err != nil {
+			rows.Close()
+			return detail, err
+		}
+		if reference.Valid {
+			value := reference.Int64
+			row.ReferenceDurationMS = &value
+		}
+		detail.Tracks = append(detail.Tracks, row)
+	}
+	rows.Close()
+	rows, err = r.DB.QueryContext(ctx, `SELECT ms.kind,COALESCE(cf.relative_path,''),CAST(ms.canonical_json AS TEXT),ms.sha256,ms.created_at FROM metadata_snapshots ms LEFT JOIN candidate_files cf ON cf.id=ms.candidate_file_id WHERE ms.candidate_id=? ORDER BY ms.created_at,ms.kind`, candidateID)
+	if err != nil {
+		return detail, err
+	}
+	for rows.Next() {
+		var row application.MetadataEvidence
+		var created string
+		if err := rows.Scan(&row.Kind, &row.Path, &row.Canonical, &row.Checksum, &created); err != nil {
+			rows.Close()
+			return detail, err
+		}
+		row.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		detail.Metadata = append(detail.Metadata, row)
+	}
+	rows.Close()
+	rows, err = r.DB.QueryContext(ctx, `SELECT kind,provider,classification,'',CAST(evidence_json AS TEXT),created_at FROM enrichments WHERE candidate_id=? ORDER BY created_at,id`, candidateID)
+	if err != nil {
+		return detail, err
+	}
+	for rows.Next() {
+		var row application.EvidenceRow
+		var created string
+		if err := rows.Scan(&row.Kind, &row.Subject, &row.Classification, &row.Code, &row.Details, &created); err != nil {
+			rows.Close()
+			return detail, err
+		}
+		row.OccurredAt, _ = time.Parse(time.RFC3339Nano, created)
+		detail.Enrichment = append(detail.Enrichment, row)
+	}
+	rows.Close()
+	rows, err = r.DB.QueryContext(ctx, `SELECT previous_state||' -> '||new_state,actor,'TRANSITION',reason,'revision '||revision,occurred_at FROM state_transitions WHERE candidate_id=? ORDER BY revision`, candidateID)
+	if err != nil {
+		return detail, err
+	}
+	for rows.Next() {
+		var row application.EvidenceRow
+		var created string
+		if err := rows.Scan(&row.Kind, &row.Subject, &row.Classification, &row.Code, &row.Details, &created); err != nil {
+			rows.Close()
+			return detail, err
+		}
+		row.OccurredAt, _ = time.Parse(time.RFC3339Nano, created)
+		detail.History = append(detail.History, row)
+	}
+	return detail, rows.Close()
+}
+
+func (r *Repositories) Submissions(ctx context.Context, limit int, cursor string) ([]application.SubmissionSummary, string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.DB.QueryContext(ctx, `SELECT id,source_path,status,state_revision,COALESCE(sealed_fingerprint,''),updated_at FROM submissions WHERE (?='' OR updated_at<?) ORDER BY updated_at DESC,id DESC LIMIT ?`, cursor, cursor, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var items []application.SubmissionSummary
+	for rows.Next() {
+		var item application.SubmissionSummary
+		var updated string
+		if err := rows.Scan(&item.ID, &item.SourcePath, &item.Status, &item.Revision, &item.SealedFingerprint, &updated); err != nil {
+			return nil, "", err
+		}
+		item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
+		if err != nil {
+			return nil, "", err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		next = items[limit-1].UpdatedAt.Format(time.RFC3339Nano)
+		items = items[:limit]
+	}
+	return items, next, nil
+}
+
+func (r *Repositories) Audit(ctx context.Context, limit int, cursor string) ([]application.AuditSummary, string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := r.DB.QueryContext(ctx, `SELECT id,actor,action,reason,COALESCE(candidate_id,''),COALESCE(job_id,''),state_revision,occurred_at FROM audit_events WHERE (?='' OR occurred_at<?) ORDER BY occurred_at DESC,id DESC LIMIT ?`, cursor, cursor, limit+1)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	var items []application.AuditSummary
+	for rows.Next() {
+		var item application.AuditSummary
+		var revision sql.NullInt64
+		var occurred string
+		if err := rows.Scan(&item.ID, &item.Actor, &item.Action, &item.Reason, &item.CandidateID, &item.JobID, &revision, &occurred); err != nil {
+			return nil, "", err
+		}
+		if revision.Valid {
+			value := uint64(revision.Int64)
+			item.Revision = &value
+		}
+		item.OccurredAt, err = time.Parse(time.RFC3339Nano, occurred)
+		if err != nil {
+			return nil, "", err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(items) > limit {
+		next = items[limit-1].OccurredAt.Format(time.RFC3339Nano)
+		items = items[:limit]
+	}
+	return items, next, nil
+}
+
+func (r *Repositories) Sessions(ctx context.Context, userID, currentID string) ([]application.SessionSummary, error) {
+	rows, err := r.DB.QueryContext(ctx, `SELECT id,created_at,expires_at FROM sessions WHERE user_id=? AND revoked_at IS NULL AND expires_at>? ORDER BY created_at DESC`, userID, formatTime(r.Now().UTC()))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []application.SessionSummary
+	for rows.Next() {
+		var item application.SessionSummary
+		var created, expires string
+		if err := rows.Scan(&item.ID, &created, &expires); err != nil {
+			return nil, err
+		}
+		item.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err == nil {
+			item.ExpiresAt, err = time.Parse(time.RFC3339Nano, expires)
+		}
+		if err != nil {
+			return nil, err
+		}
+		item.Current = item.ID == currentID
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}

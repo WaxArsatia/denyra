@@ -121,6 +121,10 @@ func (r *Repositories) UpdateState(ctx context.Context, command TransitionComman
 	return event, err
 }
 
+func (r *Repositories) TransitionCandidate(ctx context.Context, candidateID string, expected uint64, to domain.State, actor, reason, targetReleaseID string, at time.Time) (domain.TransitionEvent, error) {
+	return r.UpdateState(ctx, TransitionCommand{CandidateID: candidateID, ExpectedRevision: expected, To: to, Actor: actor, Reason: reason, TargetReleaseID: targetReleaseID, OccurredAt: at})
+}
+
 func candidateInTx(ctx context.Context, tx *sql.Tx, candidateID string) (domain.Candidate, error) {
 	var candidate domain.Candidate
 	var source, state, created, updated string

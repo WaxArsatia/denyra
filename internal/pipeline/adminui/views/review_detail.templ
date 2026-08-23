@@ -1,0 +1,47 @@
+package views
+
+import (
+	"fmt"
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
+)
+
+templ ReviewDetail(page ReviewPage) {
+	@Layout("Review " + page.Detail.Summary.CandidateID, "reviews", page.Shell, ReviewDetailContent(page))
+}
+
+templ ReviewDetailContent(page ReviewPage) {
+	<article id="review-detail" aria-live="polite"><h1>Candidate <span class="mono">{ page.Detail.Summary.CandidateID }</span></h1>
+		if page.Error != "" {
+			<p class="notice error" role="alert">{ page.Error }</p>
+		}
+		<dl class="evidence"><dt>State</dt><dd><span class={ "status " + StateClass(page.Detail.Summary.State) }>{ string(page.Detail.Summary.State) }</span></dd><dt>Revision</dt><dd class="mono">{ fmt.Sprint(page.Detail.Summary.Revision) }</dd><dt>Source</dt><dd>{ string(page.Detail.Summary.Source) }</dd><dt>MusicBrainz release</dt><dd class="mono">{ page.Detail.ReleaseMBID }</dd><dt>Gateway job</dt><dd><a class="mono" href={ templ.SafeURL("/acquisitions/" + page.Detail.Summary.JobID) }>{ page.Detail.Summary.JobID }</a></dd></dl>
+		<section class="section"><h2>Decision</h2><div class="grid">
+			<form class="stack" method="post" action={ templ.SafeURL("/reviews/" + page.Detail.Summary.CandidateID + "/approve") } hx-post={ "/reviews/" + page.Detail.Summary.CandidateID + "/approve" } hx-target="#review-detail" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#decision-progress"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(page.Detail.Summary.Revision) }/><label>Target MusicBrainz Release ID <input name="release_mbid" required pattern="[0-9a-fA-F-]{36}"/></label><label>Reason <textarea name="reason" required></textarea></label><label><input type="checkbox" name="confirm" value="yes" required/> I verified the complete release evidence.</label><button class="primary" type="submit">Approve release</button></form>
+			<div><form class="stack" method="post" action={ templ.SafeURL("/reviews/" + page.Detail.Summary.CandidateID + "/reject") } hx-post={ "/reviews/" + page.Detail.Summary.CandidateID + "/reject" } hx-target="#review-detail" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#decision-progress"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(page.Detail.Summary.Revision) }/><label>Reason <textarea name="reason" required></textarea></label><label><input type="checkbox" name="confirm" value="yes" required/> Reject this complete release.</label><button class="danger" type="submit">Reject</button></form>
+			<form class="stack section" method="post" action={ templ.SafeURL("/reviews/" + page.Detail.Summary.CandidateID + "/retry") } hx-post={ "/reviews/" + page.Detail.Summary.CandidateID + "/retry" } hx-target="#review-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(page.Detail.Summary.Revision) }/><label>Retry reason <input name="reason" required/></label><input type="hidden" name="confirm" value="yes"/><button type="submit">Retry validation</button></form>
+			<form class="stack section" method="post" action={ templ.SafeURL("/reviews/" + page.Detail.Summary.CandidateID + "/cancel") } hx-post={ "/reviews/" + page.Detail.Summary.CandidateID + "/cancel" } hx-target="#review-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(page.Detail.Summary.Revision) }/><label>Cancellation reason <input name="reason" required/></label><label><input type="checkbox" name="confirm" value="yes" required/> Cancel this candidate.</label><button type="submit">Cancel</button></form></div>
+		</div></section>
+		<p id="decision-progress" class="htmx-indicator" role="status">Applying decision…</p>
+		<section class="section"><h2>Per-track duration and identity</h2><div class="table-wrap"><table><caption>MusicBrainz comparison in deterministic milliseconds</caption><thead><tr><th>Track</th><th>Position</th><th>Observed</th><th>Reference</th><th>Band</th><th>Recording MBID</th><th>Release-track MBID</th></tr></thead><tbody>
+		for _, track := range page.Detail.Tracks {
+			<tr><td>{ track.Path }</td><td class="mono">{ fmt.Sprintf("%d.%d", track.Medium, track.Track) }</td><td class="duration">{ Millis(track.ObservedDurationMS) }</td><td class="duration">{ OptionalMillis(track.ReferenceDurationMS) }</td><td><span class="status">{ track.Status }</span></td><td class="mono">{ track.RecordingMBID }</td><td class="mono">{ track.ReleaseTrackMBID }</td></tr>
+		}
+		</tbody></table></div></section>
+		@EvidenceTable("Validation and checksums", page.Detail.Files)
+		<section class="section"><h2>Metadata before and after</h2><div class="table-wrap"><table><caption>Immutable metadata snapshots and deterministic mutation evidence</caption><thead><tr><th>Kind</th><th>Path</th><th>Checksum</th><th>Canonical metadata</th></tr></thead><tbody>
+		for _, item := range page.Detail.Metadata {
+			<tr><td>{ item.Kind }</td><td>{ item.Path }</td><td class="checksum">{ item.Checksum }</td><td class="wrap"><code>{ item.Canonical }</code></td></tr>
+		}
+		</tbody></table></div></section>
+		@EvidenceTable("Artwork and lyrics", page.Detail.Enrichment)
+		@EvidenceTable("State history", page.Detail.History)
+	</article>
+}
+
+templ EvidenceTable(title string, items []application.EvidenceRow) {
+	<section class="section"><h2>{ title }</h2><div class="table-wrap"><table><caption>{ title }</caption><thead><tr><th>Kind</th><th>Subject</th><th>Classification</th><th>Code</th><th>Evidence</th><th>Time</th></tr></thead><tbody>
+	for _, item := range items {
+		<tr><td>{ item.Kind }</td><td>{ item.Subject }</td><td>{ item.Classification }</td><td>{ item.Code }</td><td class="wrap"><code>{ item.Details }</code></td><td><time>{ FormatTime(item.OccurredAt) }</time></td></tr>
+	}
+	</tbody></table></div></section>
+}

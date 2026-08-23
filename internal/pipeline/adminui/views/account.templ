@@ -1,0 +1,12 @@
+package views
+
+templ Account(page AccountPage) { @Layout("Account", "account", page.Shell, AccountContent(page)) }
+	templ AccountContent(page AccountPage) {
+	<section id="account-fragment"><h1>Account security</h1>
+	if page.Error!="" {
+		<p class="notice error" role="alert">{ page.Error }</p>
+	}
+	<form class="stack" method="post" action="/account/password"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><label>Current password <input type="password" name="current_password" autocomplete="current-password" required/></label><label>New password <input type="password" name="new_password" autocomplete="new-password" minlength="8" required/></label><button class="primary" type="submit">Change password and revoke old sessions</button></form>
+	<form class="section" method="post" action="/logout"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><button type="submit">Log out</button></form>
+	</section>
+}

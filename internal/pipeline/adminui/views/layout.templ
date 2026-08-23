@@ -1,0 +1,40 @@
+package views
+
+templ Icon(shell Shell, name string) {
+	<svg class="icon" aria-hidden="true"><use href={ shell.Assets.Icons + "#" + name }></use></svg>
+}
+
+templ Layout(title string, active string, shell Shell, content templ.Component) {
+	<!doctype html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<meta name="htmx-config" content="{&quot;allowEval&quot;:false,&quot;includeIndicatorStyles&quot;:false}"/>
+			<title>{ title + " · Denyra" }</title>
+			<link rel="preload" href={ shell.Assets.GeistRegular } as="font" type="font/woff2" crossorigin="anonymous"/>
+			<link rel="preload" href={ shell.Assets.GeistMonoRegular } as="font" type="font/woff2" crossorigin="anonymous"/>
+			<link rel="stylesheet" href={ shell.Assets.CSS }/>
+			<script src={ shell.Assets.HTMX } defer></script>
+		</head>
+		<body>
+			<a class="skip" href="#main">Skip to content</a>
+			<header class="topbar">
+				<span class="brand">{ shell.Deployment }</span>
+				<span class="snapshot" title="Effective configuration snapshot">{ shell.ConfigSnapshot }</span>
+				<span class={ "readiness status " + shell.ReadinessClass }>{ shell.Readiness }</span>
+				<span>{ shell.Username }</span>
+			</header>
+			<div class="shell">
+				<nav aria-label="Admin">
+					<a href="/incoming" aria-current={ templ.KV("page", active == "incoming") }>@Icon(shell, "tray") Incoming</a>
+					<a href="/reviews" aria-current={ templ.KV("page", active == "reviews") }>@Icon(shell, "warning-circle") Reviews</a>
+					<a href="/audit" aria-current={ templ.KV("page", active == "audit") }>@Icon(shell, "clock-counter-clockwise") Audit</a>
+					<a href="/sessions" aria-current={ templ.KV("page", active == "sessions") }>@Icon(shell, "users-three") Sessions</a>
+					<a href="/account/password" aria-current={ templ.KV("page", active == "account") }>@Icon(shell, "shield-check") Account</a>
+				</nav>
+				<main id="main" class="content" tabindex="-1">@content</main>
+			</div>
+		</body>
+	</html>
+}
