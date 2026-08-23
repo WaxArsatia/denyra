@@ -4,7 +4,7 @@
 
 Denyra is a Docker Compose deployment for a personal FLAC library. Lidarr is the control plane and the only component allowed to rename, move, or import files into `/data/library`. Every automated or manual acquisition passes through controlled validation before Lidarr receives a Manual Import request.
 
-Public DNS, reverse proxies, public TLS, firewall rules, and Internet exposure are outside this design. The target host is one x86_64 Debian or Ubuntu system running Docker Engine and Compose v2. All media paths live on the same filesystem under `/data` so moves between acquisition, processing, quarantine, and library directories are atomic renames.
+Public DNS, reverse proxies, public TLS, firewall rules, and Internet exposure are outside this design. The target host is one x86_64 Debian or Ubuntu system running Docker Engine `29.6.2`, Docker Compose `v2.40.3`, and Buildx `v0.36.1`. Compose remains on the explicitly selected v2 major line rather than the newer v5 line; changing that compatibility boundary requires an explicit update and full Compose acceptance run. All media paths live on the same filesystem under `/data` so moves between acquisition, processing, quarantine, and library directories are atomic renames.
 
 ## Component topology
 
@@ -76,7 +76,7 @@ Containers use one configurable numeric UID and GID. Startup checks verify owner
 
 ## Networks and listeners
 
-Gateway and pipeline communicate on a dedicated private Compose network that no other container joins. Their contract is JSON over HTTP with a request ID, idempotency key, explicit request body size limit, and bearer secret loaded from a secret file. Bearer token comparison is constant time.
+Gateway and pipeline communicate on a dedicated private Compose control network that no other container joins. Each internal JSON listener binds only to its address on that network, not to a wildcard address. Gateway and pipeline may join separate purpose networks for outbound Lidarr/slskd access, but those networks cannot reach the control listener. Their contract is JSON over HTTP with a request ID, idempotency key, explicit request body size limit, and bearer secret loaded from a secret file. Bearer token comparison is constant time.
 
 The media-pipeline runs separate listeners:
 
@@ -132,11 +132,11 @@ Approved server baseline:
 | Navidrome | `docker.io/deluan/navidrome:0.63.2@sha256:38246ebb80d6f7e2724eecab4acafa7b14ec66ae800b2454aa6da4c19f80a9ce` |
 | Navidrome Lyrics Plugin | `7.2.0`, SHA-256 `a9196e5b4e2c2eb2aaccb9f35c9faf6f488fe9081ff5685b1556901686c7540f` |
 | Restic | `docker.io/restic/restic:0.19.1@sha256:08916bcda4a4435f9d9828ebb4e91bb7ada3d2c8a53699788930e0ae1bd4fa67` |
-| beets | `2.13.1` plus exact Python runtime, wheel, and transitive hashes |
+| beets | `2.13.1`, wheel SHA-256 `6d74a610b934c8e7b86dc651ec9953b62bd5ec9c47beea10cc32ede41ea9d488`; CPython `3.14.7` XZ source SHA-256 `3b48dac8fb59f62eaa67ac83c1eb12bda1b7a08406dd286e252c11a66be27f81`; exact transitive hashes |
 | Geist and Geist Mono | `1.7.2`, asset `geist-font-v1.7.2.zip` SHA-256 `7fc800d2ac6b92844895196e5041aca55d814c15db70c44f79b3b83ab82b04e2` |
 | Phosphor Core icons | `2.0.8`, npm tarball `core-2.0.8.tgz` SHA-256 `c4d7eca2a776229c2e33c6749e09dbea32f5f3a83171c7502b3bc52f887a3551` |
 
-The custom Go toolchain uses Go `1.27.0`, templ `0.3.1020`, HTMX `2.0.9`, and `mattn/go-sqlite3 v1.14.50`. The Go Linux amd64 archive SHA-256 is `675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685`.
+The custom Go toolchain uses Go `1.27.0`, templ `0.3.1020`, HTMX `2.0.10`, and `mattn/go-sqlite3 v1.14.50`. Direct supporting modules are `pelletier/go-toml/v2 v2.4.3`, `golang.org/x/crypto v0.55.0`, `golang.org/x/text v0.41.0`, and `golang.org/x/sys v0.47.0`. These were the latest stable module versions at the dependency audit date. The Go Linux amd64 archive SHA-256 is `675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685`. The HTMX npm tarball SHA-256 is `577ad40c1c94c9de47edb89e0aec78a8353d36024c50017eb53e02992a55e889`; the vendored `dist/htmx.min.js` SHA-256 is `71ea67185bfa8c98c39d31717c6fce5d852370fcdfd129db4543774d3145c0de`.
 
 The Admin Web UI adds two frontend artifacts to the lock file. Both are verified against the digest above at build time, unpacked, embedded in the pipeline binary, and served from the pipeline itself.
 
@@ -155,7 +155,7 @@ These are the only frontend assets. No other font, icon set, stylesheet, or scri
 
 The beets environment is resolved into a hash-locked dependency set. The build uses the exact Python runtime and artifacts and fails if the graph changes. OS packages come from an immutable Debian snapshot with exact versions. Dependency changes require an explicit lock update and compatibility tests. Nothing follows `latest` automatically.
 
-Denyra builds derived Lidarr and Navidrome images from the pinned upstream manifests. The builds install the verified Lidarr.Plugin.Slskd and `nd-lyrics.ndp` artifacts without using a floating runtime installer. Plugin auto-update is disabled. The derived image digests are written back to the lock file before deployment.
+Denyra uses Debian `13.6` (`trixie`), the current stable release line at the dependency audit date, through one verified immutable snapshot timestamp with exact package versions. It builds derived Lidarr and Navidrome images from the pinned upstream manifests. The builds install the verified Lidarr.Plugin.Slskd and `nd-lyrics.ndp` artifacts without using a floating runtime installer. Plugin auto-update is disabled. The derived image digests are written back to the lock file before deployment.
 
 ## Repository layout
 

@@ -192,7 +192,7 @@ Manual provenance includes uploader, SFTPGo event ID, submission ID, timestamps,
 
 ## Admin Web UI
 
-The Admin Web UI uses Go templ and locally vendored HTMX `2.0.9`. It has no CDN and no frontend Node runtime. Every stylesheet, script, font, and icon asset is embedded in the binary and served from the pipeline itself.
+The Admin Web UI uses Go templ and locally vendored HTMX `2.0.10`. It has no CDN and no frontend Node runtime. Every stylesheet, script, font, and icon asset is embedded in the binary and served from the pipeline itself.
 
 ### Design read
 
@@ -406,7 +406,7 @@ Measured sizes of the pinned artifacts, before transport compression:
 | `Geist-Medium.woff2` | `46372 bytes` |
 | `Geist-SemiBold.woff2` | `46596 bytes` |
 | `GeistMono-Regular.woff2` | `50356 bytes` |
-| `htmx.min.js` `2.0.9` | `51332 bytes` |
+| `htmx.min.js` `2.0.10` | `51238 bytes` |
 
 The four faces total roughly `188 KiB`. Only Geist Regular and Geist Mono Regular are preloaded, which puts about `93 KiB` of font on the critical path. That is acceptable for a console reached over a LAN and is the reason the faces are not subset further: subsetting would add a build dependency and a risk of dropping glyphs from international artist and release names, which this console displays constantly.
 
@@ -469,4 +469,3 @@ Audit events are append-only. Actor, timestamp, decision, reason, target release
 - Disk or database failure stops new claims and preserves durable state.
 - A post-mutation integrity failure quarantines the release with both evidence sets.
 - No dependency outage deletes an active job or candidate.
-
