@@ -15,6 +15,8 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
+	"github.com/waxarsatia/denyra/internal/pipeline/internalapi"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	"github.com/waxarsatia/denyra/internal/platform/fscheck"
 	"github.com/waxarsatia/denyra/internal/platform/servicehost"
@@ -51,6 +53,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	if err != nil {
 		return err
 	}
+	var runtime *application.Runtime
 	return servicehost.Run(ctx, logger, servicehost.Options{
 		Name:             "media-pipeline",
 		ConfigPath:       *configPath,
@@ -76,7 +79,22 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			_, err := application.BootstrapAdmin(ctx, repositories, prepared.Config.Sessions.BootstrapUsername,
 				prepared.Config.Secrets.BootstrapAdmin.Value, prepared.Config.Secrets.BootstrapAdmin.Name,
 				prepared.Config.Sessions.PasswordMinLen, time.Now().UTC())
-			return err
+			if err != nil {
+				return err
+			}
+			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine}}
+			if _, err := runtime.Recovery.Reconcile(ctx); err != nil {
+				return err
+			}
+			if _, err := runtime.Discovery.Scan(ctx); err != nil {
+				return err
+			}
+			go func() {
+				if err := runtime.Run(ctx); err != nil {
+					logger.Error("pipeline runtime stopped", "error", err)
+				}
+			}()
+			return nil
 		},
 		BuildAdminHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
 			repositories := persistence.New(prepared.DB, time.Now)
@@ -92,6 +110,18 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
 				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}})
+		},
+		BuildInternalHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
+			repositories := persistence.New(prepared.DB, time.Now)
+			snapshotID, err := repositories.CurrentConfigSnapshotID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			service := application.HandoffService{Store: repositories, LocalConfigSnapshotID: snapshotID, SourceRoots: map[domain.Source]string{
+				domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC,
+				domain.SourceOther: prepared.Config.Filesystem.DownloadsOther,
+			}, OnAccepted: runtime.NotifyCandidate}
+			return (internalapi.API{Service: service, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), NotifyManualDiscovery: runtime.NotifyManualDiscovery}).Handler()
 		},
 	})
 }

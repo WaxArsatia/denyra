@@ -12,6 +12,11 @@ import (
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 )
 
+func (r *Repositories) DiscoverSubmission(ctx context.Context, id, path string, at time.Time) error {
+	_, err := r.DB.ExecContext(ctx, `INSERT INTO submissions(id,source_path,status,state_revision,created_at,updated_at) VALUES(?,?,'DISCOVERED',0,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at WHERE submissions.status='DISCOVERED' AND submissions.source_path=excluded.source_path`, id, path, formatTime(at), formatTime(at))
+	return err
+}
+
 func (r *Repositories) Submission(ctx context.Context, id string) (application.SubmissionRecord, error) {
 	var record application.SubmissionRecord
 	err := r.DB.QueryRowContext(ctx, `SELECT id,source_path,status,state_revision,COALESCE(sealed_fingerprint,'') FROM submissions WHERE id=?`, id).Scan(&record.ID, &record.SourcePath, &record.Status, &record.Revision, &record.SealedFingerprint)

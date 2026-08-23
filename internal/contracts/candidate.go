@@ -45,6 +45,7 @@ type CandidateWinner struct {
 	WinnerLockedAt   time.Time     `json:"winner_locked_at"`
 	Reason           string        `json:"reason"`
 	Quality          QualityVector `json:"quality"`
+	StateRevision    uint64        `json:"state_revision"`
 }
 
 type CandidateSuperseded struct {
@@ -55,4 +56,15 @@ type CandidateSuperseded struct {
 	WinnerCandidateID string    `json:"winner_candidate_id"`
 	Reason            string    `json:"reason"`
 	SupersededAt      time.Time `json:"superseded_at"`
+	StateRevision     uint64    `json:"state_revision"`
+}
+
+type CandidateCancelled struct {
+	RequestID        string    `json:"request_id"`
+	JobID            string    `json:"job_id"`
+	CandidateID      string    `json:"candidate_id"`
+	ConfigSnapshotID string    `json:"config_snapshot_id"`
+	StateRevision    uint64    `json:"state_revision"`
+	Reason           string    `json:"reason"`
+	CancelledAt      time.Time `json:"cancelled_at"`
 }
