@@ -22,7 +22,7 @@ func TestBackupProfileAndRunbookScriptAreDeterministic(t *testing.T) {
 	}
 
 	script := readText(t, filepath.Join(root, "scripts/backup/backup.sh"))
-	order := []string{"verify-repository.sh", "/internal/maintenance", "/internal/maintenance/backup", "stop lidarr navidrome sftpgo slskd", "restic backup", "restic check", "restic forget"}
+	order := []string{"verify-repository.sh", "/internal/maintenance", "stop lidarr navidrome sftpgo slskd", "/internal/maintenance/backup", "restic backup", "restic check", "restic forget"}
 	position := -1
 	for _, fragment := range order {
 		next := strings.Index(script, fragment)

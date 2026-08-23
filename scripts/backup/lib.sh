@@ -16,6 +16,11 @@ denyra_restic() {
   docker compose -f "${DENYRA_COMPOSE_FILE:-deploy/compose.yaml}" --profile backup run --rm restic "$@"
 }
 
+denyra_restore_tool() {
+  docker compose -f "${DENYRA_COMPOSE_FILE:-deploy/compose.yaml}" run --rm --no-deps \
+    --entrypoint /app/denyra-restore-check "$@"
+}
+
 denyra_wait_safe() {
   endpoint=$1
   output=$2

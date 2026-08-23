@@ -30,11 +30,23 @@ trap cleanup EXIT HUP INT TERM
 
 denyra_wait_safe "$gateway/internal/maintenance" "$workspace/gateway-maintenance.json"
 denyra_wait_safe "$pipeline/internal/maintenance" "$workspace/pipeline-maintenance.json"
+docker compose -f "$compose" stop lidarr navidrome sftpgo slskd
 denyra_api "$gateway/internal/maintenance/backup" "{\"target\":\"/data/backups/$DENYRA_BACKUP_ID/gateway.db\"}" > "$workspace/gateway-backup.json"
 denyra_api "$pipeline/internal/maintenance/backup" "{\"target\":\"/data/backups/$DENYRA_BACKUP_ID/pipeline.db\"}" > "$workspace/pipeline-backup.json"
 
-docker compose -f "$compose" stop lidarr navidrome sftpgo slskd
-denyra_restic backup /source/library /source/state /source/incoming /source/processing /source/quarantine /workspace/"$DENYRA_BACKUP_ID" --exclude /source/downloads
+cp dependencies.lock.json "$workspace/dependencies.lock.json"
+cp deploy/images.lock.json "$workspace/images.lock.json"
+cp deploy/docker/generated/gateway-build-provenance.json "$workspace/gateway-build-provenance.json"
+cp deploy/docker/generated/pipeline-build-provenance.json "$workspace/pipeline-build-provenance.json"
+cp deploy/config/gateway.toml "$workspace/gateway.toml"
+cp deploy/config/pipeline.toml "$workspace/pipeline.toml"
+denyra_restore_tool \
+  -v "$DENYRA_DATA_ROOT:/source:ro" -v "$workspace:/workspace" \
+  media-pipeline create --source /source --workspace /workspace --backup-id "$DENYRA_BACKUP_ID"
+
+denyra_restic backup /source/library /source/state /source/incoming /source/processing /source/quarantine /workspace/"$DENYRA_BACKUP_ID" \
+  --exclude /source/downloads --exclude /source/state/gateway/denyra.db --exclude '/source/state/gateway/denyra.db-*' \
+  --exclude /source/state/pipeline/denyra.db --exclude '/source/state/pipeline/denyra.db-*'
 denyra_restic check --read-data-subset="${DENYRA_RESTIC_CHECK_SUBSET:-5%}"
 denyra_restic forget --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
 denyra_restic snapshots --latest 1 > "$workspace/restic-snapshot.txt"

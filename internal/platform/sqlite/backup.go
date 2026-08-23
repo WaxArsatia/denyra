@@ -97,6 +97,9 @@ func ValidateBackupTarget(rootPath, targetPath string) error {
 	if err != nil {
 		return fmt.Errorf("canonicalize backup parent: %w", err)
 	}
+	if canonicalRoot != filepath.Clean(rootPath) || canonicalParent != filepath.Dir(filepath.Clean(targetPath)) {
+		return fmt.Errorf("backup root and parent cannot contain symlinks")
+	}
 	relative, err := filepath.Rel(canonicalRoot, filepath.Join(canonicalParent, filepath.Base(targetPath)))
 	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("backup target escapes backup root")

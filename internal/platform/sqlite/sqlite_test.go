@@ -130,6 +130,35 @@ func TestOnlineBackupRejectsSourcePath(t *testing.T) {
 	}
 }
 
+func TestValidateBackupTargetRejectsTraversalExistingAndSymlinkedParents(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := sqlite.ValidateBackupTarget(root, filepath.Join(root, "new.db")); err != nil {
+		t.Fatalf("valid target rejected: %v", err)
+	}
+	existing := filepath.Join(root, "existing.db")
+	if err := os.WriteFile(existing, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlite.ValidateBackupTarget(root, existing); err == nil {
+		t.Fatal("existing target accepted")
+	}
+	if err := sqlite.ValidateBackupTarget(root, filepath.Join(filepath.Dir(root), "outside.db")); err == nil {
+		t.Fatal("target outside root accepted")
+	}
+	realParent := filepath.Join(root, "real")
+	if err := os.Mkdir(realParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	symlinkParent := filepath.Join(root, "linked")
+	if err := os.Symlink(realParent, symlinkParent); err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlite.ValidateBackupTarget(root, filepath.Join(symlinkParent, "linked.db")); err == nil {
+		t.Fatal("symlinked backup parent accepted")
+	}
+}
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "denyra.db")

@@ -32,6 +32,9 @@ services:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/gateway
         target: /data/state/gateway
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/backups
+        target: /data/backups
     networks:
       denyra-control:
         ipv4_address: ${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}
@@ -89,6 +92,9 @@ services:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/pipeline
         target: /data/state/pipeline
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/backups
+        target: /data/backups
     networks:
       denyra-control:
         ipv4_address: ${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}
