@@ -1,0 +1,4 @@
+Enabled = true
+ProviderOrder = ["lrclib"]
+WriteToMusicFolder = false
+CacheFolder = "/data/lyrics-cache"

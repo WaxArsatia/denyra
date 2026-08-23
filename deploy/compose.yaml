@@ -191,11 +191,13 @@ services:
     tmpfs:
       - /tmp:mode=1777
     environment:
-      ND_MUSICFOLDER: /music
-      ND_DATAFOLDER: /data
-      ND_PLUGINSFOLDER: /plugins
-      ND_SCANNER_SCHEDULE: 1m
-      ND_SCANNER_WATCHERWAIT: 5s
+      ND_CONFIGFILE: /etc/denyra/navidrome.toml
+      ND_PLUGIN_ND_LYRICS_CONFIG: /etc/denyra/navidrome-lyrics.toml
+    configs:
+      - source: navidrome_config
+        target: /etc/denyra/navidrome.toml
+      - source: navidrome_lyrics_config
+        target: /etc/denyra/navidrome-lyrics.toml
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/library
@@ -224,6 +226,10 @@ configs:
     file: ./config/gateway.toml
   pipeline_config:
     file: ./config/pipeline.toml
+  navidrome_config:
+    file: ./config/navidrome.toml
+  navidrome_lyrics_config:
+    file: ./config/navidrome-lyrics.toml
 
 secrets:
   internal_bearer:

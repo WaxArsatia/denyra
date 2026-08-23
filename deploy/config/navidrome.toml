@@ -1,0 +1,14 @@
+MusicFolder = "/music"
+DataFolder = "/data"
+CacheFolder = "/cache"
+EnableTranscodingConfig = true
+Scanner.ScanOnStartup = true
+Scanner.WatcherWait = "5s"
+Scanner.Schedule = "@every 1m"
+Plugins.Enabled = true
+Plugins.Folder = "/plugins"
+Plugins.AutoReload = false
+LyricsPriority = ".ttml,.elrc,.lrc,embedded,nd-lyrics"
+
+# Logical playback policies are selected by clients through OpenSubsonic
+# maxBitRate/downsampling. They are not coupled to internal profile names.
