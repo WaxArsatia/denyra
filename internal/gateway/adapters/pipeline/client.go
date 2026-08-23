@@ -28,6 +28,26 @@ type Client struct {
 	ResponseLimit   int64
 }
 
+func (client Client) Ready(ctx context.Context) error {
+	if client.HTTP == nil || client.BaseURL == "" {
+		return fmt.Errorf("pipeline client is not configured")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(client.BaseURL, "/")+"/health/ready", nil)
+	if err != nil {
+		return err
+	}
+	response, err := client.HTTP.Do(request)
+	if err != nil {
+		return &RetryableError{Err: err}
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, client.ResponseLimit))
+	if response.StatusCode != http.StatusOK {
+		return &RetryableError{Err: fmt.Errorf("pipeline readiness HTTP status %d", response.StatusCode)}
+	}
+	return nil
+}
+
 func (client Client) Register(ctx context.Context, request contracts.CandidateRegistered, requestID, idempotencyKey string) (Response, error) {
 	payload, err := json.Marshal(request)
 	if err != nil {

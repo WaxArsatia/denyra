@@ -152,6 +152,30 @@ func (r *Repositories) SetSearchContext(ctx context.Context, jobID string, expec
 	return nil
 }
 
+func (r *Repositories) SetInitialSearchContext(ctx context.Context, jobID string, expected uint64, queueWatermark, historyWatermark string, started, commandDeadline, recoveryDeadline time.Time) error {
+	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET queue_watermark=?,history_watermark=?,command_id='UNKNOWN',correlation_started_at=?,command_deadline=?,grace_deadline=?,updated_at=? WHERE id=? AND state_revision=?`, queueWatermark, historyWatermark, formatTime(started), formatTime(commandDeadline), formatTime(recoveryDeadline), formatTime(started), jobID, expected)
+	if err != nil {
+		return err
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return fmt.Errorf("stale initial search context revision")
+	}
+	return nil
+}
+
+func (r *Repositories) SetSearchCommandID(ctx context.Context, jobID string, expected uint64, commandID string, at time.Time) error {
+	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET command_id=?,updated_at=? WHERE id=? AND state_revision=?`, commandID, formatTime(at), jobID, expected)
+	if err != nil {
+		return err
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return fmt.Errorf("stale search command context revision")
+	}
+	return nil
+}
+
 func (r *Repositories) SetGraceDeadline(ctx context.Context, jobID string, expected uint64, deadline, at time.Time) error {
 	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET grace_deadline=?,updated_at=? WHERE id=? AND state_revision=?`, formatTime(deadline), formatTime(at), jobID, expected)
 	if err != nil {

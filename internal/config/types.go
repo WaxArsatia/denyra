@@ -46,10 +46,15 @@ type HTTPConfig struct {
 	ExternalRequestTimeout Duration `toml:"external_request_timeout" json:"external_request_timeout"`
 	ExternalResponseLimit  int64    `toml:"external_response_limit" json:"external_response_limit"`
 	InternalReplayAttempts int      `toml:"internal_replay_attempts" json:"internal_replay_attempts"`
+	ReadHeaderTimeout      Duration `toml:"read_header_timeout" json:"read_header_timeout"`
+	ServerIdleTimeout      Duration `toml:"server_idle_timeout" json:"server_idle_timeout"`
+	ShutdownTimeout        Duration `toml:"shutdown_timeout" json:"shutdown_timeout"`
+	HealthcheckTimeout     Duration `toml:"healthcheck_timeout" json:"healthcheck_timeout"`
 }
 
 type ServicesConfig struct {
 	LidarrURL      string `toml:"lidarr_url" json:"lidarr_url"`
+	GatewayURL     string `toml:"gateway_url" json:"gateway_url"`
 	PipelineURL    string `toml:"pipeline_url" json:"pipeline_url"`
 	MusicBrainzURL string `toml:"musicbrainz_url" json:"musicbrainz_url"`
 	LRCLIBURL      string `toml:"lrclib_url" json:"lrclib_url"`
@@ -85,7 +90,9 @@ type AcquisitionConfig struct {
 	OverallTimeout        Duration   `toml:"overall_timeout" json:"overall_timeout"`
 	ProcessPollInterval   Duration   `toml:"process_poll_interval" json:"process_poll_interval"`
 	ProcessTerminateGrace Duration   `toml:"process_terminate_grace" json:"process_terminate_grace"`
+	LeaseDuration         Duration   `toml:"lease_duration" json:"lease_duration"`
 	ProcessOutputLimit    int64      `toml:"process_output_limit" json:"process_output_limit"`
+	MaxInlineTransitions  int        `toml:"max_inline_transitions" json:"max_inline_transitions"`
 	NoCandidateRetry      Duration   `toml:"no_candidate_retry" json:"no_candidate_retry"`
 	PrimaryRetry          []Duration `toml:"primary_retry" json:"primary_retry"`
 	FallbackRetry         []Duration `toml:"fallback_retry" json:"fallback_retry"`
@@ -150,31 +157,33 @@ type SecretsConfig struct {
 }
 
 type Policy struct {
-	ScannerRecoveryInterval Duration
-	StabilityInterval       Duration
-	AlbumSearchTimeout      Duration
-	ReconciliationPoll      Duration
-	PrimaryGraceWindow      Duration
-	ArbitrationWindow       Duration
-	SessionAbsoluteExpiry   Duration
-	MinimumFreeBytes        int64
-	MinimumFreePercent      float64
-	PrimaryRetry            []Duration
-	FallbackRetry           []Duration
+	ScannerRecoveryInterval  Duration
+	StabilityInterval        Duration
+	AlbumSearchTimeout       Duration
+	ReconciliationPoll       Duration
+	PrimaryGraceWindow       Duration
+	ArbitrationWindow        Duration
+	SessionAbsoluteExpiry    Duration
+	AcquisitionLeaseDuration Duration
+	MinimumFreeBytes         int64
+	MinimumFreePercent       float64
+	PrimaryRetry             []Duration
+	FallbackRetry            []Duration
 }
 
 func (c Config) Policy() Policy {
 	return Policy{
-		ScannerRecoveryInterval: c.Scanners.RecoveryInterval,
-		StabilityInterval:       c.Scanners.StabilityInterval,
-		AlbumSearchTimeout:      c.Acquisition.AlbumSearchTimeout,
-		ReconciliationPoll:      c.Acquisition.ReconciliationPoll,
-		PrimaryGraceWindow:      c.Acquisition.PrimaryGraceWindow,
-		ArbitrationWindow:       c.Arbitration.Window,
-		SessionAbsoluteExpiry:   c.Sessions.AbsoluteExpiry,
-		MinimumFreeBytes:        c.Storage.MinimumFreeBytes,
-		MinimumFreePercent:      c.Storage.MinimumFreePercent,
-		PrimaryRetry:            append([]Duration(nil), c.Acquisition.PrimaryRetry...),
-		FallbackRetry:           append([]Duration(nil), c.Acquisition.FallbackRetry...),
+		ScannerRecoveryInterval:  c.Scanners.RecoveryInterval,
+		StabilityInterval:        c.Scanners.StabilityInterval,
+		AlbumSearchTimeout:       c.Acquisition.AlbumSearchTimeout,
+		ReconciliationPoll:       c.Acquisition.ReconciliationPoll,
+		PrimaryGraceWindow:       c.Acquisition.PrimaryGraceWindow,
+		ArbitrationWindow:        c.Arbitration.Window,
+		SessionAbsoluteExpiry:    c.Sessions.AbsoluteExpiry,
+		AcquisitionLeaseDuration: c.Acquisition.LeaseDuration,
+		MinimumFreeBytes:         c.Storage.MinimumFreeBytes,
+		MinimumFreePercent:       c.Storage.MinimumFreePercent,
+		PrimaryRetry:             append([]Duration(nil), c.Acquisition.PrimaryRetry...),
+		FallbackRetry:            append([]Duration(nil), c.Acquisition.FallbackRetry...),
 	}
 }

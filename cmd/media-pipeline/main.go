@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/config"
+	gatewayadapter "github.com/waxarsatia/denyra/internal/pipeline/adapters/gateway"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
@@ -37,10 +38,11 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	if len(arguments) > 0 && arguments[0] == "healthcheck" {
 		flags := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
 		address := flags.String("address", "172.30.0.3:8081", "internal health address")
+		timeout := flags.Duration("timeout", time.Duration(config.Defaults().HTTP.HealthcheckTimeout), "healthcheck timeout")
 		if err := flags.Parse(arguments[1:]); err != nil {
 			return err
 		}
-		return servicehost.ProbeReady(ctx, *address)
+		return servicehost.ProbeReady(ctx, *address, *timeout)
 	}
 	flags := flag.NewFlagSet("media-pipeline", flag.ContinueOnError)
 	configPath := flags.String("config", "/etc/denyra/config.toml", "configuration file")
@@ -107,7 +109,9 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				return nil, err
 			}
 			auth := application.AuthService{Repository: repositories, AbsoluteExpiry: time.Duration(prepared.Config.Sessions.AbsoluteExpiry), PasswordMinLen: prepared.Config.Sessions.PasswordMinLen}
+			gatewayClient := gatewayadapter.Client{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
 			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
+				Acquisition: gatewayClient,
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
 				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}})
 		},

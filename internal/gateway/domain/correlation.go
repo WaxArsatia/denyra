@@ -68,7 +68,7 @@ func (request CorrelationRequest) Match(observation CorrelationObservation) Corr
 	if request.ReleaseMBID != "" && observation.ReleaseMBID != request.ReleaseMBID {
 		return CorrelationMatch{Reason: "selected release identity mismatch"}
 	}
-	if observation.CommandID != "" && observation.CommandID != request.CommandID {
+	if request.CommandID != "UNKNOWN" && observation.CommandID != "" && observation.CommandID != request.CommandID {
 		return CorrelationMatch{Reason: "command context mismatch"}
 	}
 	switch observation.Source {

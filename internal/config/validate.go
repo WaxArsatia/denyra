@@ -11,18 +11,36 @@ import (
 func (c Config) Validate() error {
 	positiveDurations := map[string]Duration{
 		"database.busy_timeout":               c.Database.BusyTimeout,
+		"database.idempotency_ttl":            c.Database.IdempotencyTTL,
 		"acquisition.album_search_timeout":    c.Acquisition.AlbumSearchTimeout,
 		"acquisition.reconciliation_poll":     c.Acquisition.ReconciliationPoll,
+		"acquisition.reconciliation_safety":   c.Acquisition.ReconciliationSafety,
 		"acquisition.primary_grace_window":    c.Acquisition.PrimaryGraceWindow,
 		"acquisition.provider_timeout":        c.Acquisition.ProviderTimeout,
 		"acquisition.overall_timeout":         c.Acquisition.OverallTimeout,
 		"acquisition.process_poll_interval":   c.Acquisition.ProcessPollInterval,
 		"acquisition.process_terminate_grace": c.Acquisition.ProcessTerminateGrace,
+		"acquisition.lease_duration":          c.Acquisition.LeaseDuration,
+		"acquisition.no_candidate_retry":      c.Acquisition.NoCandidateRetry,
 		"arbitration.window":                  c.Arbitration.Window,
 		"sessions.absolute_expiry":            c.Sessions.AbsoluteExpiry,
 		"scanners.recovery_interval":          c.Scanners.RecoveryInterval,
 		"scanners.stability_interval":         c.Scanners.StabilityInterval,
+		"scanners.navidrome_schedule":         c.Scanners.NavidromeSchedule,
+		"scanners.navidrome_watcher":          c.Scanners.NavidromeWatcher,
 		"http.external_request_timeout":       c.HTTP.ExternalRequestTimeout,
+		"http.read_header_timeout":            c.HTTP.ReadHeaderTimeout,
+		"http.server_idle_timeout":            c.HTTP.ServerIdleTimeout,
+		"http.shutdown_timeout":               c.HTTP.ShutdownTimeout,
+		"http.healthcheck_timeout":            c.HTTP.HealthcheckTimeout,
+	}
+	for name, value := range map[string]int64{
+		"http.internal_body_limit":  c.HTTP.InternalBodyLimit,
+		"http.admin_mutation_limit": c.HTTP.AdminMutationLimit,
+	} {
+		if value <= 0 {
+			return fmt.Errorf("%s must be positive", name)
+		}
 	}
 	if c.HTTP.ExternalResponseLimit <= 0 {
 		return fmt.Errorf("http.external_response_limit must be positive")
@@ -36,7 +54,22 @@ func (c Config) Validate() error {
 	if c.Acquisition.ProcessOutputLimit <= 0 {
 		return fmt.Errorf("acquisition.process_output_limit must be positive")
 	}
-	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
+	if c.Acquisition.MaxInlineTransitions <= 0 {
+		return fmt.Errorf("acquisition.max_inline_transitions must be positive")
+	}
+	if c.Database.MaxOpenConns <= 0 {
+		return fmt.Errorf("database.max_open_conns must be positive")
+	}
+	if c.Concurrency.Acquisition != 2 {
+		return fmt.Errorf("concurrency.acquisition must be exactly 2 for the pinned SpotiFLAC provider policy")
+	}
+	if c.Concurrency.Validation <= 0 || c.Concurrency.Import <= 0 {
+		return fmt.Errorf("validation and import concurrency must be positive")
+	}
+	if c.Backup.Daily <= 0 || c.Backup.Weekly <= 0 || c.Backup.Monthly <= 0 {
+		return fmt.Errorf("backup retention values must be positive")
+	}
+	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.gateway_url": c.Services.GatewayURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 			return fmt.Errorf("%s must be an HTTP URL", name)
 		}

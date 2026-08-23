@@ -1,4 +1,8 @@
 [http]
+read_header_timeout = "5s"
+server_idle_timeout = "30s"
+shutdown_timeout = "10s"
+healthcheck_timeout = "5s"
 admin_address = "0.0.0.0:8090"
 internal_address = "172.30.0.3:8081"
 internal_body_limit = 1048576

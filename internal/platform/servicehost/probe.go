@@ -8,11 +8,14 @@ import (
 	"time"
 )
 
-func ProbeReady(ctx context.Context, address string) error {
+func ProbeReady(ctx context.Context, address string, timeout time.Duration) error {
 	if strings.TrimSpace(address) == "" {
 		return fmt.Errorf("health address is required")
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if timeout <= 0 {
+		return fmt.Errorf("healthcheck timeout must be positive")
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, "http://"+address+"/health/ready", nil)
 	if err != nil {

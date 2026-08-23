@@ -29,6 +29,9 @@ func (c Client) Get(ctx context.Context, path string, query url.Values, destinat
 func (c Client) Post(ctx context.Context, path string, body []byte, destination any) error {
 	return c.do(ctx, http.MethodPost, path, nil, body, destination)
 }
+func (c Client) Delete(ctx context.Context, path string, query url.Values) error {
+	return c.do(ctx, http.MethodDelete, path, query, nil, nil)
+}
 func (c Client) do(ctx context.Context, method, path string, query url.Values, body []byte, destination any) error {
 	if c.HTTP == nil || c.ResponseLimit <= 0 || c.BaseURL == "" || c.APIKey == "" {
 		return fmt.Errorf("Lidarr client is not configured")

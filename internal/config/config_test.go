@@ -27,8 +27,13 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 		"primary grace":     {time.Duration(cfg.Acquisition.PrimaryGraceWindow), time.Minute},
 		"process poll":      {time.Duration(cfg.Acquisition.ProcessPollInterval), 250 * time.Millisecond},
 		"process terminate": {time.Duration(cfg.Acquisition.ProcessTerminateGrace), 5 * time.Second},
+		"acquisition lease": {time.Duration(cfg.Acquisition.LeaseDuration), 15 * time.Minute},
 		"arbitration":       {time.Duration(cfg.Arbitration.Window), 30 * time.Minute},
 		"session expiry":    {time.Duration(cfg.Sessions.AbsoluteExpiry), 30 * 24 * time.Hour},
+	}
+	if time.Duration(cfg.HTTP.ReadHeaderTimeout) != 5*time.Second || time.Duration(cfg.HTTP.ServerIdleTimeout) != 30*time.Second ||
+		time.Duration(cfg.HTTP.ShutdownTimeout) != 10*time.Second || time.Duration(cfg.HTTP.HealthcheckTimeout) != 5*time.Second {
+		t.Fatalf("unexpected HTTP server policy: %+v", cfg.HTTP)
 	}
 	for name, check := range checks {
 		if check.got != check.want {
@@ -44,7 +49,7 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if cfg.HTTP.InternalReplayAttempts != 2 {
 		t.Fatalf("unexpected internal replay attempts: %d", cfg.HTTP.InternalReplayAttempts)
 	}
-	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
+	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.GatewayURL != "http://acquisition-gateway:8081" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
 		t.Fatalf("unexpected internal service defaults: %+v", cfg.Services)
 	}
 	if cfg.Acquisition.LidarrPageSize != 100 {
@@ -52,6 +57,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	}
 	if cfg.Acquisition.ProcessOutputLimit != 4<<20 {
 		t.Fatalf("unexpected process output limit: %d", cfg.Acquisition.ProcessOutputLimit)
+	}
+	if cfg.Acquisition.MaxInlineTransitions != 8 {
+		t.Fatalf("unexpected maximum inline transitions: %d", cfg.Acquisition.MaxInlineTransitions)
 	}
 	if got, want := durations(cfg.Acquisition.PrimaryRetry), []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}; !equalDurations(got, want) {
 		t.Fatalf("primary retry = %v, want %v", got, want)
@@ -68,6 +76,9 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	t.Setenv("DENYRA_ACQUISITION_ALBUM_SEARCH_TIMEOUT", "12m")
 	t.Setenv("DENYRA_STORAGE_MINIMUM_FREE_PERCENT", "7.5")
 	t.Setenv("DENYRA_LIDARR_URL", "http://lidarr-test:8686")
+	t.Setenv("DENYRA_GATEWAY_URL", "http://gateway-test:8081")
+	t.Setenv("DENYRA_ACQUISITION_LEASE_DURATION", "20m")
+	t.Setenv("DENYRA_ACQUISITION_MAX_INLINE_TRANSITIONS", "12")
 
 	cfg, err := config.Load(path, os.Environ())
 	if err != nil {
@@ -82,6 +93,15 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	if cfg.Services.LidarrURL != "http://lidarr-test:8686" {
 		t.Fatalf("Lidarr URL = %q", cfg.Services.LidarrURL)
 	}
+	if cfg.Services.GatewayURL != "http://gateway-test:8081" {
+		t.Fatalf("Gateway URL = %q", cfg.Services.GatewayURL)
+	}
+	if got := time.Duration(cfg.Acquisition.LeaseDuration); got != 20*time.Minute {
+		t.Fatalf("lease duration = %s, want 20m", got)
+	}
+	if cfg.Acquisition.MaxInlineTransitions != 12 {
+		t.Fatalf("maximum inline transitions = %d, want 12", cfg.Acquisition.MaxInlineTransitions)
+	}
 }
 
 func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
@@ -89,16 +109,22 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		toml string
 		env  []string
 	}{
-		"unknown TOML":    {toml: "mystery = true\n"},
-		"unknown env":     {env: []string{"DENYRA_MYSTERY=true"}},
-		"invalid unit":    {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
-		"negative":        {toml: "[storage]\nminimum_free_bytes = -1\n"},
-		"percent":         {toml: "[storage]\nminimum_free_percent = 101\n"},
-		"service URL":     {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
-		"response cap":    {toml: "[http]\nexternal_response_limit = 0\n"},
-		"replay attempts": {toml: "[http]\ninternal_replay_attempts = 0\n"},
-		"page size":       {toml: "[acquisition]\nlidarr_page_size = 0\n"},
-		"process output":  {toml: "[acquisition]\nprocess_output_limit = 0\n"},
+		"unknown TOML":       {toml: "mystery = true\n"},
+		"unknown env":        {env: []string{"DENYRA_MYSTERY=true"}},
+		"invalid unit":       {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
+		"negative":           {toml: "[storage]\nminimum_free_bytes = -1\n"},
+		"percent":            {toml: "[storage]\nminimum_free_percent = 101\n"},
+		"service URL":        {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
+		"response cap":       {toml: "[http]\nexternal_response_limit = 0\n"},
+		"replay attempts":    {toml: "[http]\ninternal_replay_attempts = 0\n"},
+		"page size":          {toml: "[acquisition]\nlidarr_page_size = 0\n"},
+		"process output":     {toml: "[acquisition]\nprocess_output_limit = 0\n"},
+		"inline transitions": {toml: "[acquisition]\nmax_inline_transitions = 0\n"},
+		"lease duration":     {toml: "[acquisition]\nlease_duration = \"0s\"\n"},
+		"body limit":         {toml: "[http]\ninternal_body_limit = 0\n"},
+		"database conns":     {toml: "[database]\nmax_open_conns = 0\n"},
+		"concurrency":        {toml: "[concurrency]\nacquisition = 3\n"},
+		"backup retention":   {toml: "[backup]\ndaily = 0\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

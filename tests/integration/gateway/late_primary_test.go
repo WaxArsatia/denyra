@@ -84,6 +84,29 @@ func TestHandoffLatePrimaryRetainsCompletedFallbackAsDualCandidate(t *testing.T)
 	}
 }
 
+func TestHandoffLatePrimaryCancelsNoCandidateRetryWithoutCancellingTransfer(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	prepareFallbackState(t, repositories, job, now)
+	retryAt := now.Add(24 * time.Hour)
+	if _, err := repositories.UpdateState(context.Background(), persistence.TransitionCommand{JobID: job.ID, Expected: 4, To: domain.StateNoCandidate, Actor: "test", Reason: "all providers returned legitimate no-result", NextRetryAt: &retryAt, OccurredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	canceller := &fakeSupersededCanceller{}
+	service := application.LatePrimaryService{Store: repositories, Canceller: canceller, Now: func() time.Time { return now.Add(time.Minute) }}
+	if err := service.Handle(context.Background(), job.ID, latePrimaryEvidence(job, now)); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repositories.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.StatePrimaryActive || stored.NextRetryAt != nil || canceller.calls != 0 {
+		t.Fatalf("state=%s retry=%v cancel calls=%d", stored.State, stored.NextRetryAt, canceller.calls)
+	}
+}
+
 func TestHandoffCancelFailureLeavesFallbackActiveAndAuditable(t *testing.T) {
 	db, repositories, now := gatewayRepositories(t)
 	defer db.Close()

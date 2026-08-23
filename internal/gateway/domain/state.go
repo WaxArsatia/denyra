@@ -55,6 +55,7 @@ var transitions = map[State]map[State]bool{
 	},
 	StatePrimarySearchRequested: {
 		StatePrimarySearchRunning:  true,
+		StatePrimaryActive:         true,
 		StatePrimaryRetryableError: true,
 		StateCancelled:             true,
 	},
@@ -90,10 +91,12 @@ var transitions = map[State]map[State]bool{
 	StateFallbackRetryableError: {
 		StateFallbackRunning:        true,
 		StatePrimarySearchRequested: true,
+		StatePrimaryActive:          true,
 		StateCancelled:              true,
 	},
 	StateNoCandidate: {
 		StatePrimarySearchRequested: true,
+		StatePrimaryActive:          true,
 		StateCancelled:              true,
 	},
 	StateDualCandidate: {

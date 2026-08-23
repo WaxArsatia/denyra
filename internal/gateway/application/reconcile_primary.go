@@ -102,6 +102,48 @@ func (service PrimaryReconciler) Run(ctx context.Context, jobID string) error {
 	}
 }
 
+func (service PrimaryReconciler) ReconcileUncertain(ctx context.Context, jobID string) error {
+	if service.Lidarr == nil || service.Store == nil || service.PageSize <= 0 {
+		return fmt.Errorf("primary reconciler is not configured")
+	}
+	job, err := service.Store.Job(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.State != domain.StatePrimarySearchRequested {
+		return fmt.Errorf("job %s cannot reconcile uncertain primary effect from %s", job.ID, job.State)
+	}
+	search, err := service.Store.PrimarySearchContext(ctx, job.ID)
+	if err != nil {
+		return service.retryableError(ctx, job, err)
+	}
+	if service.now().Before(search.GraceDeadline) {
+		return nil
+	}
+	request, err := correlationRequest(job, search)
+	if err != nil {
+		return service.retryableError(ctx, job, err)
+	}
+	evidence, err := service.correlatedEvidence(ctx, job, search, request)
+	if err != nil {
+		return service.retryableError(ctx, job, err)
+	}
+	if len(evidence) == 0 {
+		return service.retryableError(ctx, job, fmt.Errorf("AlbumSearch outcome remained unknown after reconciliation window"))
+	}
+	pending, err := newPrimaryPendingCandidate(job, evidence, service.now())
+	if err != nil {
+		return err
+	}
+	if _, err := service.Store.ActivatePrimary(ctx, persistence.TransitionCommand{JobID: job.ID, Expected: job.Revision, Actor: "gateway-recovery", Reason: "correlated primary grab after unknown command outcome", OccurredAt: service.now()}, evidence, pending); err != nil {
+		return err
+	}
+	if service.Handoff != nil {
+		return service.Handoff.RegisterPending(ctx, pending)
+	}
+	return nil
+}
+
 func newPrimaryPendingCandidate(job domain.Job, evidence []persistence.CorrelationEvidence, now time.Time) (persistence.PendingCandidate, error) {
 	if len(evidence) == 0 {
 		return persistence.PendingCandidate{}, fmt.Errorf("primary candidate requires correlation evidence")
@@ -182,7 +224,7 @@ func (service PrimaryReconciler) correlatedEvidence(ctx context.Context, job dom
 		if release == "" {
 			release = album.SelectedReleaseMBID
 		}
-		observation := domain.CorrelationObservation{Source: domain.CorrelationQueue, RecordID: record.ID, AlbumID: record.AlbumID, ReleaseGroupMBID: group, ReleaseMBID: release, DownloadID: record.DownloadID, ObservedAt: observedAt}
+		observation := domain.CorrelationObservation{Source: domain.CorrelationQueue, RecordID: record.ID, AlbumID: record.AlbumID, ReleaseGroupMBID: group, ReleaseMBID: release, DownloadID: record.DownloadID, ObservedAt: eventTime(record.Added, observedAt)}
 		if request.Match(observation).Correlated {
 			item, err := evidenceFromObservation(job, search.QueueWatermark, observation, record)
 			if err != nil {
@@ -211,7 +253,7 @@ func (service PrimaryReconciler) correlatedEvidence(ctx context.Context, job dom
 		if downloadID == "" {
 			downloadID = record.DataString("downloadId")
 		}
-		observation := domain.CorrelationObservation{Source: domain.CorrelationHistory, RecordID: record.ID, AlbumID: record.AlbumID, ReleaseGroupMBID: group, ReleaseMBID: release, CommandID: record.DataString("commandId"), DownloadID: downloadID, EventType: record.EventType, ObservedAt: observedAt}
+		observation := domain.CorrelationObservation{Source: domain.CorrelationHistory, RecordID: record.ID, AlbumID: record.AlbumID, ReleaseGroupMBID: group, ReleaseMBID: release, CommandID: record.DataString("commandId"), DownloadID: downloadID, EventType: record.EventType, ObservedAt: eventTime(record.Date, observedAt)}
 		if request.Match(observation).Correlated {
 			item, err := evidenceFromObservation(job, search.HistoryWatermark, observation, record)
 			if err != nil {
@@ -221,6 +263,33 @@ func (service PrimaryReconciler) correlatedEvidence(ctx context.Context, job dom
 		}
 	}
 	return result, nil
+}
+
+func eventTime(value string, fallback time.Time) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return fallback.UTC()
+	}
+	return parsed.UTC()
+}
+
+func (service PrimaryReconciler) LateEvidence(ctx context.Context, jobID string) ([]persistence.CorrelationEvidence, error) {
+	job, err := service.Store.Job(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if job.State != domain.StateFallbackRunning && job.State != domain.StateFallbackRetryableError && job.State != domain.StateNoCandidate && job.State != domain.StateArbitrating {
+		return nil, nil
+	}
+	search, err := service.Store.PrimarySearchContext(ctx, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	request, err := correlationRequest(job, search)
+	if err != nil {
+		return nil, err
+	}
+	return service.correlatedEvidence(ctx, job, search, request)
 }
 
 func evidenceFromObservation(job domain.Job, watermark string, observation domain.CorrelationObservation, raw any) (persistence.CorrelationEvidence, error) {

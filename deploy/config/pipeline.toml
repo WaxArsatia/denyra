@@ -9,8 +9,13 @@ admin_mutation_limit = 262144
 external_request_timeout = "30s"
 external_response_limit = 8388608
 internal_replay_attempts = 2
+read_header_timeout = "5s"
+server_idle_timeout = "30s"
+shutdown_timeout = "10s"
+healthcheck_timeout = "5s"
 
 [services]
+gateway_url = "http://acquisition-gateway:8081"
 lidarr_url = "http://lidarr:8686"
 pipeline_url = "http://media-pipeline:8081"
 musicbrainz_url = "https://musicbrainz.org"

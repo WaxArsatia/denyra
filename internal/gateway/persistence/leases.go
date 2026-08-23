@@ -38,6 +38,18 @@ func (r *Repositories) AcquireLease(ctx context.Context, lease Lease, reconciled
 		return err
 	})
 }
+
+func (r *Repositories) RenewLease(ctx context.Context, resourceType, resourceID, ownerID string, expectedRevision uint64, expiresAt time.Time) error {
+	result, err := r.DB.ExecContext(ctx, `UPDATE leases SET expires_at=? WHERE resource_type=? AND resource_id=? AND owner_id=? AND resource_revision=?`, formatTime(expiresAt), resourceType, resourceID, ownerID, expectedRevision)
+	if err != nil {
+		return err
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return ErrLeaseHeld
+	}
+	return nil
+}
 func withTx(ctx context.Context, db *sql.DB, fn func(*sql.Tx) error) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

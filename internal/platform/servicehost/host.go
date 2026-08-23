@@ -144,8 +144,8 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 		listeners = append(listeners, listener)
 		servers = append(servers, &http.Server{
 			Handler:           handler,
-			ReadHeaderTimeout: 5 * time.Second,
-			IdleTimeout:       30 * time.Second,
+			ReadHeaderTimeout: time.Duration(prepared.Config.HTTP.ReadHeaderTimeout),
+			IdleTimeout:       time.Duration(prepared.Config.HTTP.ServerIdleTimeout),
 		})
 		return nil
 	}
@@ -193,7 +193,7 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 	}
 
 	prepared.Health.Stop()
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(prepared.Config.HTTP.ShutdownTimeout))
 	defer cancel()
 	for _, server := range servers {
 		if err := server.Shutdown(shutdownCtx); err != nil {

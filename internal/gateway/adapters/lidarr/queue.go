@@ -3,6 +3,7 @@ package lidarr
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strconv"
 )
 
@@ -57,4 +58,22 @@ func (c Client) QueueAfter(ctx context.Context, watermark string, pageSize int) 
 			return result, nil
 		}
 	}
+}
+
+func (c Client) CancelDownload(ctx context.Context, downloadID string) error {
+	if downloadID == "" {
+		return fmt.Errorf("download ID is required")
+	}
+	records, _, err := c.QueuePage(ctx, 1, 1000)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if record.DownloadID != downloadID {
+			continue
+		}
+		query := url.Values{"removeFromClient": {"true"}, "blocklist": {"false"}}
+		return c.Delete(ctx, "/api/v1/queue/"+strconv.FormatInt(record.ID, 10), query)
+	}
+	return fmt.Errorf("Lidarr queue has no item for download %s", downloadID)
 }

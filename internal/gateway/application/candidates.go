@@ -27,6 +27,37 @@ type LatePrimaryService struct {
 	Now func() time.Time
 }
 
+type LatePrimaryMonitor struct {
+	Store      *persistence.Repositories
+	Reconciler PrimaryReconciler
+	Handler    LatePrimaryService
+}
+
+func (monitor LatePrimaryMonitor) Reconcile(ctx context.Context) (int, error) {
+	jobs, err := monitor.Store.ActiveJobs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for _, job := range jobs {
+		if job.State != domain.StateFallbackRunning && job.State != domain.StateFallbackRetryableError && job.State != domain.StateNoCandidate && job.State != domain.StateArbitrating {
+			continue
+		}
+		evidence, err := monitor.Reconciler.LateEvidence(ctx, job.ID)
+		if err != nil {
+			return changed, err
+		}
+		if len(evidence) == 0 {
+			continue
+		}
+		if err := monitor.Handler.Handle(ctx, job.ID, evidence); err != nil {
+			return changed, err
+		}
+		changed++
+	}
+	return changed, nil
+}
+
 func (service LatePrimaryService) Handle(ctx context.Context, jobID string, evidence []persistence.CorrelationEvidence) error {
 	if service.Store == nil || service.Canceller == nil || len(evidence) == 0 {
 		return fmt.Errorf("late primary service is not configured")
@@ -35,7 +66,7 @@ func (service LatePrimaryService) Handle(ctx context.Context, jobID string, evid
 	if err != nil {
 		return err
 	}
-	if job.State != domain.StateFallbackRunning && job.State != domain.StateArbitrating {
+	if job.State != domain.StateFallbackRunning && job.State != domain.StateFallbackRetryableError && job.State != domain.StateNoCandidate && job.State != domain.StateArbitrating {
 		return fmt.Errorf("late primary cannot be applied from %s", job.State)
 	}
 	pending, err := newPrimaryPendingCandidate(job, evidence, service.now())
@@ -50,14 +81,15 @@ func (service LatePrimaryService) Handle(ctx context.Context, jobID string, evid
 	target := domain.StateDualCandidate
 	reason := "late correlated primary grab retained completed fallback candidate"
 	if !completedFallback {
-		if job.State != domain.StateFallbackRunning {
+		if job.State == domain.StateFallbackRunning {
+			if err := service.cancelFallback(ctx, job); err != nil {
+				return err
+			}
+		} else if job.State == domain.StateArbitrating {
 			return fmt.Errorf("fallback candidate state is inconsistent")
 		}
-		if err := service.cancelFallback(ctx, job); err != nil {
-			return err
-		}
 		target = domain.StatePrimaryActive
-		reason = "late correlated primary grab superseded incomplete fallback transfer"
+		reason = "late correlated primary grab superseded fallback retry schedule"
 	}
 	_, err = service.Store.RegisterPrimaryCandidate(ctx, persistence.TransitionCommand{JobID: job.ID, Expected: job.Revision, To: target, Actor: "gateway-late-primary", Reason: reason, OccurredAt: service.now()}, evidence, pending)
 	if err != nil {
