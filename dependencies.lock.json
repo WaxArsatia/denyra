@@ -2,6 +2,13 @@
   "schema": 1,
   "images": [
     {
+      "id": "debian-runtime",
+      "reference": "docker.io/library/debian:13.6-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258",
+      "platform": "linux/amd64",
+      "version": "13.6-slim",
+      "digest": "sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258"
+    },
+    {
       "id": "lidarr",
       "reference": "lscr.io/linuxserver/lidarr:nightly@sha256:0b84fcf40449e800da92eccbf4a421dd39908a5e1e2a25b6e3e5b5dcc9697e95",
       "platform": "linux/amd64",
@@ -42,7 +49,7 @@
       "id": "beets-wheel",
       "version": "2.13.1",
       "filename": "beets-2.13.1-py3-none-any.whl",
-      "url": "https://files.pythonhosted.org/packages/source/b/beets/beets-2.13.1-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/10/22/c78c08bc1764b84d139a89692103015e574506493d664f9ceccc1dd67233/beets-2.13.1-py3-none-any.whl",
       "sha256": "6d74a610b934c8e7b86dc651ec9953b62bd5ec9c47beea10cc32ede41ea9d488"
     },
     {
@@ -73,13 +80,15 @@
     {
       "id": "lidarr-plugin-slskd",
       "version": "1.1.3.0",
-      "filename": "Lidarr.Plugin.Slskd.zip",
+      "filename": "Lidarr.Plugin.Slskd.net8.0.zip",
+      "url": "https://github.com/allquiet-hub/Lidarr.Plugin.Slskd/releases/download/v1.1.3.0/Lidarr.Plugin.Slskd.net8.0.zip",
       "sha256": "5766c6563f7ed36911068c899778e0f935698c6866c85dffafb2f8a32a5fc0d8"
     },
     {
       "id": "navidrome-lyrics-plugin",
       "version": "7.2.0",
       "filename": "nd-lyrics.ndp",
+      "url": "https://github.com/J0R6IT0/navidrome-lyrics-plugin/releases/download/v7.2.0/nd-lyrics.ndp",
       "sha256": "a9196e5b4e2c2eb2aaccb9f35c9faf6f488fe9081ff5685b1556901686c7540f"
     },
     {
@@ -105,25 +114,29 @@
     {
       "id": "spotiflac-engine",
       "version": "3.0.8",
-      "filename": "spotiflac-linux-x86_64",
+      "filename": "SpotiFLAC-Linux-x86_64",
+      "url": "https://github.com/BartolomeoRusso9/SpotiFLAC-Module-Version/releases/download/v3.0.8/SpotiFLAC-Linux-x86_64",
       "sha256": "c008b5b59999f6f740d3f8e0290ce5fe18220dcd736aa903469e5b0ac062334a"
     },
     {
       "id": "spotiflac-ext-deezer",
       "version": "1.2.0",
-      "filename": "deezer-1.2.0.js",
+      "filename": "deezer.sflx",
+      "url": "https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/deezer.sflx",
       "sha256": "dfead5b50889d2855b4409c6796421ccb35ffd3cac1e002498924e9a7c5446b3"
     },
     {
       "id": "spotiflac-ext-qobuz-web",
       "version": "1.1.0",
-      "filename": "qobuz-web-1.1.0.js",
+      "filename": "qobuz-web.sflx",
+      "url": "https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/qobuz-web.sflx",
       "sha256": "9e6d14dc37623eed9ac6326c321b17fd802c36e907476f3068f7fcbe14d79f93"
     },
     {
       "id": "spotiflac-ext-tidal-web",
       "version": "1.1.7",
-      "filename": "tidal-web-1.1.7.js",
+      "filename": "tidal-web.sflx",
+      "url": "https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/tidal-web.sflx",
       "sha256": "0d59043bab8229b5fd5664bc144aee25bfd3e6d031832cdce48b9d9ccef5ed22"
     }
   ],
