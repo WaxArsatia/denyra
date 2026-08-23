@@ -84,14 +84,22 @@ func (r *Repositories) PrimarySearchContext(ctx context.Context, jobID string) (
 	return value, err
 }
 
-func (r *Repositories) ActivatePrimary(ctx context.Context, command TransitionCommand, evidence []CorrelationEvidence) (domain.Transition, error) {
+func (r *Repositories) ActivatePrimary(ctx context.Context, command TransitionCommand, evidence []CorrelationEvidence, pending PendingCandidate) (domain.Transition, error) {
+	command.To = domain.StatePrimaryActive
+	return r.RegisterPrimaryCandidate(ctx, command, evidence, pending)
+}
+
+func (r *Repositories) RegisterPrimaryCandidate(ctx context.Context, command TransitionCommand, evidence []CorrelationEvidence, pending PendingCandidate) (domain.Transition, error) {
 	var event domain.Transition
+	if command.To != domain.StatePrimaryActive && command.To != domain.StateDualCandidate {
+		return event, fmt.Errorf("primary candidate transition target is invalid")
+	}
 	err := denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
 		job, err := jobQuery(ctx, tx, command.JobID)
 		if err != nil {
 			return err
 		}
-		event, err = job.Transition(command.Expected, domain.StatePrimaryActive, command.Actor, command.Reason, command.OccurredAt)
+		event, err = job.Transition(command.Expected, command.To, command.Actor, command.Reason, command.OccurredAt)
 		if err != nil {
 			return err
 		}
@@ -102,6 +110,9 @@ func (r *Repositories) ActivatePrimary(ctx context.Context, command TransitionCo
 			if err := insertCorrelationEvidence(ctx, tx, item); err != nil {
 				return err
 			}
+		}
+		if err := insertPendingCandidate(ctx, tx, pending); err != nil {
+			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET state=?,state_revision=?,primary_attempt=0,next_retry_at=NULL,updated_at=? WHERE id=? AND state_revision=?`, job.State, job.Revision, formatTime(job.UpdatedAt), job.ID, command.Expected)
 		if err != nil {

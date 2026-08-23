@@ -21,7 +21,22 @@ const (
 	StateCancelled              State = "CANCELLED"
 )
 
-var states = map[State]struct{}{StateDiscovered: {}, StatePrimarySearchRequested: {}, StatePrimarySearchRunning: {}, StatePrimaryReconciling: {}, StatePrimaryActive: {}, StatePrimaryRetryableError: {}, StateFallbackRunning: {}, StateFallbackRetryableError: {}, StateNoCandidate: {}, StateDualCandidate: {}, StateArbitrating: {}, StateWinnerLocked: {}, StateHandedOff: {}, StateCancelled: {}}
+var states = map[State]struct{}{
+	StateDiscovered:             {},
+	StatePrimarySearchRequested: {},
+	StatePrimarySearchRunning:   {},
+	StatePrimaryReconciling:     {},
+	StatePrimaryActive:          {},
+	StatePrimaryRetryableError:  {},
+	StateFallbackRunning:        {},
+	StateFallbackRetryableError: {},
+	StateNoCandidate:            {},
+	StateDualCandidate:          {},
+	StateArbitrating:            {},
+	StateWinnerLocked:           {},
+	StateHandedOff:              {},
+	StateCancelled:              {},
+}
 
 func (s State) Valid() bool { _, ok := states[s]; return ok }
 func ParseState(value string) (State, error) {
@@ -34,7 +49,65 @@ func ParseState(value string) (State, error) {
 func (s State) Terminal() bool { return s == StateHandedOff || s == StateCancelled }
 
 var transitions = map[State]map[State]bool{
-	StateDiscovered: {StatePrimarySearchRequested: true, StateCancelled: true}, StatePrimarySearchRequested: {StatePrimarySearchRunning: true, StatePrimaryRetryableError: true, StateCancelled: true}, StatePrimarySearchRunning: {StatePrimaryReconciling: true, StatePrimaryRetryableError: true, StateCancelled: true}, StatePrimaryReconciling: {StatePrimaryActive: true, StateFallbackRunning: true, StatePrimaryRetryableError: true, StateCancelled: true}, StatePrimaryActive: {StateDualCandidate: true, StateArbitrating: true, StateHandedOff: true, StateCancelled: true}, StatePrimaryRetryableError: {StatePrimarySearchRequested: true, StateCancelled: true}, StateFallbackRunning: {StatePrimaryActive: true, StateDualCandidate: true, StateArbitrating: true, StateFallbackRetryableError: true, StateNoCandidate: true, StateCancelled: true}, StateFallbackRetryableError: {StateFallbackRunning: true, StatePrimarySearchRequested: true, StateCancelled: true}, StateNoCandidate: {StatePrimarySearchRequested: true, StateCancelled: true}, StateDualCandidate: {StateArbitrating: true, StateCancelled: true}, StateArbitrating: {StateWinnerLocked: true, StateCancelled: true}, StateWinnerLocked: {StateHandedOff: true},
+	StateDiscovered: {
+		StatePrimarySearchRequested: true,
+		StateCancelled:              true,
+	},
+	StatePrimarySearchRequested: {
+		StatePrimarySearchRunning:  true,
+		StatePrimaryRetryableError: true,
+		StateCancelled:             true,
+	},
+	StatePrimarySearchRunning: {
+		StatePrimaryReconciling:    true,
+		StatePrimaryRetryableError: true,
+		StateCancelled:             true,
+	},
+	StatePrimaryReconciling: {
+		StatePrimaryActive:         true,
+		StateFallbackRunning:       true,
+		StatePrimaryRetryableError: true,
+		StateCancelled:             true,
+	},
+	StatePrimaryActive: {
+		StateDualCandidate: true,
+		StateArbitrating:   true,
+		StateHandedOff:     true,
+		StateCancelled:     true,
+	},
+	StatePrimaryRetryableError: {
+		StatePrimarySearchRequested: true,
+		StateCancelled:              true,
+	},
+	StateFallbackRunning: {
+		StatePrimaryActive:          true,
+		StateDualCandidate:          true,
+		StateArbitrating:            true,
+		StateFallbackRetryableError: true,
+		StateNoCandidate:            true,
+		StateCancelled:              true,
+	},
+	StateFallbackRetryableError: {
+		StateFallbackRunning:        true,
+		StatePrimarySearchRequested: true,
+		StateCancelled:              true,
+	},
+	StateNoCandidate: {
+		StatePrimarySearchRequested: true,
+		StateCancelled:              true,
+	},
+	StateDualCandidate: {
+		StateArbitrating: true,
+		StateCancelled:   true,
+	},
+	StateArbitrating: {
+		StateDualCandidate: true,
+		StateWinnerLocked:  true,
+		StateCancelled:     true,
+	},
+	StateWinnerLocked: {
+		StateHandedOff: true,
+	},
 }
 
 func CanTransition(from, to State) bool { return transitions[from][to] }

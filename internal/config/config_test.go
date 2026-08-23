@@ -41,6 +41,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if time.Duration(cfg.HTTP.ExternalRequestTimeout) != 30*time.Second || cfg.HTTP.ExternalResponseLimit != 8<<20 {
 		t.Fatalf("unexpected external HTTP policy: %+v", cfg.HTTP)
 	}
+	if cfg.HTTP.InternalReplayAttempts != 2 {
+		t.Fatalf("unexpected internal replay attempts: %d", cfg.HTTP.InternalReplayAttempts)
+	}
 	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
 		t.Fatalf("unexpected internal service defaults: %+v", cfg.Services)
 	}
@@ -86,15 +89,16 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		toml string
 		env  []string
 	}{
-		"unknown TOML":   {toml: "mystery = true\n"},
-		"unknown env":    {env: []string{"DENYRA_MYSTERY=true"}},
-		"invalid unit":   {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
-		"negative":       {toml: "[storage]\nminimum_free_bytes = -1\n"},
-		"percent":        {toml: "[storage]\nminimum_free_percent = 101\n"},
-		"service URL":    {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
-		"response cap":   {toml: "[http]\nexternal_response_limit = 0\n"},
-		"page size":      {toml: "[acquisition]\nlidarr_page_size = 0\n"},
-		"process output": {toml: "[acquisition]\nprocess_output_limit = 0\n"},
+		"unknown TOML":    {toml: "mystery = true\n"},
+		"unknown env":     {env: []string{"DENYRA_MYSTERY=true"}},
+		"invalid unit":    {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
+		"negative":        {toml: "[storage]\nminimum_free_bytes = -1\n"},
+		"percent":         {toml: "[storage]\nminimum_free_percent = 101\n"},
+		"service URL":     {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
+		"response cap":    {toml: "[http]\nexternal_response_limit = 0\n"},
+		"replay attempts": {toml: "[http]\ninternal_replay_attempts = 0\n"},
+		"page size":       {toml: "[acquisition]\nlidarr_page_size = 0\n"},
+		"process output":  {toml: "[acquisition]\nprocess_output_limit = 0\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

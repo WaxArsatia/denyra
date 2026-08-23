@@ -20,6 +20,38 @@ func (r *Repositories) CurrentConfigSnapshotID(ctx context.Context) (string, err
 	return id, err
 }
 
+func (r *Repositories) RegisterPendingCandidate(ctx context.Context, request contracts.CandidateRegistered, key, requestHash string, payload []byte, at time.Time) (int, []byte, error) {
+	status := httpStatusAccepted
+	response, _ := json.Marshal(map[string]any{"candidate_id": request.CandidateID, "state": "PENDING_COMPLETION"})
+	err := denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		replayed, storedStatus, storedBody, err := idempotencyInTx(ctx, tx, key, "candidate-registration", requestHash, payload, at)
+		if err != nil {
+			return err
+		}
+		if replayed {
+			status, response = storedStatus, storedBody
+			return nil
+		}
+		source := map[contracts.AcquisitionSource]string{contracts.SourceSlskd: "slskd", contracts.SourceSpotiFLAC: "spotiflac"}[request.Source]
+		result, err := tx.ExecContext(ctx, `INSERT INTO pending_acquisition_candidates(candidate_id,job_id,source,source_locator,download_id,gateway_config_snapshot_id,registration_json,registration_sha256,registered_at) VALUES(?,?,?,?,NULLIF(?,''),?,?,?,?) ON CONFLICT(candidate_id) DO NOTHING`, request.CandidateID, request.JobID, source, request.SourceLocator, request.DownloadID, request.ConfigSnapshotID, payload, requestHash, formatTime(request.RegisteredAt))
+		if err != nil {
+			return err
+		}
+		count, _ := result.RowsAffected()
+		if count != 1 {
+			var storedHash string
+			if err := tx.QueryRowContext(ctx, `SELECT registration_sha256 FROM pending_acquisition_candidates WHERE candidate_id=?`, request.CandidateID).Scan(&storedHash); err != nil {
+				return err
+			}
+			if storedHash != requestHash {
+				return contracts.ErrIdempotencyConflict
+			}
+		}
+		return completeIdempotencyTx(ctx, tx, key, status, response, at)
+	})
+	return status, response, err
+}
+
 func (r *Repositories) AcceptCandidate(ctx context.Context, candidate domain.Candidate, request contracts.CandidateAccepted, key, requestHash string, payload []byte, at time.Time) (int, []byte, error) {
 	status := httpStatusAccepted
 	response, _ := json.Marshal(map[string]any{"candidate_id": candidate.ID, "state": candidate.State, "state_revision": candidate.StateRevision})
@@ -31,6 +63,14 @@ func (r *Repositories) AcceptCandidate(ctx context.Context, candidate domain.Can
 		if replayed {
 			status, response = storedStatus, storedBody
 			return nil
+		}
+		var pendingJob, pendingSource, pendingConfig sql.NullString
+		pendingErr := tx.QueryRowContext(ctx, `SELECT job_id,source,gateway_config_snapshot_id FROM pending_acquisition_candidates WHERE candidate_id=?`, candidate.ID).Scan(&pendingJob, &pendingSource, &pendingConfig)
+		if pendingErr != nil && pendingErr != sql.ErrNoRows {
+			return pendingErr
+		}
+		if pendingErr == nil && (pendingJob.String != request.JobID || pendingSource.String != string(candidate.Source) || pendingConfig.String != request.ConfigSnapshotID) {
+			return contracts.ErrIdempotencyConflict
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO candidates(candidate_id,source,release_directory,config_snapshot_id,acquisition_evidence_id,gateway_job_id,state,state_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, candidate.ID, candidate.Source, candidate.ReleaseDirectory, candidate.ConfigSnapshotID, candidate.AcquisitionEvidenceID, candidate.GatewayJobID, candidate.State, candidate.StateRevision, formatTime(candidate.CreatedAt), formatTime(candidate.UpdatedAt))
 		if err != nil {

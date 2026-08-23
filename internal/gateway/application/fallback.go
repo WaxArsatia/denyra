@@ -3,12 +3,15 @@ package application
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/gateway/adapters/spotiflac"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
@@ -26,6 +29,9 @@ type FallbackService struct {
 	OutputRoot     string
 	OverallTimeout time.Duration
 	Now            func() time.Time
+	Handoff        interface {
+		AcceptCompleted(context.Context, persistence.Candidate, contracts.AcquisitionProvenance) error
+	}
 }
 
 func (service FallbackService) Run(ctx context.Context, jobID string) error {
@@ -104,6 +110,16 @@ func (service FallbackService) Run(ctx context.Context, jobID string) error {
 	if state == domain.StateFallbackRetryableError {
 		errorClass = "OPERATIONAL"
 	}
+	var completedCandidate *persistence.Candidate
+	var acquisitionProvenance contracts.AcquisitionProvenance
+	if state == domain.StateArbitrating {
+		candidate, provenance, err := service.persistCompletedCandidate(ctx, job, request, result, resultJSON, responseSum)
+		if err != nil {
+			return err
+		}
+		completedCandidate = &candidate
+		acquisitionProvenance = provenance
+	}
 	if err := service.Store.CompleteAttempt(ctx, attemptID, string(state), errorClass, resultJSON, service.now()); err != nil {
 		return err
 	}
@@ -133,7 +149,36 @@ func (service FallbackService) Run(ctx context.Context, jobID string) error {
 	if err != nil {
 		return err
 	}
+	if completedCandidate != nil && service.Handoff != nil {
+		if err := service.Handoff.AcceptCompleted(ctx, *completedCandidate, acquisitionProvenance); err != nil {
+			return err
+		}
+	}
 	return runErr
+}
+
+func (service FallbackService) persistCompletedCandidate(ctx context.Context, job domain.Job, request spotiflac.RunRequest, result spotiflac.RunResult, provenanceJSON []byte, provenanceHash [sha256.Size]byte) (persistence.Candidate, contracts.AcquisitionProvenance, error) {
+	outputChecksum, outputManifest, err := spotiflac.OutputManifestSHA256(result.Output)
+	if err != nil {
+		return persistence.Candidate{}, contracts.AcquisitionProvenance{}, err
+	}
+	candidateID, err := service.Store.CandidateForJobSource(ctx, job.ID, "spotiflac", true)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return persistence.Candidate{}, contracts.AcquisitionProvenance{}, err
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		candidateID, err = persistence.NewCandidateID()
+		if err != nil {
+			return persistence.Candidate{}, contracts.AcquisitionProvenance{}, err
+		}
+	}
+	completedAt := result.CompletedAt
+	candidate := persistence.Candidate{ID: candidateID, JobID: job.ID, Source: "spotiflac", SourceLocator: request.OutputDirectory, CompletedAt: &completedAt, OutputSHA256: outputChecksum, OutputManifest: outputManifest, Provenance: provenanceJSON, ProvenanceSHA256: hex.EncodeToString(provenanceHash[:]), CreatedAt: completedAt}
+	if err := service.Store.InsertCandidate(ctx, candidate); err != nil {
+		return persistence.Candidate{}, contracts.AcquisitionProvenance{}, err
+	}
+	provenance := contracts.AcquisitionProvenance{Provider: result.WinningProvider, EngineVersion: result.EngineVersion, OutputSHA256: outputChecksum}
+	return candidate, provenance, nil
 }
 
 func (service FallbackService) now() time.Time {

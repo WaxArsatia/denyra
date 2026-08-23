@@ -28,6 +28,9 @@ type PrimaryReconciler struct {
 	PollInterval time.Duration
 	Pause        func(context.Context, time.Duration) error
 	Now          func() time.Time
+	Handoff      interface {
+		RegisterPending(context.Context, persistence.PendingCandidate) error
+	}
 }
 
 func (service PrimaryReconciler) Run(ctx context.Context, jobID string) error {
@@ -58,14 +61,24 @@ func (service PrimaryReconciler) Run(ctx context.Context, jobID string) error {
 			return service.retryableError(ctx, job, err)
 		}
 		if len(evidence) > 0 {
-			_, err := service.Store.ActivatePrimary(ctx, persistence.TransitionCommand{
+			pending, err := newPrimaryPendingCandidate(job, evidence, service.now())
+			if err != nil {
+				return service.retryableError(ctx, job, err)
+			}
+			_, err = service.Store.ActivatePrimary(ctx, persistence.TransitionCommand{
 				JobID:      job.ID,
 				Expected:   job.Revision,
 				Actor:      "gateway-reconciliation",
 				Reason:     "correlated primary grab",
 				OccurredAt: service.now(),
-			}, evidence)
-			return err
+			}, evidence, pending)
+			if err != nil {
+				return err
+			}
+			if service.Handoff != nil {
+				return service.Handoff.RegisterPending(ctx, pending)
+			}
+			return nil
 		}
 		now := service.now()
 		if !now.Before(search.GraceDeadline) {
@@ -87,6 +100,26 @@ func (service PrimaryReconciler) Run(ctx context.Context, jobID string) error {
 			return err
 		}
 	}
+}
+
+func newPrimaryPendingCandidate(job domain.Job, evidence []persistence.CorrelationEvidence, now time.Time) (persistence.PendingCandidate, error) {
+	if len(evidence) == 0 {
+		return persistence.PendingCandidate{}, fmt.Errorf("primary candidate requires correlation evidence")
+	}
+	id, err := persistence.NewCandidateID()
+	if err != nil {
+		return persistence.PendingCandidate{}, err
+	}
+	locator := evidence[0].DownloadID
+	if locator == "" {
+		locator = evidence[0].SourceKind + ":" + evidence[0].SourceRecordID
+	}
+	payload, err := json.Marshal(evidence)
+	if err != nil {
+		return persistence.PendingCandidate{}, err
+	}
+	sum := sha256.Sum256(payload)
+	return persistence.PendingCandidate{ID: id, JobID: job.ID, Source: "slskd", SourceLocator: locator, DownloadID: evidence[0].DownloadID, Provenance: payload, ProvenanceSHA256: hex.EncodeToString(sum[:]), CreatedAt: now.UTC()}, nil
 }
 
 func correlationRequest(job domain.Job, search persistence.PrimarySearchContext) (domain.CorrelationRequest, error) {

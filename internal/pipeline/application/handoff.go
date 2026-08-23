@@ -15,8 +15,30 @@ import (
 )
 
 type HandoffStore interface {
+	RegisterPendingCandidate(context.Context, contracts.CandidateRegistered, string, string, []byte, time.Time) (int, []byte, error)
 	AcceptCandidate(context.Context, domain.Candidate, contracts.CandidateAccepted, string, string, []byte, time.Time) (int, []byte, error)
 	ApplyCandidateDirective(context.Context, string, string, string, uint64, domain.State, string, string, string, []byte, time.Time) (int, []byte, error)
+}
+
+func (s HandoffService) Register(ctx context.Context, key string, request contracts.CandidateRegistered) (int, []byte, error) {
+	if strings.TrimSpace(key) == "" || request.RequestID == "" || request.JobID == "" || request.CandidateID == "" || request.ConfigSnapshotID == "" || request.SourceLocator == "" || request.RegisteredAt.IsZero() {
+		return 0, nil, fmt.Errorf("pending registration identity is incomplete")
+	}
+	if s.Store == nil {
+		return 0, nil, fmt.Errorf("handoff service is not configured")
+	}
+	if request.Source != contracts.SourceSlskd && request.Source != contracts.SourceSpotiFLAC {
+		return 0, nil, fmt.Errorf("unsupported pending acquisition source")
+	}
+	if err := domain.ValidateCandidateID(request.CandidateID); err != nil {
+		return 0, nil, err
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return 0, nil, err
+	}
+	hash := sha256.Sum256(payload)
+	return s.Store.RegisterPendingCandidate(ctx, request, key, hex.EncodeToString(hash[:]), payload, s.now())
 }
 
 type HandoffService struct {

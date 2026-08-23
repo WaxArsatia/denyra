@@ -16,6 +16,17 @@ type AcquisitionProvenance struct {
 	OutputSHA256  string `json:"output_sha256"`
 }
 
+type CandidateRegistered struct {
+	RequestID        string            `json:"request_id"`
+	JobID            string            `json:"job_id"`
+	CandidateID      string            `json:"candidate_id"`
+	ConfigSnapshotID string            `json:"config_snapshot_id"`
+	Source           AcquisitionSource `json:"source"`
+	SourceLocator    string            `json:"source_locator"`
+	DownloadID       string            `json:"download_id,omitempty"`
+	RegisteredAt     time.Time         `json:"registered_at"`
+}
+
 type CandidateAccepted struct {
 	RequestID        string                `json:"request_id"`
 	JobID            string                `json:"job_id"`

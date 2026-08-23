@@ -78,3 +78,20 @@ func (r *Repositories) UnresolvedEffects(ctx context.Context, kind string) ([]Ef
 	}
 	return result, rows.Err()
 }
+
+func (r *Repositories) Effect(ctx context.Context, key string) (Effect, error) {
+	var effect Effect
+	var created string
+	var acknowledged sql.NullString
+	err := r.DB.QueryRowContext(ctx, `SELECT id,job_id,effect_type,idempotency_key,request_hash,request_json,status,response_json,created_at,acknowledged_at FROM external_effects WHERE idempotency_key=?`, key).Scan(&effect.ID, &effect.JobID, &effect.Type, &effect.IdempotencyKey, &effect.RequestHash, &effect.Request, &effect.Status, &effect.Response, &created, &acknowledged)
+	if err != nil {
+		return effect, err
+	}
+	effect.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+	if err == nil && acknowledged.Valid {
+		value, parseErr := time.Parse(time.RFC3339Nano, acknowledged.String)
+		err = parseErr
+		effect.AcknowledgedAt = &value
+	}
+	return effect, err
+}

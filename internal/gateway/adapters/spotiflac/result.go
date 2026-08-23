@@ -1,6 +1,9 @@
 package spotiflac
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
@@ -13,6 +16,15 @@ type RunRequest struct {
 	OutputDirectory string
 	Providers       []string
 	OverallDeadline time.Time
+}
+
+func OutputManifestSHA256(files []OutputFile) (string, []byte, error) {
+	payload, err := json.Marshal(files)
+	if err != nil {
+		return "", nil, err
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:]), payload, nil
 }
 
 type OutputFile struct {

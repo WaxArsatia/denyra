@@ -35,11 +35,12 @@ func TestSpotiFLACStrictOutcomesAndTimeoutBoundaries(t *testing.T) {
 		Resolver:            staticLocator{value: "https://example.test"},
 		BaseOutputDirectory: base,
 		RuntimeHome:         home,
-		ProviderTimeout:     60 * time.Millisecond,
+		ProviderTimeout:     250 * time.Millisecond,
 		PollInterval:        5 * time.Millisecond,
 		TerminationGrace:    20 * time.Millisecond,
 		OutputLimit:         1 << 20,
 		Concurrency:         2,
+		Processes:           spotiflac.NewProcessRegistry(20 * time.Millisecond),
 	}
 	providers := installation.Installation.Manifest.Providers()
 	tests := map[string]struct {
@@ -81,7 +82,7 @@ func TestSpotiFLACStrictOutcomesAndTimeoutBoundaries(t *testing.T) {
 
 func TestSpotiFLACRejectsProviderAndOutputOverrides(t *testing.T) {
 	installation, base, home := fakeSpotiFLACInstallation(t)
-	runner := spotiflac.Runner{Runtime: installation, Resolver: staticLocator{value: "https://example.test"}, BaseOutputDirectory: base, RuntimeHome: home, ProviderTimeout: time.Second, PollInterval: time.Millisecond, TerminationGrace: time.Millisecond, OutputLimit: 1 << 20, Concurrency: 2}
+	runner := spotiflac.Runner{Runtime: installation, Resolver: staticLocator{value: "https://example.test"}, BaseOutputDirectory: base, RuntimeHome: home, ProviderTimeout: time.Second, PollInterval: time.Millisecond, TerminationGrace: time.Millisecond, OutputLimit: 1 << 20, Concurrency: 2, Processes: spotiflac.NewProcessRegistry(time.Millisecond)}
 	request := spotiflac.RunRequest{JobID: "job", ReleaseGroupID: releaseGroupMBID, SelectedRelease: "candidate", OutputDirectory: filepath.Join(base, "job"), Providers: []string{"ext:unapproved"}, OverallDeadline: time.Now().Add(time.Second)}
 	if _, err := runner.Run(context.Background(), request); err == nil {
 		t.Fatal("unapproved provider accepted")
@@ -151,12 +152,12 @@ func TestSpotiFLACMusicBrainzLocatorIsReleaseBoundAndDeterministic(t *testing.T)
 
 func TestSpotiFLACCancellationTerminatesTheProcessGroup(t *testing.T) {
 	installation, base, home := fakeSpotiFLACInstallation(t)
-	runner := spotiflac.Runner{Runtime: installation, Resolver: staticLocator{value: "https://example.test"}, BaseOutputDirectory: base, RuntimeHome: home, ProviderTimeout: time.Second, PollInterval: 5 * time.Millisecond, TerminationGrace: 20 * time.Millisecond, OutputLimit: 1 << 20, Concurrency: 2}
-	ctx, cancel := context.WithCancel(context.Background())
+	processes := spotiflac.NewProcessRegistry(20 * time.Millisecond)
+	runner := spotiflac.Runner{Runtime: installation, Resolver: staticLocator{value: "https://example.test"}, BaseOutputDirectory: base, RuntimeHome: home, ProviderTimeout: time.Second, PollInterval: 5 * time.Millisecond, TerminationGrace: 20 * time.Millisecond, OutputLimit: 1 << 20, Concurrency: 2, Processes: processes}
 	request := spotiflac.RunRequest{JobID: "cancel", ReleaseGroupID: releaseGroupMBID, SelectedRelease: "cancel", OutputDirectory: filepath.Join(base, "cancel"), Providers: installation.Installation.Manifest.Providers(), OverallDeadline: time.Now().Add(2 * time.Second)}
 	done := make(chan spotiflac.RunResult, 1)
 	go func() {
-		result, _ := runner.Run(ctx, request)
+		result, _ := runner.Run(context.Background(), request)
 		done <- result
 	}()
 	pidPath := filepath.Join(request.OutputDirectory, "child.pid")
@@ -170,9 +171,11 @@ func TestSpotiFLACCancellationTerminatesTheProcessGroup(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	cancel()
+	if err := processes.CancelSuperseded(request.JobID); err != nil {
+		t.Fatal(err)
+	}
 	result := <-done
-	if len(result.Providers) == 0 || result.Providers[0].Outcome != domain.OutcomeRetryableError || result.Providers[0].ErrorClass != "CANCELLED" {
+	if len(result.Providers) == 0 || result.Providers[0].Outcome != domain.OutcomeRetryableError || result.Providers[0].ErrorClass != "SUPERSEDED_CANCELLED" {
 		t.Fatalf("cancel result=%+v", result.Providers)
 	}
 	data, err := os.ReadFile(pidPath)

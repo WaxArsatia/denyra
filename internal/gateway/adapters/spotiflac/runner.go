@@ -34,6 +34,7 @@ type Runner struct {
 	TerminationGrace                 time.Duration
 	OutputLimit                      int64
 	Concurrency                      int
+	Processes                        *ProcessRegistry
 	Now                              func() time.Time
 }
 
@@ -41,6 +42,7 @@ func (runner Runner) Run(ctx context.Context, request RunRequest) (RunResult, er
 	if err := runner.validateRequest(request); err != nil {
 		return RunResult{}, err
 	}
+	defer runner.Processes.Clear(request.JobID)
 	inputURL, err := runner.Resolver.Resolve(ctx, request.ReleaseGroupID, request.SelectedRelease)
 	if err != nil {
 		if errors.Is(err, ErrNoLocator) {
@@ -64,6 +66,9 @@ func (runner Runner) Run(ctx context.Context, request RunRequest) (RunResult, er
 			result.Output = append([]OutputFile(nil), execution.Output...)
 			break
 		}
+		if execution.ErrorClass == "SUPERSEDED_CANCELLED" {
+			break
+		}
 		if !runner.now().Before(request.OverallDeadline) {
 			break
 		}
@@ -73,7 +78,7 @@ func (runner Runner) Run(ctx context.Context, request RunRequest) (RunResult, er
 }
 
 func (runner Runner) validateRequest(request RunRequest) error {
-	if runner.Resolver == nil || runner.Runtime.Installation.EnginePath == "" || runner.BaseOutputDirectory == "" || runner.RuntimeHome == "" {
+	if runner.Resolver == nil || runner.Processes == nil || runner.Runtime.Installation.EnginePath == "" || runner.BaseOutputDirectory == "" || runner.RuntimeHome == "" {
 		return fmt.Errorf("SpotiFLAC runner is not configured")
 	}
 	if runner.ProviderTimeout <= 0 || runner.PollInterval <= 0 || runner.TerminationGrace <= 0 || runner.OutputLimit <= 0 || runner.Concurrency != 2 {
@@ -126,6 +131,12 @@ func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputU
 	if err := command.Start(); err != nil {
 		return runner.failedExecution(execution, stdout, stderr, "PROCESS_START", err)
 	}
+	if err := runner.Processes.Track(request.JobID, command); err != nil {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		return runner.failedExecution(execution, stdout, stderr, "PROCESS_REGISTRY", err)
+	}
+	defer runner.Processes.Untrack(request.JobID, command)
 	waited := make(chan error, 1)
 	go func() { waited <- command.Wait() }()
 	establishmentDeadline := started.Add(runner.ProviderTimeout)
@@ -136,7 +147,7 @@ func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputU
 	for {
 		select {
 		case waitErr = <-waited:
-			return runner.completedExecution(execution, stdout, stderr, command, waitErr, established, request.OutputDirectory)
+			return runner.completedExecution(execution, stdout, stderr, command, waitErr, established, request.OutputDirectory, request.JobID)
 		case <-ctx.Done():
 			waitErr = terminateProcessGroup(command, waited, runner.TerminationGrace)
 			return runner.failedExecutionWithProcess(execution, stdout, stderr, command, "CANCELLED", errors.Join(ctx.Err(), waitErr))
@@ -160,7 +171,7 @@ func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputU
 	}
 }
 
-func (runner Runner) completedExecution(execution ProviderExecution, stdout, stderr *cappedBuffer, command *exec.Cmd, waitErr error, established bool, outputDirectory string) ProviderExecution {
+func (runner Runner) completedExecution(execution ProviderExecution, stdout, stderr *cappedBuffer, command *exec.Cmd, waitErr error, established bool, outputDirectory, jobID string) ProviderExecution {
 	completed := runner.now()
 	execution.CompletedAt = &completed
 	execution.Stdout = stdout.String()
@@ -177,6 +188,11 @@ func (runner Runner) completedExecution(execution ProviderExecution, stdout, std
 	}
 	if waitErr != nil || execution.ExitCode != 0 {
 		execution.Outcome = domain.OutcomeRetryableError
+		if runner.Processes.WasSuperseded(jobID) {
+			execution.ErrorClass = "SUPERSEDED_CANCELLED"
+			execution.ErrorMessage = "active fallback transfer cancelled after correlated primary grab"
+			return execution
+		}
 		execution.ErrorClass = "PROCESS_EXIT"
 		execution.ErrorMessage = fmt.Sprint(waitErr)
 		return execution

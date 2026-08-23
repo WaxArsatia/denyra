@@ -27,6 +27,9 @@ func (c Config) Validate() error {
 	if c.HTTP.ExternalResponseLimit <= 0 {
 		return fmt.Errorf("http.external_response_limit must be positive")
 	}
+	if c.HTTP.InternalReplayAttempts <= 0 {
+		return fmt.Errorf("http.internal_replay_attempts must be positive")
+	}
 	if c.Acquisition.LidarrPageSize <= 0 {
 		return fmt.Errorf("acquisition.lidarr_page_size must be positive")
 	}

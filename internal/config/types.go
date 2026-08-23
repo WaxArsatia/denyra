@@ -45,6 +45,7 @@ type HTTPConfig struct {
 	AdminMutationLimit     int64    `toml:"admin_mutation_limit" json:"admin_mutation_limit"`
 	ExternalRequestTimeout Duration `toml:"external_request_timeout" json:"external_request_timeout"`
 	ExternalResponseLimit  int64    `toml:"external_response_limit" json:"external_response_limit"`
+	InternalReplayAttempts int      `toml:"internal_replay_attempts" json:"internal_replay_attempts"`
 }
 
 type ServicesConfig struct {

@@ -4,15 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
 	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 	"github.com/waxarsatia/denyra/migrations"
-	"path/filepath"
-	"sync"
-	"testing"
-	"time"
 )
 
 const releaseGroupMBID = "12345678-1234-1234-1234-123456789abc"
@@ -95,7 +97,7 @@ func TestGatewayPersistenceCandidateImmutableAndWinnerRace(t *testing.T) {
 	job := createJob(t, r, now)
 	completed := now.Add(time.Minute)
 	for _, id := range []string{"candidate-a", "candidate-b"} {
-		if err := r.InsertCandidate(context.Background(), persistence.Candidate{ID: id, JobID: job.ID, Source: "slskd", SourceLocator: id, CompletedAt: &completed, Provenance: []byte(`{}`), ProvenanceSHA256: "hash-" + id, CreatedAt: now}); err != nil {
+		if err := r.InsertCandidate(context.Background(), persistence.Candidate{ID: id, JobID: job.ID, Source: "slskd", SourceLocator: id, CompletedAt: &completed, OutputSHA256: strings.Repeat("a", 64), OutputManifest: []byte(`[]`), Provenance: []byte(`{}`), ProvenanceSHA256: "hash-" + id, CreatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
 	}

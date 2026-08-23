@@ -12,5 +12,6 @@
     "source_confidence": 90,
     "bit_depth": 24,
     "sample_rate": 96000
-  }
+  },
+  "state_revision": 7
 }

@@ -23,12 +23,23 @@ func (a API) Handler() (http.Handler, error) {
 		return nil, errors.New("internal API body limit and bearer are required")
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /internal/candidates/register", a.register)
 	mux.HandleFunc("POST /internal/candidates", a.accept)
 	mux.HandleFunc("POST /internal/candidates/{candidateID}/winner", a.winner)
 	mux.HandleFunc("POST /internal/candidates/{candidateID}/supersede", a.supersede)
 	mux.HandleFunc("POST /internal/candidates/{candidateID}/cancel", a.cancel)
 	mux.HandleFunc("POST /internal/events/manual-discovery", a.manualDiscovery)
 	return httpx.RequestID(httpx.BearerAuth(a.Bearer, httpx.LimitBody(a.BodyLimit, httpx.RequireJSON(mux)))), nil
+}
+
+func (a API) register(w http.ResponseWriter, r *http.Request) {
+	var request contracts.CandidateRegistered
+	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "invalid pending candidate registration")
+		return
+	}
+	status, body, err := a.Service.Register(r.Context(), r.Header.Get("Idempotency-Key"), request)
+	a.respond(w, r, status, body, err)
 }
 
 func (a API) manualDiscovery(w http.ResponseWriter, r *http.Request) {

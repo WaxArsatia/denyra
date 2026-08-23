@@ -11,6 +11,7 @@ func Defaults() Config {
 			AdminMutationLimit:     256 << 10,
 			ExternalRequestTimeout: Duration(30 * time.Second),
 			ExternalResponseLimit:  8 << 20,
+			InternalReplayAttempts: 2,
 		},
 		Database: DatabaseConfig{
 			GatewayPath:    "/data/state/gateway/denyra.db",
