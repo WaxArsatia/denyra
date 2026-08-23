@@ -42,6 +42,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
 		t.Fatalf("unexpected internal service defaults: %+v", cfg.Services)
 	}
+	if cfg.Acquisition.LidarrPageSize != 100 {
+		t.Fatalf("unexpected Lidarr page size: %d", cfg.Acquisition.LidarrPageSize)
+	}
 	if got, want := durations(cfg.Acquisition.PrimaryRetry), []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}; !equalDurations(got, want) {
 		t.Fatalf("primary retry = %v, want %v", got, want)
 	}
@@ -85,6 +88,7 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"percent":      {toml: "[storage]\nminimum_free_percent = 101\n"},
 		"service URL":  {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
 		"response cap": {toml: "[http]\nexternal_response_limit = 0\n"},
+		"page size":    {toml: "[acquisition]\nlidarr_page_size = 0\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

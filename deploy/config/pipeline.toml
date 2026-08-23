@@ -18,6 +18,9 @@ lrclib_url = "https://lrclib.net"
 [database]
 pipeline_path = "/data/state/pipeline/denyra.db"
 
+[acquisition]
+lidarr_page_size = 100
+
 [sessions]
 bootstrap_username = "admin"
 

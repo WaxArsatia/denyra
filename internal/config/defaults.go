@@ -31,6 +31,7 @@ func Defaults() Config {
 			Library:            "/data/library",
 		},
 		Acquisition: AcquisitionConfig{
+			LidarrPageSize:       100,
 			AlbumSearchTimeout:   Duration(10 * time.Minute),
 			ReconciliationPoll:   Duration(2 * time.Second),
 			ReconciliationSafety: Duration(30 * time.Second),

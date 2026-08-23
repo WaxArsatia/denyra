@@ -75,6 +75,7 @@ type FilesystemConfig struct {
 }
 
 type AcquisitionConfig struct {
+	LidarrPageSize       int        `toml:"lidarr_page_size" json:"lidarr_page_size"`
 	AlbumSearchTimeout   Duration   `toml:"album_search_timeout" json:"album_search_timeout"`
 	ReconciliationPoll   Duration   `toml:"reconciliation_poll" json:"reconciliation_poll"`
 	ReconciliationSafety Duration   `toml:"reconciliation_safety" json:"reconciliation_safety"`

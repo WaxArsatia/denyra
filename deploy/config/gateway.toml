@@ -14,6 +14,9 @@ lrclib_url = "https://lrclib.net"
 [database]
 gateway_path = "/data/state/gateway/denyra.db"
 
+[acquisition]
+lidarr_page_size = 100
+
 [secrets.internal_bearer]
 source = "file"
 name = "/run/secrets/internal_bearer"

@@ -25,6 +25,9 @@ func (c Config) Validate() error {
 	if c.HTTP.ExternalResponseLimit <= 0 {
 		return fmt.Errorf("http.external_response_limit must be positive")
 	}
+	if c.Acquisition.LidarrPageSize <= 0 {
+		return fmt.Errorf("acquisition.lidarr_page_size must be positive")
+	}
 	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 			return fmt.Errorf("%s must be an HTTP URL", name)
