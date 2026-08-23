@@ -141,7 +141,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 		BuildInternalHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
 			repositories := persistence.New(prepared.DB, time.Now)
 			quality := transport.QualityCallbackAPI{Service: runtime.Worker.Arbitration, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value)}
-			return (transport.Routes{Quality: quality, Store: repositories, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), Notify: runtime.NotifyLidarr}).Handler()
+			return (transport.Routes{Quality: quality, Store: repositories, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), BackupRoot: filepath.Join(prepared.Config.Filesystem.DataRoot, "backups"), Notify: runtime.NotifyLidarr}).Handler()
 		},
 	})
 }

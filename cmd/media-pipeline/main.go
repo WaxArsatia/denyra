@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -118,7 +119,13 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				SourceRoots:          map[domain.Source]string{domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC, domain.SourceOther: prepared.Config.Filesystem.DownloadsOther, domain.SourceManual: prepared.Config.Filesystem.IncomingManual},
 				MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions,
 			}
-			worker := &application.Worker{Store: repositories, Processor: workflow, Admission: &application.AdmissionGate{DataRoot: prepared.Config.Filesystem.DataRoot, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}, Concurrency: prepared.Config.Concurrency.Validation, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline", Queue: make(chan string, prepared.Config.Concurrency.Validation*4), OnError: func(candidateID string, err error) {
+			admission := &application.AdmissionGate{DataRoot: prepared.Config.Filesystem.DataRoot, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}
+			var maintenanceEnabled int
+			if err := prepared.DB.QueryRowContext(ctx, `SELECT enabled FROM runtime_flags WHERE key='maintenance'`).Scan(&maintenanceEnabled); err != nil {
+				return err
+			}
+			admission.SetMaintenance(maintenanceEnabled == 1)
+			worker := &application.Worker{Store: repositories, Processor: workflow, Admission: admission, Concurrency: prepared.Config.Concurrency.Validation, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline", Queue: make(chan string, prepared.Config.Concurrency.Validation*4), OnError: func(candidateID string, err error) {
 				logger.Error("pipeline candidate failed", "candidate_id", candidateID, "error", err)
 			}}
 			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine}, Worker: worker}
@@ -162,7 +169,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC,
 				domain.SourceOther: prepared.Config.Filesystem.DownloadsOther,
 			}, OnAccepted: runtime.NotifyCandidate}
-			return (internalapi.API{Service: service, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), NotifyManualDiscovery: runtime.NotifyManualDiscovery}).Handler()
+			return (internalapi.API{Service: service, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), NotifyManualDiscovery: runtime.NotifyManualDiscovery, DB: prepared.DB, Admission: runtime.Worker.Admission, BackupRoot: filepath.Join(prepared.Config.Filesystem.DataRoot, "backups")}).Handler()
 		},
 	})
 }

@@ -221,6 +221,28 @@ services:
       test: ["CMD", "/app/navidrome", "--version"]
     restart: unless-stopped
 
+  restic:
+    image: docker.io/restic/restic:0.19.1@sha256:08916bcda4a4435f9d9828ebb4e91bb7ada3d2c8a53699788930e0ae1bd4fa67
+    platform: linux/amd64
+    profiles: ["backup"]
+    environment:
+      RESTIC_REPOSITORY: /repository
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+    secrets:
+      - restic_password
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}
+        target: /source
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/backups
+        target: /workspace
+      - type: bind
+        source: ${DENYRA_RESTIC_REPOSITORY_PATH:-/mnt/denyra-restic}
+        target: /repository
+    network_mode: none
+
 configs:
   gateway_config:
     file: ./config/gateway.toml

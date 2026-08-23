@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	sqlite3 "github.com/mattn/go-sqlite3"
 )
@@ -80,4 +81,30 @@ func Backup(ctx context.Context, source *sql.DB, targetPath string) error {
 			return nil
 		})
 	})
+}
+
+// ValidateBackupTarget requires a non-existing path beneath an existing
+// canonical backup root. It rejects traversal and symlinked parent directories.
+func ValidateBackupTarget(rootPath, targetPath string) error {
+	if !filepath.IsAbs(rootPath) || !filepath.IsAbs(targetPath) {
+		return fmt.Errorf("backup root and target must be absolute")
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(filepath.Clean(rootPath))
+	if err != nil {
+		return fmt.Errorf("canonicalize backup root: %w", err)
+	}
+	canonicalParent, err := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(targetPath)))
+	if err != nil {
+		return fmt.Errorf("canonicalize backup parent: %w", err)
+	}
+	relative, err := filepath.Rel(canonicalRoot, filepath.Join(canonicalParent, filepath.Base(targetPath)))
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("backup target escapes backup root")
+	}
+	if _, err := os.Lstat(targetPath); err == nil {
+		return fmt.Errorf("backup target already exists")
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect backup target: %w", err)
+	}
+	return nil
 }
