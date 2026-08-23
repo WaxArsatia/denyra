@@ -1,0 +1,33 @@
+[http]
+admin_address = "0.0.0.0:8090"
+internal_address = "172.30.0.3:8081"
+internal_body_limit = 1048576
+admin_mutation_limit = 262144
+
+[acquisition]
+album_search_timeout = "10m"
+reconciliation_poll = "2s"
+reconciliation_safety = "30s"
+primary_grace_window = "60s"
+provider_timeout = "180s"
+overall_timeout = "6h"
+no_candidate_retry = "24h"
+primary_retry = ["1m", "5m", "15m", "60m", "6h"]
+fallback_retry = ["5m", "15m", "60m", "6h"]
+
+[arbitration]
+window = "30m"
+
+[sessions]
+absolute_expiry = "720h"
+password_min_length = 8
+
+[scanners]
+recovery_interval = "30s"
+stability_interval = "10s"
+navidrome_schedule = "1m"
+navidrome_watcher = "5s"
+
+[storage]
+minimum_free_bytes = 21474836480
+minimum_free_percent = 5.0
