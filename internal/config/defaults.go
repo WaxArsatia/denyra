@@ -40,14 +40,10 @@ func Defaults() Config {
 			FallbackRetry:        []Duration{Duration(5 * time.Minute), Duration(15 * time.Minute), Duration(time.Hour), Duration(6 * time.Hour)},
 		},
 		Validation: ValidationConfig{
-			TrackAutoFloorMS:     5_000,
-			TrackAutoPercent:     2,
-			TrackManualFloorMS:   15_000,
-			TrackManualPercent:   5,
-			ReleaseAutoFloorMS:   30_000,
-			ReleaseAutoPercent:   1,
-			ReleaseManualFloorMS: 90_000,
-			ReleaseManualPercent: 3,
+			TrackAutoFloorMS: 5_000, TrackAutoPercentBasisPoints: 200,
+			TrackManualFloorMS: 15_000, TrackManualPercentBasisPoints: 500,
+			ReleaseAutoFloorMS: 30_000, ReleaseAutoPercentBasisPoints: 100,
+			ReleaseManualFloorMS: 90_000, ReleaseManualPercentBasisPoints: 300,
 		},
 		Arbitration: ArbitrationConfig{Window: Duration(30 * time.Minute)},
 		Sessions: SessionConfig{

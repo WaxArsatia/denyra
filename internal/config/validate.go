@@ -41,6 +41,25 @@ func (c Config) Validate() error {
 	if c.Sessions.PasswordMinLen < 8 {
 		return fmt.Errorf("sessions.password_min_length must be at least 8")
 	}
+	validationValues := map[string]int64{
+		"validation.track_auto_floor_ms":                 c.Validation.TrackAutoFloorMS,
+		"validation.track_auto_percent_basis_points":     c.Validation.TrackAutoPercentBasisPoints,
+		"validation.track_manual_floor_ms":               c.Validation.TrackManualFloorMS,
+		"validation.track_manual_percent_basis_points":   c.Validation.TrackManualPercentBasisPoints,
+		"validation.release_auto_floor_ms":               c.Validation.ReleaseAutoFloorMS,
+		"validation.release_auto_percent_basis_points":   c.Validation.ReleaseAutoPercentBasisPoints,
+		"validation.release_manual_floor_ms":             c.Validation.ReleaseManualFloorMS,
+		"validation.release_manual_percent_basis_points": c.Validation.ReleaseManualPercentBasisPoints,
+	}
+	for name, value := range validationValues {
+		if value <= 0 {
+			return fmt.Errorf("%s must be positive", name)
+		}
+	}
+	if c.Validation.TrackManualFloorMS < c.Validation.TrackAutoFloorMS || c.Validation.TrackManualPercentBasisPoints < c.Validation.TrackAutoPercentBasisPoints ||
+		c.Validation.ReleaseManualFloorMS < c.Validation.ReleaseAutoFloorMS || c.Validation.ReleaseManualPercentBasisPoints < c.Validation.ReleaseAutoPercentBasisPoints {
+		return fmt.Errorf("validation manual thresholds must not be lower than auto thresholds")
+	}
 	paths := []string{c.Filesystem.DownloadsSlskd, c.Filesystem.DownloadsSpotiFLAC, c.Filesystem.DownloadsOther, c.Filesystem.IncomingManual, c.Filesystem.Work, c.Filesystem.Approved, c.Filesystem.Quarantine, c.Filesystem.Library}
 	cleaned := make([]string, 0, len(paths))
 	for _, path := range paths {

@@ -77,14 +77,14 @@ type AcquisitionConfig struct {
 }
 
 type ValidationConfig struct {
-	TrackAutoFloorMS     int64   `toml:"track_auto_floor_ms" json:"track_auto_floor_ms"`
-	TrackAutoPercent     float64 `toml:"track_auto_percent" json:"track_auto_percent"`
-	TrackManualFloorMS   int64   `toml:"track_manual_floor_ms" json:"track_manual_floor_ms"`
-	TrackManualPercent   float64 `toml:"track_manual_percent" json:"track_manual_percent"`
-	ReleaseAutoFloorMS   int64   `toml:"release_auto_floor_ms" json:"release_auto_floor_ms"`
-	ReleaseAutoPercent   float64 `toml:"release_auto_percent" json:"release_auto_percent"`
-	ReleaseManualFloorMS int64   `toml:"release_manual_floor_ms" json:"release_manual_floor_ms"`
-	ReleaseManualPercent float64 `toml:"release_manual_percent" json:"release_manual_percent"`
+	TrackAutoFloorMS                int64 `toml:"track_auto_floor_ms" json:"track_auto_floor_ms"`
+	TrackAutoPercentBasisPoints     int64 `toml:"track_auto_percent_basis_points" json:"track_auto_percent_basis_points"`
+	TrackManualFloorMS              int64 `toml:"track_manual_floor_ms" json:"track_manual_floor_ms"`
+	TrackManualPercentBasisPoints   int64 `toml:"track_manual_percent_basis_points" json:"track_manual_percent_basis_points"`
+	ReleaseAutoFloorMS              int64 `toml:"release_auto_floor_ms" json:"release_auto_floor_ms"`
+	ReleaseAutoPercentBasisPoints   int64 `toml:"release_auto_percent_basis_points" json:"release_auto_percent_basis_points"`
+	ReleaseManualFloorMS            int64 `toml:"release_manual_floor_ms" json:"release_manual_floor_ms"`
+	ReleaseManualPercentBasisPoints int64 `toml:"release_manual_percent_basis_points" json:"release_manual_percent_basis_points"`
 }
 
 type ArbitrationConfig struct {

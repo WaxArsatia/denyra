@@ -27,19 +27,6 @@ type CommandEvidence struct {
 	Truncated  bool          `json:"truncated"`
 }
 
-type WarningKind string
-
-const (
-	WarningQuality     WarningKind = "QUALITY_WARNING"
-	WarningNonBlocking WarningKind = "NON_BLOCKING_WARNING"
-)
-
-type Warning struct {
-	Kind    WarningKind `json:"kind"`
-	Code    string      `json:"code"`
-	Details string      `json:"details"`
-}
-
 type FileTechnicalEvidence struct {
 	RelativePath     string              `json:"relative_path"`
 	SHA256Before     string              `json:"sha256_before"`
