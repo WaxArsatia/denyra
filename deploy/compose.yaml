@@ -1,0 +1,259 @@
+name: denyra
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
+services:
+  acquisition-gateway:
+    image: docker.io/denyra/acquisition-gateway:local@sha256:9ab66c3e6e8ad097f49dfaa808ba99b7545503b491ae4fd9a6a55f81b4518a63
+    platform: linux/amd64
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    command: ["--config", "/etc/denyra/config.toml"]
+    environment:
+      DENYRA_HTTP_ADMIN_ADDRESS: 127.0.0.1:8090
+      DENYRA_HTTP_INTERNAL_ADDRESS: ${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}:8081
+    configs:
+      - source: gateway_config
+        target: /etc/denyra/config.toml
+    secrets:
+      - internal_bearer
+      - audit_key
+      - lidarr_api_key
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/downloads/spotiflac
+        target: /data/downloads/spotiflac
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/gateway
+        target: /data/state/gateway
+    networks:
+      denyra-control:
+        ipv4_address: ${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}
+      denyra-acquisition: {}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "/app/acquisition-gateway", "healthcheck", "--address", "${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}:8081"]
+    restart: unless-stopped
+
+  media-pipeline:
+    image: docker.io/denyra/media-pipeline:local@sha256:c616264f524efdf614d1b652a1b6a65033fd0ab00bab7069684124e46c7e4f5d
+    platform: linux/amd64
+    user: "10002:10002"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    command: ["--config", "/etc/denyra/config.toml"]
+    environment:
+      DENYRA_HTTP_ADMIN_ADDRESS: 0.0.0.0:8090
+      DENYRA_HTTP_INTERNAL_ADDRESS: ${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}:8081
+    configs:
+      - source: pipeline_config
+        target: /etc/denyra/config.toml
+    secrets:
+      - internal_bearer
+      - audit_key
+      - lidarr_api_key
+      - bootstrap_admin
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/downloads/slskd
+        target: /data/downloads/slskd
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/downloads/spotiflac
+        target: /data/downloads/spotiflac
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/downloads/other
+        target: /data/downloads/other
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/incoming/manual
+        target: /data/incoming/manual
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/processing/work
+        target: /data/processing/work
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/processing/approved
+        target: /data/processing/approved
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/quarantine
+        target: /data/quarantine
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library
+        target: /data/library
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/pipeline
+        target: /data/state/pipeline
+    networks:
+      denyra-control:
+        ipv4_address: ${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}
+      denyra-import: {}
+    ports:
+      - name: admin-http
+        target: 8090
+        published: "${DENYRA_ADMIN_HOST_PORT:-8090}"
+        protocol: tcp
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}:8081"]
+    restart: unless-stopped
+
+  lidarr:
+    image: docker.io/denyra/lidarr:local@sha256:a6a7b287657d71798092aa72821ab903e43a5ddfa2168d61a18bfd2ccb582dbe
+    platform: linux/amd64
+    environment:
+      PUID: "${DENYRA_MEDIA_UID:-1000}"
+      PGID: "${DENYRA_MEDIA_GID:-1000}"
+      TZ: UTC
+    secrets:
+      - lidarr_api_key
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/lidarr
+        target: /config
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/processing/approved
+        target: /data/processing/approved
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library
+        target: /data/library
+    networks:
+      denyra-acquisition: {}
+      denyra-import: {}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8686/ping >/dev/null || exit 1"]
+    restart: unless-stopped
+
+  slskd:
+    image: ghcr.io/slskd/slskd:0.26.0@sha256:161e214a05b51404f6bb6ddd7e60b66ff674a2d8ad28a88dae5b3c1caf9c8c48
+    platform: linux/amd64
+    user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
+    secrets:
+      - soulseek_username
+      - soulseek_password
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/slskd
+        target: /app
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/downloads/slskd
+        target: /data/downloads/slskd
+    networks:
+      denyra-acquisition: {}
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5030/health || exit 1"]
+    restart: unless-stopped
+
+  sftpgo:
+    image: docker.io/drakkan/sftpgo:v2.7.5@sha256:d819bcea946470940416b63604f820aee965a02127b07126785e279fa311258e
+    platform: linux/amd64
+    user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
+    environment:
+      SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN: "false"
+    secrets:
+      - sftpgo_admin_username
+      - sftpgo_admin_password
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/sftpgo
+        target: /var/lib/sftpgo
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/incoming/manual
+        target: /data/incoming/manual
+    networks:
+      denyra-upload: {}
+    ports:
+      - name: sftp
+        target: 2022
+        published: "${DENYRA_SFTP_HOST_PORT:-2022}"
+        protocol: tcp
+      - name: web-admin
+        target: 8080
+        published: "${DENYRA_SFTPGO_WEB_HOST_PORT:-8080}"
+        protocol: tcp
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+    restart: unless-stopped
+
+  navidrome:
+    image: docker.io/denyra/navidrome:local@sha256:7568a00f04bca83ad59714362e91bd8247676af6e0adf16886587449599d8dca
+    platform: linux/amd64
+    user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    environment:
+      ND_MUSICFOLDER: /music
+      ND_DATAFOLDER: /data
+      ND_PLUGINSFOLDER: /plugins
+      ND_SCANNER_SCHEDULE: 1m
+      ND_SCANNER_WATCHERWAIT: 5s
+    volumes:
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library
+        target: /music
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/state/navidrome
+        target: /data
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/cache/navidrome
+        target: /cache
+    networks:
+      denyra-playback: {}
+    ports:
+      - name: open-subsonic
+        target: 4533
+        published: "${DENYRA_NAVIDROME_HOST_PORT:-4533}"
+        protocol: tcp
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "/app/navidrome", "--version"]
+    restart: unless-stopped
+
+configs:
+  gateway_config:
+    file: ./config/gateway.toml
+  pipeline_config:
+    file: ./config/pipeline.toml
+
+secrets:
+  internal_bearer:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/internal_bearer
+  audit_key:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/audit_key
+  bootstrap_admin:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/bootstrap_admin
+  lidarr_api_key:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/lidarr_api_key
+  soulseek_username:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_username
+  soulseek_password:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_password
+  sftpgo_admin_username:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_admin_username
+  sftpgo_admin_password:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_admin_password
+  restic_repository:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/restic_repository
+  restic_password:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/restic_password
+
+networks:
+  denyra-control:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${DENYRA_CONTROL_SUBNET:-172.30.0.0/24}
+  denyra-acquisition: {}
+  denyra-import: {}
+  denyra-upload: {}
+  denyra-playback: {}

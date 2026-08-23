@@ -1,0 +1,23 @@
+# Accepted risk: the Admin UI intentionally binds HTTP to every interface.
+# Its session cookie is HttpOnly, SameSite=Strict, Path=/, and has no Secure
+# attribute. Limit reachability with host publishing rules and the firewall.
+[http]
+admin_address = "0.0.0.0:8090"
+internal_address = "172.30.0.3:8081"
+internal_body_limit = 1048576
+admin_mutation_limit = 262144
+
+[database]
+pipeline_path = "/data/state/pipeline/denyra.db"
+
+[secrets.internal_bearer]
+source = "file"
+name = "/run/secrets/internal_bearer"
+
+[secrets.audit_key]
+source = "file"
+name = "/run/secrets/audit_key"
+
+[secrets.lidarr_api_key]
+source = "file"
+name = "/run/secrets/lidarr_api_key"

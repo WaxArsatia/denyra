@@ -1,0 +1,25 @@
+{
+  "dependencies_lock_sha256": "cd7c701e37586a450e0c16193c5b21571d615651d936a8a95cb8d32d18bdfbf0",
+  "images": [
+    {
+      "id": "acquisition-gateway",
+      "reference": "docker.io/denyra/acquisition-gateway:local@sha256:9ab66c3e6e8ad097f49dfaa808ba99b7545503b491ae4fd9a6a55f81b4518a63",
+      "platform": "linux/amd64"
+    },
+    {
+      "id": "lidarr-derived",
+      "reference": "docker.io/denyra/lidarr:local@sha256:a6a7b287657d71798092aa72821ab903e43a5ddfa2168d61a18bfd2ccb582dbe",
+      "platform": "linux/amd64"
+    },
+    {
+      "id": "media-pipeline",
+      "reference": "docker.io/denyra/media-pipeline:local@sha256:c616264f524efdf614d1b652a1b6a65033fd0ab00bab7069684124e46c7e4f5d",
+      "platform": "linux/amd64"
+    },
+    {
+      "id": "navidrome-derived",
+      "reference": "docker.io/denyra/navidrome:local@sha256:7568a00f04bca83ad59714362e91bd8247676af6e0adf16886587449599d8dca",
+      "platform": "linux/amd64"
+    }
+  ]
+}

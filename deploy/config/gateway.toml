@@ -1,0 +1,19 @@
+[http]
+admin_address = "127.0.0.1:8090"
+internal_address = "172.30.0.2:8081"
+internal_body_limit = 1048576
+
+[database]
+gateway_path = "/data/state/gateway/denyra.db"
+
+[secrets.internal_bearer]
+source = "file"
+name = "/run/secrets/internal_bearer"
+
+[secrets.audit_key]
+source = "file"
+name = "/run/secrets/audit_key"
+
+[secrets.lidarr_api_key]
+source = "file"
+name = "/run/secrets/lidarr_api_key"
