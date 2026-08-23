@@ -49,6 +49,9 @@ type MutationService struct {
 }
 
 func (s MutationService) MutateRelease(ctx context.Context, candidateID string, plans map[string]domain.TagSet) (MutationResult, error) {
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return MutationResult{}, err
+	}
 	workPath := filepath.Join(s.WorkRoot, candidateID)
 	result := MutationResult{Path: workPath}
 	paths := make([]string, 0, len(plans))

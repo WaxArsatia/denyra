@@ -3,9 +3,19 @@ package domain
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var candidateIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+func ValidateCandidateID(value string) error {
+	if !candidateIDPattern.MatchString(value) {
+		return fmt.Errorf("candidate ID must use 1..128 URL-safe characters")
+	}
+	return nil
+}
 
 type Source string
 
@@ -49,7 +59,10 @@ type NewCandidate struct {
 }
 
 func CreateCandidate(input NewCandidate) (Candidate, error) {
-	if strings.TrimSpace(input.ID) == "" || strings.TrimSpace(input.ConfigSnapshotID) == "" || strings.TrimSpace(input.AcquisitionEvidenceID) == "" {
+	if err := ValidateCandidateID(input.ID); err != nil {
+		return Candidate{}, err
+	}
+	if strings.TrimSpace(input.ConfigSnapshotID) == "" || strings.TrimSpace(input.AcquisitionEvidenceID) == "" {
 		return Candidate{}, fmt.Errorf("candidate ID, config snapshot, and acquisition evidence are required")
 	}
 	if !input.Source.Valid() {

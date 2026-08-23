@@ -42,7 +42,10 @@ type ClaimResult struct {
 }
 
 func (s ClaimService) Claim(ctx context.Context, candidateID string, evidence CompletionEvidence) (ClaimResult, error) {
-	if candidateID == "" || evidence.ID == "" || !evidence.Source.Valid() || evidence.CompletedAt.IsZero() {
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return ClaimResult{}, err
+	}
+	if evidence.ID == "" || !evidence.Source.Valid() || evidence.CompletedAt.IsZero() {
 		return ClaimResult{}, fmt.Errorf("durable completion evidence is incomplete")
 	}
 	if err := validateContainedPath(evidence.SourceRoot, evidence.CompletedPath); err != nil {

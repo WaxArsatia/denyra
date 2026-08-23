@@ -50,6 +50,9 @@ type EnrichmentService struct {
 
 func (s EnrichmentService) Enrich(ctx context.Context, candidateID, releaseMBID string, tracks []EnrichmentTrack) (EnrichmentResult, error) {
 	result := EnrichmentResult{}
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return result, err
+	}
 	if s.Lyrics == nil {
 		return result, fmt.Errorf("lyrics provider is not configured")
 	}

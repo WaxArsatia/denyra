@@ -25,6 +25,9 @@ type MatchingDecision struct {
 }
 
 func (s MatchingService) Evaluate(candidateID, explicitReleaseMBID string, release domain.CanonicalRelease, tracks []domain.CandidateTrack) (MatchingDecision, error) {
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return MatchingDecision{}, err
+	}
 	match, err := domain.MatchRelease(s.DurationPolicy, explicitReleaseMBID, release, tracks)
 	if err != nil {
 		return s.quarantine(candidateID, domain.StateReviewRequired, "ambiguous or inconsistent release match: "+err.Error(), domain.ReleaseMatch{})
@@ -42,6 +45,9 @@ func (s MatchingService) Evaluate(candidateID, explicitReleaseMBID string, relea
 }
 
 func (s MatchingService) ApproveReview(candidateID, targetReleaseMBID, reason string) (string, error) {
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return "", err
+	}
 	if _, err := domain.CanonicalMBID(targetReleaseMBID); err != nil {
 		return "", err
 	}
