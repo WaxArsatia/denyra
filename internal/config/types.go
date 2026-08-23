@@ -75,16 +75,19 @@ type FilesystemConfig struct {
 }
 
 type AcquisitionConfig struct {
-	LidarrPageSize       int        `toml:"lidarr_page_size" json:"lidarr_page_size"`
-	AlbumSearchTimeout   Duration   `toml:"album_search_timeout" json:"album_search_timeout"`
-	ReconciliationPoll   Duration   `toml:"reconciliation_poll" json:"reconciliation_poll"`
-	ReconciliationSafety Duration   `toml:"reconciliation_safety" json:"reconciliation_safety"`
-	PrimaryGraceWindow   Duration   `toml:"primary_grace_window" json:"primary_grace_window"`
-	ProviderTimeout      Duration   `toml:"provider_timeout" json:"provider_timeout"`
-	OverallTimeout       Duration   `toml:"overall_timeout" json:"overall_timeout"`
-	NoCandidateRetry     Duration   `toml:"no_candidate_retry" json:"no_candidate_retry"`
-	PrimaryRetry         []Duration `toml:"primary_retry" json:"primary_retry"`
-	FallbackRetry        []Duration `toml:"fallback_retry" json:"fallback_retry"`
+	LidarrPageSize        int        `toml:"lidarr_page_size" json:"lidarr_page_size"`
+	AlbumSearchTimeout    Duration   `toml:"album_search_timeout" json:"album_search_timeout"`
+	ReconciliationPoll    Duration   `toml:"reconciliation_poll" json:"reconciliation_poll"`
+	ReconciliationSafety  Duration   `toml:"reconciliation_safety" json:"reconciliation_safety"`
+	PrimaryGraceWindow    Duration   `toml:"primary_grace_window" json:"primary_grace_window"`
+	ProviderTimeout       Duration   `toml:"provider_timeout" json:"provider_timeout"`
+	OverallTimeout        Duration   `toml:"overall_timeout" json:"overall_timeout"`
+	ProcessPollInterval   Duration   `toml:"process_poll_interval" json:"process_poll_interval"`
+	ProcessTerminateGrace Duration   `toml:"process_terminate_grace" json:"process_terminate_grace"`
+	ProcessOutputLimit    int64      `toml:"process_output_limit" json:"process_output_limit"`
+	NoCandidateRetry      Duration   `toml:"no_candidate_retry" json:"no_candidate_retry"`
+	PrimaryRetry          []Duration `toml:"primary_retry" json:"primary_retry"`
+	FallbackRetry         []Duration `toml:"fallback_retry" json:"fallback_retry"`
 }
 
 type ValidationConfig struct {

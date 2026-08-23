@@ -16,6 +16,7 @@ type Job struct {
 	FallbackAttempt      int
 	ConfigSnapshotID     string
 	NextRetryAt          *time.Time
+	OverallDeadline      *time.Time
 	CreatedAt, UpdatedAt time.Time
 }
 type Transition struct {

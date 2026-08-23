@@ -10,23 +10,28 @@ import (
 
 func (c Config) Validate() error {
 	positiveDurations := map[string]Duration{
-		"database.busy_timeout":            c.Database.BusyTimeout,
-		"acquisition.album_search_timeout": c.Acquisition.AlbumSearchTimeout,
-		"acquisition.reconciliation_poll":  c.Acquisition.ReconciliationPoll,
-		"acquisition.primary_grace_window": c.Acquisition.PrimaryGraceWindow,
-		"acquisition.provider_timeout":     c.Acquisition.ProviderTimeout,
-		"acquisition.overall_timeout":      c.Acquisition.OverallTimeout,
-		"arbitration.window":               c.Arbitration.Window,
-		"sessions.absolute_expiry":         c.Sessions.AbsoluteExpiry,
-		"scanners.recovery_interval":       c.Scanners.RecoveryInterval,
-		"scanners.stability_interval":      c.Scanners.StabilityInterval,
-		"http.external_request_timeout":    c.HTTP.ExternalRequestTimeout,
+		"database.busy_timeout":               c.Database.BusyTimeout,
+		"acquisition.album_search_timeout":    c.Acquisition.AlbumSearchTimeout,
+		"acquisition.reconciliation_poll":     c.Acquisition.ReconciliationPoll,
+		"acquisition.primary_grace_window":    c.Acquisition.PrimaryGraceWindow,
+		"acquisition.provider_timeout":        c.Acquisition.ProviderTimeout,
+		"acquisition.overall_timeout":         c.Acquisition.OverallTimeout,
+		"acquisition.process_poll_interval":   c.Acquisition.ProcessPollInterval,
+		"acquisition.process_terminate_grace": c.Acquisition.ProcessTerminateGrace,
+		"arbitration.window":                  c.Arbitration.Window,
+		"sessions.absolute_expiry":            c.Sessions.AbsoluteExpiry,
+		"scanners.recovery_interval":          c.Scanners.RecoveryInterval,
+		"scanners.stability_interval":         c.Scanners.StabilityInterval,
+		"http.external_request_timeout":       c.HTTP.ExternalRequestTimeout,
 	}
 	if c.HTTP.ExternalResponseLimit <= 0 {
 		return fmt.Errorf("http.external_response_limit must be positive")
 	}
 	if c.Acquisition.LidarrPageSize <= 0 {
 		return fmt.Errorf("acquisition.lidarr_page_size must be positive")
+	}
+	if c.Acquisition.ProcessOutputLimit <= 0 {
+		return fmt.Errorf("acquisition.process_output_limit must be positive")
 	}
 	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {

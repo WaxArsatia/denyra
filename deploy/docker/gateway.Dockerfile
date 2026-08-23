@@ -25,12 +25,18 @@ RUN mkdir -p /opt/node && tar -C /opt/node --strip-components=1 -xJf /tmp/node.t
 ADD --checksum=sha256:c008b5b59999f6f740d3f8e0290ce5fe18220dcd736aa903469e5b0ac062334a \
     https://github.com/BartolomeoRusso9/SpotiFLAC-Module-Version/releases/download/v3.0.8/SpotiFLAC-Linux-x86_64 /opt/spotiflac/spotiflac
 ADD --checksum=sha256:0d59043bab8229b5fd5664bc144aee25bfd3e6d031832cdce48b9d9ccef5ed22 \
-    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/tidal-web.sflx /opt/spotiflac/extensions/tidal-web.sflx
+    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/tidal-web.sflx /opt/spotiflac/artifacts/tidal-web.sflx
 ADD --checksum=sha256:9e6d14dc37623eed9ac6326c321b17fd802c36e907476f3068f7fcbe14d79f93 \
-    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/qobuz-web.sflx /opt/spotiflac/extensions/qobuz-web.sflx
+    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/qobuz-web.sflx /opt/spotiflac/artifacts/qobuz-web.sflx
 ADD --checksum=sha256:dfead5b50889d2855b4409c6796421ccb35ffd3cac1e002498924e9a7c5446b3 \
-    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/deezer.sflx /opt/spotiflac/extensions/deezer.sflx
-RUN chmod 0555 /opt/spotiflac/spotiflac && chmod 0444 /opt/spotiflac/extensions/*.sflx
+    https://raw.githubusercontent.com/spotiflacapp/SpotiFLAC-Extension/8fc37551ead10683d7ab54cb4155dc5cca4948e6/extensions/deezer.sflx /opt/spotiflac/artifacts/deezer.sflx
+RUN chmod 0555 /opt/spotiflac/spotiflac && chmod 0444 /opt/spotiflac/artifacts/*.sflx
+
+FROM go-builder AS extension-installer
+COPY --from=provider-runtime /opt/spotiflac /opt/spotiflac
+RUN go run ./scripts/extract-sflx -source /opt/spotiflac/artifacts/tidal-web.sflx -destination /opt/spotiflac/runtime-home/.spotiflac/extensions/tidal-web \
+    && go run ./scripts/extract-sflx -source /opt/spotiflac/artifacts/qobuz-web.sflx -destination /opt/spotiflac/runtime-home/.spotiflac/extensions/qobuz-web \
+    && go run ./scripts/extract-sflx -source /opt/spotiflac/artifacts/deezer.sflx -destination /opt/spotiflac/runtime-home/.spotiflac/extensions/deezer
 
 FROM docker.io/library/debian:13.6-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258
 COPY deploy/docker/debian.sources /etc/apt/sources.list.d/debian.sources
@@ -39,13 +45,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && groupadd --gid 1000 denyra && useradd --uid 1000 --gid 1000 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
 COPY --from=go-builder /out/acquisition-gateway /app/acquisition-gateway
 COPY --from=provider-runtime /opt/node /opt/node
-COPY --from=provider-runtime /opt/spotiflac /opt/spotiflac
+COPY --from=extension-installer /opt/spotiflac /opt/spotiflac
 COPY --chmod=0444 deploy/docker/generated/gateway-build-provenance.json /app/build-provenance.json
 COPY --chmod=0444 dependencies.lock.json /app/dependencies.lock.json
-ENV PATH=/opt/node/bin:$PATH \
+RUN mkdir -p /opt/spotiflac/runtime-home/.cache/spotiflac /opt/spotiflac/runtime-home/.spotiflac/signed_sessions \
+    && chown -R 1000:1000 /opt/spotiflac/runtime-home/.cache /opt/spotiflac/runtime-home/.spotiflac/signed_sessions \
+    && chmod -R a-w /opt/spotiflac/artifacts /opt/spotiflac/runtime-home/.spotiflac/extensions
+ENV HOME=/opt/spotiflac/runtime-home \
+    PATH=/opt/node/bin:$PATH \
     SPOTIFLAC_DISABLE_AUTO_INSTALL=1 \
     SPOTIFLAC_DISABLE_AUTO_UPDATE=1 \
-    SPOTIFLAC_EXTENSION_DIR=/opt/spotiflac/extensions
+    SPOTIFLAC_CACHE_DIR=/opt/spotiflac/runtime-home/.cache/spotiflac \
+    SPOTIFLAC_REGISTRIES=" "
 LABEL org.opencontainers.image.title="Denyra Acquisition Gateway" org.opencontainers.image.version="3.0.8-provider-set"
 USER 1000:1000
 ENTRYPOINT ["/app/acquisition-gateway"]

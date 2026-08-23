@@ -20,13 +20,15 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 		got  time.Duration
 		want time.Duration
 	}{
-		"scanner recovery": {time.Duration(cfg.Scanners.RecoveryInterval), 30 * time.Second},
-		"stability":        {time.Duration(cfg.Scanners.StabilityInterval), 10 * time.Second},
-		"album search":     {time.Duration(cfg.Acquisition.AlbumSearchTimeout), 10 * time.Minute},
-		"poll":             {time.Duration(cfg.Acquisition.ReconciliationPoll), 2 * time.Second},
-		"primary grace":    {time.Duration(cfg.Acquisition.PrimaryGraceWindow), time.Minute},
-		"arbitration":      {time.Duration(cfg.Arbitration.Window), 30 * time.Minute},
-		"session expiry":   {time.Duration(cfg.Sessions.AbsoluteExpiry), 30 * 24 * time.Hour},
+		"scanner recovery":  {time.Duration(cfg.Scanners.RecoveryInterval), 30 * time.Second},
+		"stability":         {time.Duration(cfg.Scanners.StabilityInterval), 10 * time.Second},
+		"album search":      {time.Duration(cfg.Acquisition.AlbumSearchTimeout), 10 * time.Minute},
+		"poll":              {time.Duration(cfg.Acquisition.ReconciliationPoll), 2 * time.Second},
+		"primary grace":     {time.Duration(cfg.Acquisition.PrimaryGraceWindow), time.Minute},
+		"process poll":      {time.Duration(cfg.Acquisition.ProcessPollInterval), 250 * time.Millisecond},
+		"process terminate": {time.Duration(cfg.Acquisition.ProcessTerminateGrace), 5 * time.Second},
+		"arbitration":       {time.Duration(cfg.Arbitration.Window), 30 * time.Minute},
+		"session expiry":    {time.Duration(cfg.Sessions.AbsoluteExpiry), 30 * 24 * time.Hour},
 	}
 	for name, check := range checks {
 		if check.got != check.want {
@@ -44,6 +46,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	}
 	if cfg.Acquisition.LidarrPageSize != 100 {
 		t.Fatalf("unexpected Lidarr page size: %d", cfg.Acquisition.LidarrPageSize)
+	}
+	if cfg.Acquisition.ProcessOutputLimit != 4<<20 {
+		t.Fatalf("unexpected process output limit: %d", cfg.Acquisition.ProcessOutputLimit)
 	}
 	if got, want := durations(cfg.Acquisition.PrimaryRetry), []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}; !equalDurations(got, want) {
 		t.Fatalf("primary retry = %v, want %v", got, want)
@@ -81,14 +86,15 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		toml string
 		env  []string
 	}{
-		"unknown TOML": {toml: "mystery = true\n"},
-		"unknown env":  {env: []string{"DENYRA_MYSTERY=true"}},
-		"invalid unit": {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
-		"negative":     {toml: "[storage]\nminimum_free_bytes = -1\n"},
-		"percent":      {toml: "[storage]\nminimum_free_percent = 101\n"},
-		"service URL":  {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
-		"response cap": {toml: "[http]\nexternal_response_limit = 0\n"},
-		"page size":    {toml: "[acquisition]\nlidarr_page_size = 0\n"},
+		"unknown TOML":   {toml: "mystery = true\n"},
+		"unknown env":    {env: []string{"DENYRA_MYSTERY=true"}},
+		"invalid unit":   {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
+		"negative":       {toml: "[storage]\nminimum_free_bytes = -1\n"},
+		"percent":        {toml: "[storage]\nminimum_free_percent = 101\n"},
+		"service URL":    {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
+		"response cap":   {toml: "[http]\nexternal_response_limit = 0\n"},
+		"page size":      {toml: "[acquisition]\nlidarr_page_size = 0\n"},
+		"process output": {toml: "[acquisition]\nprocess_output_limit = 0\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

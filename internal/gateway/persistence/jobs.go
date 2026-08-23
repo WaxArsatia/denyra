@@ -58,8 +58,8 @@ type rowQuery interface {
 func jobQuery(ctx context.Context, q rowQuery, id string) (domain.Job, error) {
 	var job domain.Job
 	var state, created, updated string
-	var selected, next sql.NullString
-	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,primary_attempt,fallback_attempt,next_retry_at,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.ConfigSnapshotID, &state, &job.Revision, &job.PrimaryAttempt, &job.FallbackAttempt, &next, &created, &updated)
+	var selected, next, overall sql.NullString
+	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,primary_attempt,fallback_attempt,next_retry_at,overall_deadline,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.ConfigSnapshotID, &state, &job.Revision, &job.PrimaryAttempt, &job.FallbackAttempt, &next, &overall, &created, &updated)
 	if err != nil {
 		return job, err
 	}
@@ -76,6 +76,11 @@ func jobQuery(ctx context.Context, q rowQuery, id string) (domain.Job, error) {
 		value, parseErr := time.Parse(time.RFC3339Nano, next.String)
 		err = parseErr
 		job.NextRetryAt = &value
+	}
+	if err == nil && overall.Valid {
+		value, parseErr := time.Parse(time.RFC3339Nano, overall.String)
+		err = parseErr
+		job.OverallDeadline = &value
 	}
 	return job, err
 }
@@ -157,4 +162,20 @@ func (r *Repositories) SetGraceDeadline(ctx context.Context, jobID string, expec
 		return fmt.Errorf("stale grace deadline revision")
 	}
 	return nil
+}
+
+func (r *Repositories) SetOverallDeadline(ctx context.Context, jobID string, expected uint64, deadline, at time.Time) (time.Time, error) {
+	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET overall_deadline=?,updated_at=? WHERE id=? AND state_revision=? AND overall_deadline IS NULL`, formatTime(deadline), formatTime(at), jobID, expected)
+	if err != nil {
+		return time.Time{}, err
+	}
+	count, _ := result.RowsAffected()
+	if count == 1 {
+		return deadline.UTC(), nil
+	}
+	var stored string
+	if err := r.DB.QueryRowContext(ctx, `SELECT overall_deadline FROM acquisition_jobs WHERE id=? AND state_revision=?`, jobID, expected).Scan(&stored); err != nil {
+		return time.Time{}, fmt.Errorf("stale overall deadline revision: %w", err)
+	}
+	return time.Parse(time.RFC3339Nano, stored)
 }
