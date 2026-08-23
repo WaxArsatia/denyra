@@ -163,9 +163,6 @@ services:
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     environment:
       SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN: "false"
-    secrets:
-      - sftpgo_admin_username
-      - sftpgo_admin_password
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/sftpgo
@@ -272,12 +269,6 @@ secrets:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_username
   soulseek_password:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_password
-  sftpgo_admin_username:
-    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_admin_username
-  sftpgo_admin_password:
-    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_admin_password
-  restic_repository:
-    file: ${DENYRA_SECRETS_DIR:-./secrets}/restic_repository
   restic_password:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/restic_password
 

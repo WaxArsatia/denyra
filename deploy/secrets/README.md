@@ -9,9 +9,6 @@ bootstrap_admin
 lidarr_api_key
 soulseek_username
 soulseek_password
-sftpgo_admin_username
-sftpgo_admin_password
-restic_repository
 restic_password
 ```
 
