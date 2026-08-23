@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -12,12 +13,11 @@ type Runtime struct {
 	Worker           *Worker
 	RecoveryInterval time.Duration
 	discovery        chan struct{}
+	once             sync.Once
 }
 
 func (r *Runtime) NotifyManualDiscovery() {
-	if r.discovery == nil {
-		r.discovery = make(chan struct{}, 1)
-	}
+	r.initialize()
 	select {
 	case r.discovery <- struct{}{}:
 	default:
@@ -32,9 +32,7 @@ func (r *Runtime) Run(ctx context.Context) error {
 	if r.RecoveryInterval <= 0 {
 		return fmt.Errorf("runtime recovery interval must be positive")
 	}
-	if r.discovery == nil {
-		r.discovery = make(chan struct{}, 1)
-	}
+	r.initialize()
 	if _, err := r.Recovery.Reconcile(ctx); err != nil {
 		return fmt.Errorf("startup recovery: %w", err)
 	}
@@ -60,4 +58,8 @@ func (r *Runtime) Run(ctx context.Context) error {
 			_, _ = r.Recovery.Reconcile(ctx)
 		}
 	}
+}
+
+func (r *Runtime) initialize() {
+	r.once.Do(func() { r.discovery = make(chan struct{}, 1) })
 }

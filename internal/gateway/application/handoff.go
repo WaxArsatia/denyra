@@ -69,14 +69,15 @@ func (service CandidateHandoffService) AcceptCompleted(ctx context.Context, cand
 	}
 	requestID := "candidate-complete-" + candidate.ID
 	request := contracts.CandidateAccepted{
-		RequestID:        requestID,
-		JobID:            candidate.JobID,
-		CandidateID:      candidate.ID,
-		ConfigSnapshotID: job.ConfigSnapshotID,
-		Source:           source,
-		Path:             candidate.SourceLocator,
-		CompletionAt:     *candidate.CompletedAt,
-		Provenance:       provenance,
+		RequestID:            requestID,
+		JobID:                candidate.JobID,
+		CandidateID:          candidate.ID,
+		ConfigSnapshotID:     job.ConfigSnapshotID,
+		Source:               source,
+		Path:                 candidate.SourceLocator,
+		CompletionAt:         *candidate.CompletedAt,
+		MusicBrainzReleaseID: job.SelectedReleaseMBID,
+		Provenance:           provenance,
 	}
 	if request.Provenance.OutputSHA256 != candidate.OutputSHA256 {
 		return fmt.Errorf("handoff provenance checksum differs from immutable candidate output")

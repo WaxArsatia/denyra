@@ -3,6 +3,7 @@ package pipeline_test
 import (
 	"context"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	"os"
 	"path/filepath"
@@ -40,6 +41,9 @@ func TestPipelineRecoveryReconcilesLeaseOrphansAndManualDiscovery(t *testing.T) 
 	if err := os.Mkdir(filepath.Join(incoming, "submission-1"), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(incoming, "submission-1", "track.flac"), []byte("synthetic"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	recovery := application.RecoveryService{Store: repository, WorkRoot: work, ApprovedRoot: approved, QuarantineRoot: quarantine, Now: func() time.Time { return now }}
 	report, err := recovery.Reconcile(context.Background())
 	if err != nil {
@@ -56,6 +60,17 @@ func TestPipelineRecoveryReconcilesLeaseOrphansAndManualDiscovery(t *testing.T) 
 	submission, err := repository.Submission(context.Background(), "submission-1")
 	if err != nil || submission.Status != "DISCOVERED" {
 		t.Fatalf("submission=%+v %v", submission, err)
+	}
+	service := application.SubmissionService{Store: repository, IncomingRoot: incoming, Now: func() time.Time { return now.Add(time.Second) }}
+	if _, err := db.Exec(`INSERT INTO users(id,username,password_hash,password_changed_at,created_at,updated_at) VALUES('admin-1','admin','hash',?,?,?)`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Submit(context.Background(), submission.ID, submission.Revision, "admin-1"); err != nil {
+		t.Fatal(err)
+	}
+	manualCandidate, err := repository.Candidate(context.Background(), submission.ID)
+	if err != nil || manualCandidate.State != domain.StateReceived || manualCandidate.Source != domain.SourceManual {
+		t.Fatalf("manual candidate=%+v err=%v", manualCandidate, err)
 	}
 }
 

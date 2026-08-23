@@ -27,6 +27,13 @@ pipeline_path = "/data/state/pipeline/denyra.db"
 [acquisition]
 lidarr_page_size = 100
 
+[validation]
+ffprobe_timeout = "30s"
+flac_test_timeout = "2m"
+metaflac_timeout = "1m"
+beets_timeout = "5m"
+musicbrainz_rate_interval = "1s"
+
 [sessions]
 bootstrap_username = "admin"
 

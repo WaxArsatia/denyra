@@ -328,7 +328,7 @@ func (service ArbitrationService) validateRequest(key string, request contracts.
 			qualityWarnings++
 		}
 	}
-	if request.Quality.QualityWarningCount != qualityWarnings || request.Quality.IdentityRank < 0 || request.Quality.EditionRank < 0 || request.Quality.SourceConfidence < 0 || request.Quality.BitDepth <= 0 || request.Quality.SampleRate <= 0 {
+	if request.Quality.QualityWarningCount != qualityWarnings || request.Quality.IdentityRank < 0 || request.Quality.EditionRank < 0 || request.Quality.SourceConfidence < 0 || request.Quality.BitDepth < 0 || request.Quality.SampleRate <= 0 {
 		return fmt.Errorf("quality vector does not match warning evidence")
 	}
 	return nil

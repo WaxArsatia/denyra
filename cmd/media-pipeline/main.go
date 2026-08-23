@@ -13,6 +13,10 @@ import (
 
 	"github.com/waxarsatia/denyra/internal/config"
 	gatewayadapter "github.com/waxarsatia/denyra/internal/pipeline/adapters/gateway"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lidarr"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lrclib"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/media"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/musicbrainz"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
@@ -84,7 +88,40 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			if err != nil {
 				return err
 			}
-			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine}}
+			httpClient := &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}
+			commandRunner := media.Runner{MaxOutput: int(prepared.Config.Acquisition.ProcessOutputLimit)}
+			ffprobe := media.FFProbe{Binary: "ffprobe", Version: "deployment-pinned", Timeout: time.Duration(prepared.Config.Validation.FFProbeTimeout), Runner: commandRunner}
+			flac := media.FLAC{Binary: "flac", Version: "deployment-pinned", Timeout: time.Duration(prepared.Config.Validation.FLACTestTimeout), Runner: commandRunner}
+			metaflac := media.MetaFLAC{Binary: "metaflac", Version: "deployment-pinned", Timeout: time.Duration(prepared.Config.Validation.MetaFLACTimeout), Runner: commandRunner}
+			musicBrainz := &musicbrainz.Client{BaseURL: prepared.Config.Services.MusicBrainzURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit, RateInterval: time.Duration(prepared.Config.Validation.MusicBrainzRateInterval)}
+			lidarrClient := lidarr.Client{BaseURL: prepared.Config.Services.LidarrURL, APIKey: prepared.Config.Secrets.LidarrAPIKey.Value, HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
+			pause := func(ctx context.Context, duration time.Duration) error {
+				timer := time.NewTimer(duration)
+				defer timer.Stop()
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-timer.C:
+					return nil
+				}
+			}
+			workflow := application.ControlledWorkflow{
+				Store:                repositories,
+				Claim:                application.ClaimService{WorkRoot: prepared.Config.Filesystem.Work, LockRoot: prepared.Config.Filesystem.Work + "/.locks", StabilityInterval: time.Duration(prepared.Config.Scanners.StabilityInterval), Pause: pause},
+				Validator:            application.TechnicalValidator{Inspector: ffprobe, Integrity: flac, Heuristic: media.NoHeuristic{}, Checksum: media.SHA256},
+				Lookup:               musicBrainz,
+				Matching:             application.MatchingService{DurationPolicy: domain.DurationPolicy{TrackAutoFloorMS: prepared.Config.Validation.TrackAutoFloorMS, TrackAutoPercentBasisPoints: prepared.Config.Validation.TrackAutoPercentBasisPoints, TrackManualFloorMS: prepared.Config.Validation.TrackManualFloorMS, TrackManualPercentBasisPoints: prepared.Config.Validation.TrackManualPercentBasisPoints, ReleaseAutoFloorMS: prepared.Config.Validation.ReleaseAutoFloorMS, ReleaseAutoPercentBasisPoints: prepared.Config.Validation.ReleaseAutoPercentBasisPoints, ReleaseManualFloorMS: prepared.Config.Validation.ReleaseManualFloorMS, ReleaseManualPercentBasisPoints: prepared.Config.Validation.ReleaseManualPercentBasisPoints}, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
+				Enrichment:           application.EnrichmentService{WorkRoot: prepared.Config.Filesystem.Work, EvidenceRoot: prepared.Config.Filesystem.Quarantine + "/.evidence", Lyrics: lrclib.Client{BaseURL: prepared.Config.Services.LRCLIBURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}},
+				Mutation:             application.MutationService{WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine, Tags: metaflac, Integrity: flac, Checksum: media.SHA256},
+				Quality:              application.QualityReporter{Store: repositories, Callback: internalapi.QualityClient{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}},
+				Import:               application.ImportService{WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, Configuration: lidarr.ConfigVerifier{Client: lidarrClient}, Importer: lidarr.ManualImporter{Client: lidarrClient}, Verifier: lidarr.LibraryVerifier{Client: lidarrClient, LibraryRoot: prepared.Config.Filesystem.Library}, Store: repositories},
+				SourceRoots:          map[domain.Source]string{domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC, domain.SourceOther: prepared.Config.Filesystem.DownloadsOther, domain.SourceManual: prepared.Config.Filesystem.IncomingManual},
+				MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions,
+			}
+			worker := &application.Worker{Store: repositories, Processor: workflow, Admission: &application.AdmissionGate{DataRoot: prepared.Config.Filesystem.DataRoot, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}, Concurrency: prepared.Config.Concurrency.Validation, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline", Queue: make(chan string, prepared.Config.Concurrency.Validation*4), OnError: func(candidateID string, err error) {
+				logger.Error("pipeline candidate failed", "candidate_id", candidateID, "error", err)
+			}}
+			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine}, Worker: worker}
 			if _, err := runtime.Recovery.Reconcile(ctx); err != nil {
 				return err
 			}

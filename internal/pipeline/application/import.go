@@ -74,7 +74,13 @@ func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, dow
 		return ImportSubmission{}, fmt.Errorf("Lidarr import configuration drift: %w", err)
 	}
 	workPath, approvedPath := filepath.Join(s.WorkRoot, candidateID), filepath.Join(s.ApprovedRoot, candidateID)
-	manifest, err := buildReleaseManifest(candidateID, releaseMBID, workPath)
+	sourcePath := workPath
+	if _, err := os.Stat(workPath); os.IsNotExist(err) {
+		if info, approvedErr := os.Stat(approvedPath); approvedErr == nil && info.IsDir() {
+			sourcePath = approvedPath
+		}
+	}
+	manifest, err := buildReleaseManifest(candidateID, releaseMBID, sourcePath)
 	if err != nil {
 		return ImportSubmission{}, err
 	}
@@ -85,8 +91,10 @@ func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, dow
 	if move == nil {
 		move = denyrafs.MoveAtomic
 	}
-	if err := move(workPath, approvedPath); err != nil {
-		return ImportSubmission{}, err
+	if sourcePath == workPath {
+		if err := move(workPath, approvedPath); err != nil {
+			return ImportSubmission{}, err
+		}
 	}
 	flacCount := 0
 	for _, file := range manifest.Files {

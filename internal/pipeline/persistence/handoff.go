@@ -85,7 +85,7 @@ func (r *Repositories) AcceptCandidate(ctx context.Context, candidate domain.Can
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO completion_evidence(id,candidate_id,gateway_config_snapshot_id,source_path,completed_at,provenance_json,provenance_sha256,received_at) VALUES(?,?,?,?,?,?,?,?)`, evidenceID, candidate.ID, request.ConfigSnapshotID, candidate.ReleaseDirectory, formatTime(request.CompletionAt), provenance, hex.EncodeToString(sum[:]), formatTime(at))
+		_, err = tx.ExecContext(ctx, `INSERT INTO completion_evidence(id,candidate_id,gateway_config_snapshot_id,source_path,completed_at,provenance_json,provenance_sha256,received_at,target_release_mbid) VALUES(?,?,?,?,?,?,?,?,?)`, evidenceID, candidate.ID, request.ConfigSnapshotID, candidate.ReleaseDirectory, formatTime(request.CompletionAt), provenance, hex.EncodeToString(sum[:]), formatTime(at), request.MusicBrainzReleaseID)
 		if err != nil {
 			return err
 		}

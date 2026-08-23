@@ -53,6 +53,7 @@ func Defaults() Config {
 			FallbackRetry:         []Duration{Duration(5 * time.Minute), Duration(15 * time.Minute), Duration(time.Hour), Duration(6 * time.Hour)},
 		},
 		Validation: ValidationConfig{
+			FFProbeTimeout: Duration(30 * time.Second), FLACTestTimeout: Duration(2 * time.Minute), MetaFLACTimeout: Duration(time.Minute), BeetsTimeout: Duration(5 * time.Minute), MusicBrainzRateInterval: Duration(time.Second),
 			TrackAutoFloorMS: 5_000, TrackAutoPercentBasisPoints: 200,
 			TrackManualFloorMS: 15_000, TrackManualPercentBasisPoints: 500,
 			ReleaseAutoFloorMS: 30_000, ReleaseAutoPercentBasisPoints: 100,

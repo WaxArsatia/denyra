@@ -24,7 +24,7 @@ func TestPipelineInternalAPIAuthenticatesLimitsAndIdempotentlyAcceptsHandoff(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := contracts.CandidateAccepted{RequestID: "completion-1", JobID: "job-1", CandidateID: "candidate-api-1", ConfigSnapshotID: "gateway-config", Source: contracts.SourceSlskd, Path: "/data/downloads/slskd/release-1", CompletionAt: now, Provenance: contracts.AcquisitionProvenance{Provider: "soulseek", OutputSHA256: strings.Repeat("a", 64)}}
+	request := contracts.CandidateAccepted{RequestID: "completion-1", JobID: "job-1", CandidateID: "candidate-api-1", ConfigSnapshotID: "gateway-config", Source: contracts.SourceSlskd, Path: "/data/downloads/slskd/release-1", CompletionAt: now, MusicBrainzReleaseID: "abcdefab-1234-5678-9abc-abcdefabcdef", Provenance: contracts.AcquisitionProvenance{Provider: "soulseek", OutputSHA256: strings.Repeat("a", 64)}}
 	payload, _ := json.Marshal(request)
 	unauthorized := httptest.NewRecorder()
 	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodPost, "/internal/candidates", bytes.NewReader(payload)))

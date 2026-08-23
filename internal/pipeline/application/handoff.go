@@ -69,6 +69,9 @@ func (s HandoffService) Accept(ctx context.Context, key string, request contract
 	if request.RequestID == "" || request.JobID == "" || request.ConfigSnapshotID == "" || request.CompletionAt.IsZero() {
 		return 0, nil, fmt.Errorf("candidate handoff identity is incomplete")
 	}
+	if _, err := domain.CanonicalMBID(request.MusicBrainzReleaseID); err != nil {
+		return 0, nil, fmt.Errorf("explicit MusicBrainz release ID: %w", err)
+	}
 	if request.Provenance.Provider == "" || len(request.Provenance.OutputSHA256) != 64 {
 		return 0, nil, fmt.Errorf("candidate provenance is incomplete")
 	}

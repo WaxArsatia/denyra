@@ -6,6 +6,7 @@
   "source": "SPOTIFLAC",
   "path": "/data/downloads/spotiflac/job-1",
   "completion_at": "2026-08-24T10:00:00Z",
+  "musicbrainz_release_id": "abcdefab-1234-5678-9abc-abcdefabcdef",
   "provenance": {
     "provider": "ext:tidal-web",
     "engine_version": "3.0.8",

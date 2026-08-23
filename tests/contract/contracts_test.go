@@ -16,7 +16,7 @@ func TestCandidateAcceptedGoldenJSON(t *testing.T) {
 	t.Parallel()
 	value := contracts.CandidateAccepted{
 		RequestID: "req-1", JobID: "job-1", CandidateID: "candidate-1", ConfigSnapshotID: "config-1",
-		Source: contracts.SourceSpotiFLAC, Path: "/data/downloads/spotiflac/job-1", CompletionAt: mustTime("2026-08-24T10:00:00Z"),
+		Source: contracts.SourceSpotiFLAC, Path: "/data/downloads/spotiflac/job-1", CompletionAt: mustTime("2026-08-24T10:00:00Z"), MusicBrainzReleaseID: "abcdefab-1234-5678-9abc-abcdefabcdef",
 		Provenance: contracts.AcquisitionProvenance{Provider: "ext:tidal-web", EngineVersion: "3.0.8", OutputSHA256: strings.Repeat("a", 64)},
 	}
 	assertGolden(t, "candidate_accepted.json", value)
@@ -47,7 +47,7 @@ func TestCandidateApprovedGoldenJSON(t *testing.T) {
 
 func TestStrictDecodeRejectsUnknownFieldsAndOversize(t *testing.T) {
 	t.Parallel()
-	valid := `{"request_id":"req","job_id":"job","candidate_id":"candidate","config_snapshot_id":"config","source":"SLSKD","path":"/data/downloads/slskd/job","completion_at":"2026-08-24T10:00:00Z","provenance":{"provider":"slskd","engine_version":"0.26.0","output_sha256":"` + strings.Repeat("a", 64) + `"}}`
+	valid := `{"request_id":"req","job_id":"job","candidate_id":"candidate","config_snapshot_id":"config","source":"SLSKD","path":"/data/downloads/slskd/job","completion_at":"2026-08-24T10:00:00Z","musicbrainz_release_id":"abcdefab-1234-5678-9abc-abcdefabcdef","provenance":{"provider":"slskd","engine_version":"0.26.0","output_sha256":"` + strings.Repeat("a", 64) + `"}}`
 	for name, payload := range map[string]string{
 		"unknown":  strings.Replace(valid, `"request_id":"req"`, `"request_id":"req","unknown":true`, 1),
 		"oversize": valid + strings.Repeat(" ", 16),

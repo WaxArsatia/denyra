@@ -28,14 +28,15 @@ type CandidateRegistered struct {
 }
 
 type CandidateAccepted struct {
-	RequestID        string                `json:"request_id"`
-	JobID            string                `json:"job_id"`
-	CandidateID      string                `json:"candidate_id"`
-	ConfigSnapshotID string                `json:"config_snapshot_id"`
-	Source           AcquisitionSource     `json:"source"`
-	Path             string                `json:"path"`
-	CompletionAt     time.Time             `json:"completion_at"`
-	Provenance       AcquisitionProvenance `json:"provenance"`
+	RequestID            string                `json:"request_id"`
+	JobID                string                `json:"job_id"`
+	CandidateID          string                `json:"candidate_id"`
+	ConfigSnapshotID     string                `json:"config_snapshot_id"`
+	Source               AcquisitionSource     `json:"source"`
+	Path                 string                `json:"path"`
+	CompletionAt         time.Time             `json:"completion_at"`
+	MusicBrainzReleaseID string                `json:"musicbrainz_release_id"`
+	Provenance           AcquisitionProvenance `json:"provenance"`
 }
 
 type CandidateApproved struct {

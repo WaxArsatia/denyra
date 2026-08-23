@@ -99,14 +99,19 @@ type AcquisitionConfig struct {
 }
 
 type ValidationConfig struct {
-	TrackAutoFloorMS                int64 `toml:"track_auto_floor_ms" json:"track_auto_floor_ms"`
-	TrackAutoPercentBasisPoints     int64 `toml:"track_auto_percent_basis_points" json:"track_auto_percent_basis_points"`
-	TrackManualFloorMS              int64 `toml:"track_manual_floor_ms" json:"track_manual_floor_ms"`
-	TrackManualPercentBasisPoints   int64 `toml:"track_manual_percent_basis_points" json:"track_manual_percent_basis_points"`
-	ReleaseAutoFloorMS              int64 `toml:"release_auto_floor_ms" json:"release_auto_floor_ms"`
-	ReleaseAutoPercentBasisPoints   int64 `toml:"release_auto_percent_basis_points" json:"release_auto_percent_basis_points"`
-	ReleaseManualFloorMS            int64 `toml:"release_manual_floor_ms" json:"release_manual_floor_ms"`
-	ReleaseManualPercentBasisPoints int64 `toml:"release_manual_percent_basis_points" json:"release_manual_percent_basis_points"`
+	FFProbeTimeout                  Duration `toml:"ffprobe_timeout" json:"ffprobe_timeout"`
+	FLACTestTimeout                 Duration `toml:"flac_test_timeout" json:"flac_test_timeout"`
+	MetaFLACTimeout                 Duration `toml:"metaflac_timeout" json:"metaflac_timeout"`
+	BeetsTimeout                    Duration `toml:"beets_timeout" json:"beets_timeout"`
+	MusicBrainzRateInterval         Duration `toml:"musicbrainz_rate_interval" json:"musicbrainz_rate_interval"`
+	TrackAutoFloorMS                int64    `toml:"track_auto_floor_ms" json:"track_auto_floor_ms"`
+	TrackAutoPercentBasisPoints     int64    `toml:"track_auto_percent_basis_points" json:"track_auto_percent_basis_points"`
+	TrackManualFloorMS              int64    `toml:"track_manual_floor_ms" json:"track_manual_floor_ms"`
+	TrackManualPercentBasisPoints   int64    `toml:"track_manual_percent_basis_points" json:"track_manual_percent_basis_points"`
+	ReleaseAutoFloorMS              int64    `toml:"release_auto_floor_ms" json:"release_auto_floor_ms"`
+	ReleaseAutoPercentBasisPoints   int64    `toml:"release_auto_percent_basis_points" json:"release_auto_percent_basis_points"`
+	ReleaseManualFloorMS            int64    `toml:"release_manual_floor_ms" json:"release_manual_floor_ms"`
+	ReleaseManualPercentBasisPoints int64    `toml:"release_manual_percent_basis_points" json:"release_manual_percent_basis_points"`
 }
 
 type ArbitrationConfig struct {

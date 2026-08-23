@@ -30,6 +30,11 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 		"acquisition lease": {time.Duration(cfg.Acquisition.LeaseDuration), 15 * time.Minute},
 		"arbitration":       {time.Duration(cfg.Arbitration.Window), 30 * time.Minute},
 		"session expiry":    {time.Duration(cfg.Sessions.AbsoluteExpiry), 30 * 24 * time.Hour},
+		"ffprobe":           {time.Duration(cfg.Validation.FFProbeTimeout), 30 * time.Second},
+		"flac test":         {time.Duration(cfg.Validation.FLACTestTimeout), 2 * time.Minute},
+		"metaflac":          {time.Duration(cfg.Validation.MetaFLACTimeout), time.Minute},
+		"beets":             {time.Duration(cfg.Validation.BeetsTimeout), 5 * time.Minute},
+		"musicbrainz rate":  {time.Duration(cfg.Validation.MusicBrainzRateInterval), time.Second},
 	}
 	if time.Duration(cfg.HTTP.ReadHeaderTimeout) != 5*time.Second || time.Duration(cfg.HTTP.ServerIdleTimeout) != 30*time.Second ||
 		time.Duration(cfg.HTTP.ShutdownTimeout) != 10*time.Second || time.Duration(cfg.HTTP.HealthcheckTimeout) != 5*time.Second {
@@ -125,6 +130,7 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"database conns":     {toml: "[database]\nmax_open_conns = 0\n"},
 		"concurrency":        {toml: "[concurrency]\nacquisition = 3\n"},
 		"backup retention":   {toml: "[backup]\ndaily = 0\n"},
+		"validation timeout": {toml: "[validation]\nffprobe_timeout = \"0s\"\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

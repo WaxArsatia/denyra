@@ -66,9 +66,12 @@ type Worker struct {
 	OwnerID       string
 	Queue         chan string
 	Now           func() time.Time
+	OnError       func(string, error)
+	once          sync.Once
 }
 
 func (w *Worker) Notify(candidateID string) {
+	w.initialize()
 	select {
 	case w.Queue <- candidateID:
 	default:
@@ -78,9 +81,7 @@ func (w *Worker) Run(ctx context.Context, scanInterval time.Duration) error {
 	if w.Store == nil || w.Processor == nil || w.Admission == nil || w.Concurrency <= 0 || w.LeaseDuration <= 0 || scanInterval <= 0 || w.OwnerID == "" {
 		return fmt.Errorf("worker is not configured")
 	}
-	if w.Queue == nil {
-		w.Queue = make(chan string, w.Concurrency*4)
-	}
+	w.initialize()
 	var wait sync.WaitGroup
 	semaphore := make(chan struct{}, w.Concurrency)
 	scan := time.NewTicker(scanInterval)
@@ -107,7 +108,16 @@ func (w *Worker) Run(ctx context.Context, scanInterval time.Duration) error {
 			go func(item WorkItem) {
 				defer wait.Done()
 				defer func() { <-semaphore }()
-				_ = w.Processor.Process(ctx, item)
+				processContext, cancel := context.WithCancel(ctx)
+				defer cancel()
+				stopRenewal := make(chan struct{})
+				go w.renewLease(processContext, item, now.Add(w.LeaseDuration), cancel, stopRenewal)
+				err := w.Processor.Process(processContext, item)
+				cancel()
+				<-stopRenewal
+				if err != nil && w.OnError != nil {
+					w.OnError(item.CandidateID, err)
+				}
 				_ = w.Store.ReleaseWorkLease(context.WithoutCancel(ctx), item.CandidateID, w.OwnerID)
 			}(item)
 		}
@@ -123,4 +133,50 @@ func (w *Worker) Run(ctx context.Context, scanInterval time.Duration) error {
 			dispatch()
 		}
 	}
+}
+
+type renewableWorkStore interface {
+	RenewWorkLease(context.Context, string, string, time.Time, time.Time) error
+}
+
+func (w *Worker) renewLease(ctx context.Context, item WorkItem, expiry time.Time, cancel context.CancelFunc, stopped chan<- struct{}) {
+	defer close(stopped)
+	store, ok := w.Store.(renewableWorkStore)
+	if !ok {
+		return
+	}
+	interval := w.LeaseDuration / 3
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			next := w.now().Add(w.LeaseDuration)
+			if err := store.RenewWorkLease(ctx, item.CandidateID, w.OwnerID, expiry, next); err != nil {
+				cancel()
+				if w.OnError != nil {
+					w.OnError(item.CandidateID, err)
+				}
+				return
+			}
+			expiry = next
+		}
+	}
+}
+
+func (w *Worker) initialize() {
+	w.once.Do(func() {
+		if w.Queue == nil {
+			w.Queue = make(chan string, max(1, w.Concurrency*4))
+		}
+	})
+}
+
+func (w *Worker) now() time.Time {
+	if w.Now != nil {
+		return w.Now().UTC()
+	}
+	return time.Now().UTC()
 }

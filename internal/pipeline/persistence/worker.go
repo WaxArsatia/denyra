@@ -10,7 +10,7 @@ import (
 )
 
 func (r *Repositories) ReadyWork(ctx context.Context, limit int) ([]application.WorkItem, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,state_revision,config_snapshot_id,state FROM candidates WHERE state IN ('RECEIVED','WORKING','TECHNICAL_VALIDATION','RELEASE_MATCHING','ENRICHING','IMPORT_READY','IMPORT_SUBMITTED','IMPORT_RECONCILING') AND NOT EXISTS(SELECT 1 FROM leases WHERE resource_type='candidate' AND resource_id=candidate_id) ORDER BY updated_at,candidate_id LIMIT ?`, limit)
+	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,state_revision,config_snapshot_id,state FROM candidates WHERE state IN ('RECEIVED','CLAIMED','STABILIZING','WORKING','TECHNICAL_VALIDATION','RELEASE_MATCHING','ENRICHING','APPROVED','IMPORT_READY','IMPORT_SUBMITTED','IMPORT_RECONCILING') AND NOT EXISTS(SELECT 1 FROM leases WHERE resource_type='candidate' AND resource_id=candidate_id) ORDER BY updated_at,candidate_id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +40,9 @@ func (r *Repositories) ReleaseWorkLease(ctx context.Context, candidateID, owner 
 		return sql.ErrNoRows
 	}
 	return nil
+}
+func (r *Repositories) RenewWorkLease(ctx context.Context, candidateID, owner string, previous, next time.Time) error {
+	return r.RenewLease(ctx, "candidate", candidateID, owner, previous, next)
 }
 func (r *Repositories) DeleteExpiredLease(ctx context.Context, resourceType, resourceID string, expiresAt time.Time) error {
 	result, err := r.DB.ExecContext(ctx, `DELETE FROM leases WHERE resource_type=? AND resource_id=? AND expires_at=?`, resourceType, resourceID, formatTime(expiresAt))

@@ -50,6 +50,10 @@ func TestHandoffReplaysLostAcknowledgementWithoutSharingState(t *testing.T) {
 	gatewayDB, gatewayStore, now := gatewayRepositories(t)
 	defer gatewayDB.Close()
 	job := createJob(t, gatewayStore, now)
+	if err := gatewayStore.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	job, _ = gatewayStore.Job(context.Background(), job.ID)
 
 	pipelineDB, err := denysqlite.Open(context.Background(), filepath.Join(t.TempDir(), "pipeline.db"), denysqlite.Options{BusyTimeout: time.Second, MaxOpenConns: 4})
 	if err != nil {

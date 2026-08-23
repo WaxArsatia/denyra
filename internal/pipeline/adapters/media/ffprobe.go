@@ -93,13 +93,31 @@ func (p FFProbe) Inspect(ctx context.Context, path string) (domain.TechnicalInfo
 	}
 	comments := make(map[string][]string)
 	for key, value := range payload.Format.Tags {
-		comments[strings.ToUpper(key)] = append(comments[strings.ToUpper(key)], value)
+		appendComment(comments, key, value)
 	}
 	for key, value := range audio.Tags {
-		comments[strings.ToUpper(key)] = append(comments[strings.ToUpper(key)], value)
+		appendComment(comments, key, value)
 	}
 	if !info.ValidFLAC() {
 		return info, comments, evidence, fmt.Errorf("codec/container or technical structure is not valid FLAC: %+v", info)
 	}
 	return info, comments, evidence, nil
+}
+
+func appendComment(comments map[string][]string, key, value string) {
+	key = strings.ToUpper(key)
+	switch key {
+	case "TRACK":
+		key = "TRACKNUMBER"
+	case "DISC":
+		key = "DISCNUMBER"
+	case "ALBUM_ARTIST":
+		key = "ALBUMARTIST"
+	}
+	for _, existing := range comments[key] {
+		if existing == value {
+			return
+		}
+	}
+	comments[key] = append(comments[key], value)
 }
