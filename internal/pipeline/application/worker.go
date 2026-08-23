@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
+
+	"github.com/waxarsatia/denyra/internal/platform/storage"
 )
 
 var ErrMaintenance = errors.New("pipeline is in maintenance mode")
@@ -25,19 +26,12 @@ func (g *AdmissionGate) AllowNew() error {
 	if g.maintenance.Load() {
 		return ErrMaintenance
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(g.DataRoot, &stat); err != nil {
+	result, err := storage.Evaluate(g.DataRoot, uint64(g.MinimumFreeBytes), g.MinimumFreePercent, nil)
+	if err != nil {
 		return err
 	}
-	free := int64(stat.Bavail) * int64(stat.Bsize)
-	total := int64(stat.Blocks) * int64(stat.Bsize)
-	required := g.MinimumFreeBytes
-	percent := int64(float64(total) * g.MinimumFreePercent / 100)
-	if percent > required {
-		required = percent
-	}
-	if free < required {
-		return fmt.Errorf("%w: free=%d required=%d", ErrStorageAdmission, free, required)
+	if !result.Allowed {
+		return fmt.Errorf("%w: free=%d required=%d", ErrStorageAdmission, result.AvailableBytes, result.RequiredBytes)
 	}
 	return nil
 }

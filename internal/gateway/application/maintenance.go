@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"syscall"
+
+	"github.com/waxarsatia/denyra/internal/platform/storage"
 )
 
 var ErrAdmissionBlocked = errors.New("new acquisition admission is blocked")
@@ -38,25 +39,20 @@ func (controller AdmissionController) CheckNew(ctx context.Context) error {
 	if capacity == nil {
 		capacity = filesystemCapacity
 	}
-	current, err := capacity(controller.DataRoot)
+	result, err := storage.Evaluate(controller.DataRoot, uint64(controller.MinimumFreeBytes), controller.MinimumFreePercent, func(path string) (storage.Capacity, error) {
+		current, err := capacity(path)
+		return storage.Capacity{AvailableBytes: current.FreeBytes, TotalBytes: current.TotalBytes}, err
+	})
 	if err != nil {
 		return err
 	}
-	percentThreshold := uint64(float64(current.TotalBytes) * controller.MinimumFreePercent / 100)
-	threshold := uint64(controller.MinimumFreeBytes)
-	if percentThreshold > threshold {
-		threshold = percentThreshold
-	}
-	if current.FreeBytes < threshold {
-		return fmt.Errorf("%w: /data free=%d required=%d", ErrAdmissionBlocked, current.FreeBytes, threshold)
+	if !result.Allowed {
+		return fmt.Errorf("%w: /data free=%d required=%d", ErrAdmissionBlocked, result.AvailableBytes, result.RequiredBytes)
 	}
 	return nil
 }
 
 func filesystemCapacity(path string) (Capacity, error) {
-	var value syscall.Statfs_t
-	if err := syscall.Statfs(path, &value); err != nil {
-		return Capacity{}, err
-	}
-	return Capacity{FreeBytes: value.Bavail * uint64(value.Bsize), TotalBytes: value.Blocks * uint64(value.Bsize)}, nil
+	result, err := storage.Evaluate(path, 0, 0, nil)
+	return Capacity{FreeBytes: result.AvailableBytes, TotalBytes: result.TotalBytes}, err
 }
