@@ -34,14 +34,24 @@ type Config struct {
 	Storage     StorageConfig     `toml:"storage" json:"storage"`
 	Backup      BackupConfig      `toml:"backup" json:"backup"`
 	Concurrency ConcurrencyConfig `toml:"concurrency" json:"concurrency"`
+	Services    ServicesConfig    `toml:"services" json:"services"`
 	Secrets     SecretsConfig     `toml:"secrets" json:"secrets"`
 }
 
 type HTTPConfig struct {
-	AdminAddress       string `toml:"admin_address" json:"admin_address"`
-	InternalAddress    string `toml:"internal_address" json:"internal_address"`
-	InternalBodyLimit  int64  `toml:"internal_body_limit" json:"internal_body_limit"`
-	AdminMutationLimit int64  `toml:"admin_mutation_limit" json:"admin_mutation_limit"`
+	AdminAddress           string   `toml:"admin_address" json:"admin_address"`
+	InternalAddress        string   `toml:"internal_address" json:"internal_address"`
+	InternalBodyLimit      int64    `toml:"internal_body_limit" json:"internal_body_limit"`
+	AdminMutationLimit     int64    `toml:"admin_mutation_limit" json:"admin_mutation_limit"`
+	ExternalRequestTimeout Duration `toml:"external_request_timeout" json:"external_request_timeout"`
+	ExternalResponseLimit  int64    `toml:"external_response_limit" json:"external_response_limit"`
+}
+
+type ServicesConfig struct {
+	LidarrURL      string `toml:"lidarr_url" json:"lidarr_url"`
+	PipelineURL    string `toml:"pipeline_url" json:"pipeline_url"`
+	MusicBrainzURL string `toml:"musicbrainz_url" json:"musicbrainz_url"`
+	LRCLIBURL      string `toml:"lrclib_url" json:"lrclib_url"`
 }
 
 type DatabaseConfig struct {

@@ -5,10 +5,12 @@ import "time"
 func Defaults() Config {
 	return Config{
 		HTTP: HTTPConfig{
-			AdminAddress:       "0.0.0.0:8090",
-			InternalAddress:    "172.30.0.3:8081",
-			InternalBodyLimit:  1 << 20,
-			AdminMutationLimit: 256 << 10,
+			AdminAddress:           "0.0.0.0:8090",
+			InternalAddress:        "172.30.0.3:8081",
+			InternalBodyLimit:      1 << 20,
+			AdminMutationLimit:     256 << 10,
+			ExternalRequestTimeout: Duration(30 * time.Second),
+			ExternalResponseLimit:  8 << 20,
 		},
 		Database: DatabaseConfig{
 			GatewayPath:    "/data/state/gateway/denyra.db",
@@ -63,6 +65,7 @@ func Defaults() Config {
 		},
 		Backup:      BackupConfig{Daily: 7, Weekly: 4, Monthly: 12},
 		Concurrency: ConcurrencyConfig{Acquisition: 2, Validation: 2, Import: 1},
+		Services:    ServicesConfig{LidarrURL: "http://lidarr:8686", PipelineURL: "http://media-pipeline:8081", MusicBrainzURL: "https://musicbrainz.org", LRCLIBURL: "https://lrclib.net"},
 		Secrets: SecretsConfig{
 			InternalBearer: SecretRef{Source: "file", Name: "internal-bearer"},
 			AuditKey:       SecretRef{Source: "file", Name: "audit-key"},

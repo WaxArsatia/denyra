@@ -6,6 +6,14 @@ admin_address = "0.0.0.0:8090"
 internal_address = "172.30.0.3:8081"
 internal_body_limit = 1048576
 admin_mutation_limit = 262144
+external_request_timeout = "30s"
+external_response_limit = 8388608
+
+[services]
+lidarr_url = "http://lidarr:8686"
+pipeline_url = "http://media-pipeline:8081"
+musicbrainz_url = "https://musicbrainz.org"
+lrclib_url = "https://lrclib.net"
 
 [database]
 pipeline_path = "/data/state/pipeline/denyra.db"

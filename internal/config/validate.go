@@ -20,6 +20,15 @@ func (c Config) Validate() error {
 		"sessions.absolute_expiry":         c.Sessions.AbsoluteExpiry,
 		"scanners.recovery_interval":       c.Scanners.RecoveryInterval,
 		"scanners.stability_interval":      c.Scanners.StabilityInterval,
+		"http.external_request_timeout":    c.HTTP.ExternalRequestTimeout,
+	}
+	if c.HTTP.ExternalResponseLimit <= 0 {
+		return fmt.Errorf("http.external_response_limit must be positive")
+	}
+	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
+		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+			return fmt.Errorf("%s must be an HTTP URL", name)
+		}
 	}
 	for name, value := range positiveDurations {
 		if time.Duration(value) <= 0 {

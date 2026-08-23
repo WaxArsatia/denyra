@@ -36,6 +36,12 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if cfg.Storage.MinimumFreeBytes != 20*1024*1024*1024 || cfg.Storage.MinimumFreePercent != 5 {
 		t.Fatalf("unexpected storage guardrail: %+v", cfg.Storage)
 	}
+	if time.Duration(cfg.HTTP.ExternalRequestTimeout) != 30*time.Second || cfg.HTTP.ExternalResponseLimit != 8<<20 {
+		t.Fatalf("unexpected external HTTP policy: %+v", cfg.HTTP)
+	}
+	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
+		t.Fatalf("unexpected internal service defaults: %+v", cfg.Services)
+	}
 	if got, want := durations(cfg.Acquisition.PrimaryRetry), []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}; !equalDurations(got, want) {
 		t.Fatalf("primary retry = %v, want %v", got, want)
 	}
@@ -50,6 +56,7 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	}
 	t.Setenv("DENYRA_ACQUISITION_ALBUM_SEARCH_TIMEOUT", "12m")
 	t.Setenv("DENYRA_STORAGE_MINIMUM_FREE_PERCENT", "7.5")
+	t.Setenv("DENYRA_LIDARR_URL", "http://lidarr-test:8686")
 
 	cfg, err := config.Load(path, os.Environ())
 	if err != nil {
@@ -60,6 +67,9 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	}
 	if cfg.Storage.MinimumFreePercent != 7.5 {
 		t.Fatalf("minimum free percent = %v, want 7.5", cfg.Storage.MinimumFreePercent)
+	}
+	if cfg.Services.LidarrURL != "http://lidarr-test:8686" {
+		t.Fatalf("Lidarr URL = %q", cfg.Services.LidarrURL)
 	}
 }
 
@@ -73,6 +83,8 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"invalid unit": {toml: "[acquisition]\nalbum_search_timeout = \"ten minutes\"\n"},
 		"negative":     {toml: "[storage]\nminimum_free_bytes = -1\n"},
 		"percent":      {toml: "[storage]\nminimum_free_percent = 101\n"},
+		"service URL":  {toml: "[services]\nlidarr_url = \"lidarr:8686\"\n"},
+		"response cap": {toml: "[http]\nexternal_response_limit = 0\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -15,6 +15,10 @@ type envSetter func(*Config, string) error
 var environmentRegistry = map[string]envSetter{
 	"DENYRA_HTTP_ADMIN_ADDRESS":               func(c *Config, value string) error { c.HTTP.AdminAddress = value; return nil },
 	"DENYRA_HTTP_INTERNAL_ADDRESS":            func(c *Config, value string) error { c.HTTP.InternalAddress = value; return nil },
+	"DENYRA_LIDARR_URL":                       func(c *Config, value string) error { c.Services.LidarrURL = value; return nil },
+	"DENYRA_PIPELINE_URL":                     func(c *Config, value string) error { c.Services.PipelineURL = value; return nil },
+	"DENYRA_MUSICBRAINZ_URL":                  func(c *Config, value string) error { c.Services.MusicBrainzURL = value; return nil },
+	"DENYRA_LRCLIB_URL":                       func(c *Config, value string) error { c.Services.LRCLIBURL = value; return nil },
 	"DENYRA_ACQUISITION_ALBUM_SEARCH_TIMEOUT": durationSetter(func(c *Config) *Duration { return &c.Acquisition.AlbumSearchTimeout }),
 	"DENYRA_ACQUISITION_RECONCILIATION_POLL":  durationSetter(func(c *Config) *Duration { return &c.Acquisition.ReconciliationPoll }),
 	"DENYRA_ACQUISITION_PRIMARY_GRACE_WINDOW": durationSetter(func(c *Config) *Duration { return &c.Acquisition.PrimaryGraceWindow }),

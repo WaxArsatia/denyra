@@ -17,6 +17,39 @@ func (r *Repositories) CreateJob(ctx context.Context, job domain.Job) error {
 func (r *Repositories) Job(ctx context.Context, id string) (domain.Job, error) {
 	return jobQuery(ctx, r.DB, id)
 }
+func (r *Repositories) FindActiveJob(ctx context.Context, albumID int64, releaseGroup string) (domain.Job, error) {
+	var id string
+	if err := r.DB.QueryRowContext(ctx, `SELECT id FROM acquisition_jobs WHERE lidarr_album_id=? AND release_group_mbid=? AND state NOT IN ('HANDED_OFF','CANCELLED')`, albumID, releaseGroup).Scan(&id); err != nil {
+		return domain.Job{}, err
+	}
+	return r.Job(ctx, id)
+}
+func (r *Repositories) ReviseSelectedRelease(ctx context.Context, jobID string, expected uint64, selected string, at time.Time) error {
+	at = at.UTC()
+	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		job, err := jobQuery(ctx, tx, jobID)
+		if err != nil {
+			return err
+		}
+		if job.Revision != expected {
+			return &domain.StaleRevisionError{Expected: expected, Current: job.Revision, State: job.State}
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET selected_release_mbid=NULLIF(?,''),selected_release_revision=selected_release_revision+1,state='DISCOVERED',state_revision=state_revision+1,primary_attempt=0,fallback_attempt=0,next_retry_at=NULL,queue_watermark=NULL,history_watermark=NULL,command_id=NULL,correlation_started_at=NULL,command_deadline=NULL,grace_deadline=NULL,overall_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, selected, formatTime(at), jobID, expected)
+		if err != nil {
+			return err
+		}
+		count, _ := result.RowsAffected()
+		if count != 1 {
+			return fmt.Errorf("stale selected release revision")
+		}
+		id, err := ids.NewToken(16)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO state_transitions(id,job_id,actor,reason,previous_state,new_state,previous_revision,revision,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)`, id, jobID, "gateway-reconciliation", "selected MusicBrainz release changed", job.State, domain.StateDiscovered, expected, expected+1, formatTime(at))
+		return err
+	})
+}
 
 type rowQuery interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
@@ -26,7 +59,7 @@ func jobQuery(ctx context.Context, q rowQuery, id string) (domain.Job, error) {
 	var job domain.Job
 	var state, created, updated string
 	var selected, next sql.NullString
-	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,next_retry_at,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.ConfigSnapshotID, &state, &job.Revision, &next, &created, &updated)
+	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,primary_attempt,fallback_attempt,next_retry_at,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.ConfigSnapshotID, &state, &job.Revision, &job.PrimaryAttempt, &job.FallbackAttempt, &next, &created, &updated)
 	if err != nil {
 		return job, err
 	}
@@ -48,12 +81,14 @@ func jobQuery(ctx context.Context, q rowQuery, id string) (domain.Job, error) {
 }
 
 type TransitionCommand struct {
-	JobID         string
-	Expected      uint64
-	To            domain.State
-	Actor, Reason string
-	NextRetryAt   *time.Time
-	OccurredAt    time.Time
+	JobID                    string
+	Expected                 uint64
+	To                       domain.State
+	Actor, Reason            string
+	NextRetryAt              *time.Time
+	IncrementPrimaryAttempt  bool
+	IncrementFallbackAttempt bool
+	OccurredAt               time.Time
 }
 
 func (r *Repositories) UpdateState(ctx context.Context, command TransitionCommand) (domain.Transition, error) {
@@ -71,7 +106,15 @@ func (r *Repositories) UpdateState(ctx context.Context, command TransitionComman
 		if command.NextRetryAt != nil {
 			retry = formatTime(*command.NextRetryAt)
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET state=?,state_revision=?,next_retry_at=?,updated_at=? WHERE id=? AND state_revision=?`, job.State, job.Revision, retry, formatTime(job.UpdatedAt), job.ID, command.Expected)
+		primaryIncrement := 0
+		if command.IncrementPrimaryAttempt {
+			primaryIncrement = 1
+		}
+		fallbackIncrement := 0
+		if command.IncrementFallbackAttempt {
+			fallbackIncrement = 1
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET state=?,state_revision=?,primary_attempt=primary_attempt+?,fallback_attempt=fallback_attempt+?,next_retry_at=?,updated_at=? WHERE id=? AND state_revision=?`, job.State, job.Revision, primaryIncrement, fallbackIncrement, retry, formatTime(job.UpdatedAt), job.ID, command.Expected)
 		if err != nil {
 			return err
 		}
@@ -92,14 +135,26 @@ func (r *Repositories) UpdateState(ctx context.Context, command TransitionComman
 	})
 	return event, err
 }
-func (r *Repositories) SetSearchContext(ctx context.Context, jobID string, expected uint64, queueWatermark, historyWatermark, commandID string, started, commandDeadline, graceDeadline time.Time) error {
-	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET queue_watermark=?,history_watermark=?,command_id=?,correlation_started_at=?,command_deadline=?,grace_deadline=?,updated_at=? WHERE id=? AND state_revision=?`, queueWatermark, historyWatermark, commandID, formatTime(started), formatTime(commandDeadline), formatTime(graceDeadline), formatTime(started), jobID, expected)
+func (r *Repositories) SetSearchContext(ctx context.Context, jobID string, expected uint64, queueWatermark, historyWatermark, commandID string, started, commandDeadline time.Time) error {
+	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET queue_watermark=?,history_watermark=?,command_id=?,correlation_started_at=?,command_deadline=?,grace_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, queueWatermark, historyWatermark, commandID, formatTime(started), formatTime(commandDeadline), formatTime(started), jobID, expected)
 	if err != nil {
 		return err
 	}
 	count, _ := result.RowsAffected()
 	if count != 1 {
 		return fmt.Errorf("stale search context revision")
+	}
+	return nil
+}
+
+func (r *Repositories) SetGraceDeadline(ctx context.Context, jobID string, expected uint64, deadline, at time.Time) error {
+	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET grace_deadline=?,updated_at=? WHERE id=? AND state_revision=?`, formatTime(deadline), formatTime(at), jobID, expected)
+	if err != nil {
+		return err
+	}
+	count, _ := result.RowsAffected()
+	if count != 1 {
+		return fmt.Errorf("stale grace deadline revision")
 	}
 	return nil
 }

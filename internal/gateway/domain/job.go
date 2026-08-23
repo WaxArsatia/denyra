@@ -12,6 +12,8 @@ type Job struct {
 	SelectedReleaseMBID  string
 	State                State
 	Revision             uint64
+	PrimaryAttempt       int
+	FallbackAttempt      int
 	ConfigSnapshotID     string
 	NextRetryAt          *time.Time
 	CreatedAt, UpdatedAt time.Time
