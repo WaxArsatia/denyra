@@ -73,7 +73,7 @@ func TestPipelineInternalWinnerUsesOptimisticRevision(t *testing.T) {
 	}
 	service := application.HandoffService{Store: repository, LocalConfigSnapshotID: "config-1", Now: func() time.Time { return now }}
 	handler, _ := (internalapi.API{Service: service, BodyLimit: 4096, Bearer: []byte("secret")}).Handler()
-	directive := contracts.CandidateWinner{RequestID: "winner-1", JobID: "job-1", CandidateID: candidate.ID, ConfigSnapshotID: "gateway-config", StateRevision: 8, WinnerLockedAt: now, Reason: "quality winner"}
+	directive := contracts.CandidateWinner{RequestID: "winner-1", JobID: "job-1", CandidateID: candidate.ID, ConfigSnapshotID: "config-1", StateRevision: 8, WinnerLockedAt: now, Reason: "quality winner"}
 	payload, _ := json.Marshal(directive)
 	request := httptest.NewRequest(http.MethodPost, "/internal/candidates/"+candidate.ID+"/winner", bytes.NewReader(payload))
 	request.Header.Set("Authorization", "Bearer secret")

@@ -46,6 +46,8 @@ type CandidateApproved struct {
 	MusicBrainzReleaseID string        `json:"musicbrainz_release_id"`
 	ApprovedAt           time.Time     `json:"approved_at"`
 	Quality              QualityVector `json:"quality"`
+	Warnings             []Warning     `json:"warnings"`
+	StateRevision        uint64        `json:"state_revision"`
 }
 
 type CandidateWinner struct {

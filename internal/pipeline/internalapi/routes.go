@@ -67,32 +67,32 @@ func (a API) accept(w http.ResponseWriter, r *http.Request) {
 }
 func (a API) winner(w http.ResponseWriter, r *http.Request) {
 	var request contracts.CandidateWinner
-	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil {
+	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil || request.CandidateID != r.PathValue("candidateID") {
 		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "invalid winner directive")
 		return
 	}
 	payload, _ := json.Marshal(request)
-	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "WINNER_LOCKED", r.PathValue("candidateID"), request.StateRevision, domain.StateImportReady, "gateway", request.Reason, "", payload)
+	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "WINNER_LOCKED", r.PathValue("candidateID"), request.JobID, request.ConfigSnapshotID, request.StateRevision, domain.StateImportReady, "gateway", request.Reason, "", payload)
 	a.respond(w, r, status, body, err)
 }
 func (a API) supersede(w http.ResponseWriter, r *http.Request) {
 	var request contracts.CandidateSuperseded
-	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil {
+	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil || request.CandidateID != r.PathValue("candidateID") {
 		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "invalid supersession directive")
 		return
 	}
 	payload, _ := json.Marshal(request)
-	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "SUPERSEDED", r.PathValue("candidateID"), request.StateRevision, domain.StateSuperseded, "gateway", request.Reason, "", payload)
+	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "SUPERSEDED", r.PathValue("candidateID"), request.JobID, request.ConfigSnapshotID, request.StateRevision, domain.StateSuperseded, "gateway", request.Reason, "", payload)
 	a.respond(w, r, status, body, err)
 }
 func (a API) cancel(w http.ResponseWriter, r *http.Request) {
 	var request contracts.CandidateCancelled
-	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil {
+	if err := contracts.DecodeStrictJSON(r.Body, a.BodyLimit, &request); err != nil || request.CandidateID != r.PathValue("candidateID") {
 		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "invalid cancellation directive")
 		return
 	}
 	payload, _ := json.Marshal(request)
-	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "CANCELLED", r.PathValue("candidateID"), request.StateRevision, domain.StateCancelled, "gateway", request.Reason, "", payload)
+	status, body, err := a.Service.Directive(r.Context(), r.Header.Get("Idempotency-Key"), "CANCELLED", r.PathValue("candidateID"), request.JobID, request.ConfigSnapshotID, request.StateRevision, domain.StateCancelled, "gateway", request.Reason, "", payload)
 	a.respond(w, r, status, body, err)
 }
 

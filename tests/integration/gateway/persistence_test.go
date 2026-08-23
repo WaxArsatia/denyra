@@ -104,7 +104,10 @@ func TestGatewayPersistenceCandidateImmutableAndWinnerRace(t *testing.T) {
 	if _, err := db.Exec(`UPDATE candidates SET source='spotiflac' WHERE candidate_id='candidate-a'`); err == nil {
 		t.Fatal("immutable candidate updated")
 	}
-	if err := r.StartArbitration(context.Background(), job.ID, now, now.Add(30*time.Minute), 0, []byte(`{}`)); err != nil {
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET state='ARBITRATING' WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO arbitrations(job_id,first_approved_at,deadline,evidence_json,state_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`, job.ID, now.Format(time.RFC3339Nano), now.Add(30*time.Minute).Format(time.RFC3339Nano), []byte(`{}`), 0, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
 	var successes int
@@ -114,7 +117,8 @@ func TestGatewayPersistenceCandidateImmutableAndWinnerRace(t *testing.T) {
 		wait.Add(1)
 		go func(id string) {
 			defer wait.Done()
-			if err := r.LockWinner(context.Background(), job.ID, id, 0, "quality", []byte(`{}`), now); err == nil {
+			effect := persistence.Effect{JobID: job.ID, Type: "PIPELINE_WINNER", IdempotencyKey: "winner-" + id, RequestHash: "hash-" + id, Request: []byte(`{}`), CreatedAt: now}
+			if _, err := r.LockWinnerWithEffects(context.Background(), persistence.WinnerLock{JobID: job.ID, CandidateID: id, ExpectedRevision: 0, Reason: "quality", Evidence: []byte(`{}`), Effects: []persistence.Effect{effect}, LockedAt: now}); err == nil {
 				mutex.Lock()
 				successes++
 				mutex.Unlock()

@@ -1,0 +1,29 @@
+{
+  "request_id": "approval-1",
+  "job_id": "job-1",
+  "candidate_id": "candidate-1",
+  "config_snapshot_id": "pipeline-config-1",
+  "musicbrainz_release_id": "abcdefab-1234-5678-9abc-abcdefabcdef",
+  "approved_at": "2026-08-24T10:20:00Z",
+  "quality": {
+    "identity_rank": 4,
+    "edition_rank": 2,
+    "quality_warning_count": 1,
+    "source_confidence": 90,
+    "bit_depth": 24,
+    "sample_rate": 96000
+  },
+  "warnings": [
+    {
+      "class": "QUALITY_WARNING",
+      "code": "LOSSY_HEURISTIC",
+      "message": "possible lossy source"
+    },
+    {
+      "class": "NON_BLOCKING_WARNING",
+      "code": "LYRICS_MISSING",
+      "message": "lyrics unavailable"
+    }
+  ],
+  "state_revision": 7
+}

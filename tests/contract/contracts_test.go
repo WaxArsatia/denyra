@@ -33,6 +33,18 @@ func TestCandidateWinnerGoldenJSON(t *testing.T) {
 	assertGolden(t, "candidate_winner.json", value)
 }
 
+func TestCandidateApprovedGoldenJSON(t *testing.T) {
+	t.Parallel()
+	value := contracts.CandidateApproved{
+		RequestID: "approval-1", JobID: "job-1", CandidateID: "candidate-1", ConfigSnapshotID: "pipeline-config-1",
+		MusicBrainzReleaseID: "abcdefab-1234-5678-9abc-abcdefabcdef", ApprovedAt: mustTime("2026-08-24T10:20:00Z"),
+		Quality:       contracts.QualityVector{IdentityRank: 4, EditionRank: 2, SourceConfidence: 90, BitDepth: 24, SampleRate: 96_000, QualityWarningCount: 1},
+		Warnings:      []contracts.Warning{{Class: contracts.QualityWarning, Code: "LOSSY_HEURISTIC", Message: "possible lossy source"}, {Class: contracts.NonBlockingWarning, Code: "LYRICS_MISSING", Message: "lyrics unavailable"}},
+		StateRevision: 7,
+	}
+	assertGolden(t, "candidate_approved.json", value)
+}
+
 func TestStrictDecodeRejectsUnknownFieldsAndOversize(t *testing.T) {
 	t.Parallel()
 	valid := `{"request_id":"req","job_id":"job","candidate_id":"candidate","config_snapshot_id":"config","source":"SLSKD","path":"/data/downloads/slskd/job","completion_at":"2026-08-24T10:00:00Z","provenance":{"provider":"slskd","engine_version":"0.26.0","output_sha256":"` + strings.Repeat("a", 64) + `"}}`

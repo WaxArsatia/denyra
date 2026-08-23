@@ -44,6 +44,30 @@ func (client Client) Accept(ctx context.Context, request contracts.CandidateAcce
 	return client.post(ctx, "/internal/candidates", payload, requestID, idempotencyKey)
 }
 
+func (client Client) Winner(ctx context.Context, request contracts.CandidateWinner, requestID, idempotencyKey string) (Response, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return Response{}, err
+	}
+	return client.post(ctx, "/internal/candidates/"+request.CandidateID+"/winner", payload, requestID, idempotencyKey)
+}
+
+func (client Client) Supersede(ctx context.Context, request contracts.CandidateSuperseded, requestID, idempotencyKey string) (Response, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return Response{}, err
+	}
+	return client.post(ctx, "/internal/candidates/"+request.CandidateID+"/supersede", payload, requestID, idempotencyKey)
+}
+
+func (client Client) Cancel(ctx context.Context, request contracts.CandidateCancelled, requestID, idempotencyKey string) (Response, error) {
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return Response{}, err
+	}
+	return client.post(ctx, "/internal/candidates/"+request.CandidateID+"/cancel", payload, requestID, idempotencyKey)
+}
+
 func (client Client) post(ctx context.Context, path string, payload []byte, requestID, idempotencyKey string) (Response, error) {
 	if client.HTTP == nil || client.BaseURL == "" || client.Bearer == "" || client.ResponseLimit <= 0 || requestID == "" || idempotencyKey == "" {
 		return Response{}, fmt.Errorf("pipeline client is not configured")

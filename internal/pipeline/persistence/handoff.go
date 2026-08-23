@@ -94,7 +94,7 @@ func (r *Repositories) AcceptCandidate(ctx context.Context, candidate domain.Can
 	return status, response, err
 }
 
-func (r *Repositories) ApplyCandidateDirective(ctx context.Context, key, operation, candidateID string, expected uint64, to domain.State, actor, reason, target string, requestHash []byte, at time.Time) (int, []byte, error) {
+func (r *Repositories) ApplyCandidateDirective(ctx context.Context, key, operation, candidateID, jobID, configSnapshotID string, expected uint64, to domain.State, actor, reason, target string, requestHash []byte, at time.Time) (int, []byte, error) {
 	status := httpStatusOK
 	var response []byte
 	err := denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
@@ -110,6 +110,9 @@ func (r *Repositories) ApplyCandidateDirective(ctx context.Context, key, operati
 		candidate, err := candidateInTx(ctx, tx, candidateID)
 		if err != nil {
 			return err
+		}
+		if candidate.GatewayJobID != jobID || candidate.ConfigSnapshotID != configSnapshotID {
+			return contracts.ErrIdempotencyConflict
 		}
 		event, err := candidate.Transition(expected, to, actor, reason, at)
 		if err != nil {

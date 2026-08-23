@@ -114,6 +114,28 @@ func (r *Repositories) PendingCandidate(ctx context.Context, id string) (Pending
 	return candidate, err
 }
 
+func (r *Repositories) IncompletePendingCandidates(ctx context.Context, jobID string) ([]PendingCandidate, error) {
+	rows, err := r.DB.QueryContext(ctx, `SELECT p.candidate_id,p.job_id,p.source,p.source_locator,COALESCE(p.download_id,''),p.provenance_json,p.provenance_sha256,p.created_at FROM pending_acquisition_candidates p LEFT JOIN candidates c ON c.candidate_id=p.candidate_id WHERE p.job_id=? AND c.candidate_id IS NULL ORDER BY p.created_at,p.candidate_id`, jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var candidates []PendingCandidate
+	for rows.Next() {
+		var candidate PendingCandidate
+		var created string
+		if err := rows.Scan(&candidate.ID, &candidate.JobID, &candidate.Source, &candidate.SourceLocator, &candidate.DownloadID, &candidate.Provenance, &candidate.ProvenanceSHA256, &created); err != nil {
+			return nil, err
+		}
+		candidate.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
+}
+
 func (r *Repositories) CandidateForJobSource(ctx context.Context, jobID, source string, completed bool) (string, error) {
 	table := "pending_acquisition_candidates"
 	column := "candidate_id"

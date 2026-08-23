@@ -17,7 +17,7 @@ import (
 type HandoffStore interface {
 	RegisterPendingCandidate(context.Context, contracts.CandidateRegistered, string, string, []byte, time.Time) (int, []byte, error)
 	AcceptCandidate(context.Context, domain.Candidate, contracts.CandidateAccepted, string, string, []byte, time.Time) (int, []byte, error)
-	ApplyCandidateDirective(context.Context, string, string, string, uint64, domain.State, string, string, string, []byte, time.Time) (int, []byte, error)
+	ApplyCandidateDirective(context.Context, string, string, string, string, string, uint64, domain.State, string, string, string, []byte, time.Time) (int, []byte, error)
 }
 
 func (s HandoffService) Register(ctx context.Context, key string, request contracts.CandidateRegistered) (int, []byte, error) {
@@ -92,12 +92,12 @@ func (s HandoffService) Accept(ctx context.Context, key string, request contract
 	return status, body, err
 }
 
-func (s HandoffService) Directive(ctx context.Context, key, operation, candidateID string, expected uint64, to domain.State, actor, reason, target string, payload []byte) (int, []byte, error) {
-	if key == "" || operation == "" || candidateID == "" || strings.TrimSpace(reason) == "" {
+func (s HandoffService) Directive(ctx context.Context, key, operation, candidateID, jobID, configSnapshotID string, expected uint64, to domain.State, actor, reason, target string, payload []byte) (int, []byte, error) {
+	if key == "" || operation == "" || candidateID == "" || jobID == "" || configSnapshotID == "" || strings.TrimSpace(reason) == "" {
 		return 0, nil, fmt.Errorf("directive identity and reason are required")
 	}
 	hash := sha256.Sum256(payload)
-	return s.Store.ApplyCandidateDirective(ctx, key, operation, candidateID, expected, to, actor, reason, target, []byte(hex.EncodeToString(hash[:])), s.now())
+	return s.Store.ApplyCandidateDirective(ctx, key, operation, candidateID, jobID, configSnapshotID, expected, to, actor, reason, target, []byte(hex.EncodeToString(hash[:])), s.now())
 }
 func (s HandoffService) now() time.Time {
 	if s.Now != nil {
