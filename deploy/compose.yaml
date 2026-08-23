@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
 
   media-pipeline:
-    image: docker.io/denyra/media-pipeline:local@sha256:16f42698b375c528d0f29086fb6cef794f48efce46e27ff28ea2929676c4e51c
+    image: docker.io/denyra/media-pipeline:local@sha256:168a06d29ce348fdcd73cbcf0bb2dd5971275466dfae2a2f32b56df631843151
     platform: linux/amd64
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     read_only: true
