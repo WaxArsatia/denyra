@@ -41,6 +41,9 @@ func (c Config) Validate() error {
 	if c.Sessions.PasswordMinLen < 8 {
 		return fmt.Errorf("sessions.password_min_length must be at least 8")
 	}
+	if strings.TrimSpace(c.Sessions.BootstrapUsername) == "" {
+		return fmt.Errorf("sessions.bootstrap_username is required")
+	}
 	validationValues := map[string]int64{
 		"validation.track_auto_floor_ms":                 c.Validation.TrackAutoFloorMS,
 		"validation.track_auto_percent_basis_points":     c.Validation.TrackAutoPercentBasisPoints,

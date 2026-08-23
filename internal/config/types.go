@@ -92,8 +92,9 @@ type ArbitrationConfig struct {
 }
 
 type SessionConfig struct {
-	AbsoluteExpiry Duration `toml:"absolute_expiry" json:"absolute_expiry"`
-	PasswordMinLen int      `toml:"password_min_length" json:"password_min_length"`
+	AbsoluteExpiry    Duration `toml:"absolute_expiry" json:"absolute_expiry"`
+	PasswordMinLen    int      `toml:"password_min_length" json:"password_min_length"`
+	BootstrapUsername string   `toml:"bootstrap_username" json:"bootstrap_username"`
 }
 
 type ScannerConfig struct {
@@ -130,6 +131,7 @@ type SecretsConfig struct {
 	InternalBearer SecretRef `toml:"internal_bearer" json:"internal_bearer"`
 	AuditKey       SecretRef `toml:"audit_key" json:"audit_key"`
 	LidarrAPIKey   SecretRef `toml:"lidarr_api_key" json:"lidarr_api_key"`
+	BootstrapAdmin SecretRef `toml:"bootstrap_admin" json:"bootstrap_admin"`
 }
 
 type Policy struct {

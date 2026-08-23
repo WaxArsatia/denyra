@@ -7,8 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/waxarsatia/denyra/internal/config"
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	"github.com/waxarsatia/denyra/internal/platform/fscheck"
 	"github.com/waxarsatia/denyra/internal/platform/servicehost"
 	"github.com/waxarsatia/denyra/migrations"
@@ -64,5 +67,12 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 		},
 		ExternalDependencies: []string{"musicbrainz", "lrclib"},
 		ServeAdmin:           true,
+		Initialize: func(ctx context.Context, prepared *servicehost.Prepared) error {
+			repositories := persistence.New(prepared.DB, time.Now)
+			_, err := application.BootstrapAdmin(ctx, repositories, prepared.Config.Sessions.BootstrapUsername,
+				prepared.Config.Secrets.BootstrapAdmin.Value, prepared.Config.Secrets.BootstrapAdmin.Name,
+				prepared.Config.Sessions.PasswordMinLen, time.Now().UTC())
+			return err
+		},
 	})
 }

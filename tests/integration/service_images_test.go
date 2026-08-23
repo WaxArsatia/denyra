@@ -47,6 +47,7 @@ func runServiceImageSmoke(t *testing.T, image, database string, externalNames []
 	}
 	for name, value := range map[string]string{
 		"internal_bearer": "internal-bearer-fixture", "audit_key": "audit-key-with-adequate-entropy", "lidarr_api_key": "lidarr-key-fixture",
+		"bootstrap_admin": "fixture-password",
 	} {
 		if err := os.WriteFile(filepath.Join(root, "secrets", name), []byte(value), 0o600); err != nil {
 			t.Fatalf("write secret %s: %v", name, err)
@@ -71,6 +72,10 @@ name = "/data/secrets/audit_key"
 [secrets.lidarr_api_key]
 source = "file"
 name = "/data/secrets/lidarr_api_key"
+
+[secrets.bootstrap_admin]
+source = "file"
+name = "/data/secrets/bootstrap_admin"
 `)
 	if err := os.WriteFile(filepath.Join(root, "config.toml"), []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)

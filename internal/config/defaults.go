@@ -47,8 +47,9 @@ func Defaults() Config {
 		},
 		Arbitration: ArbitrationConfig{Window: Duration(30 * time.Minute)},
 		Sessions: SessionConfig{
-			AbsoluteExpiry: Duration(30 * 24 * time.Hour),
-			PasswordMinLen: 8,
+			AbsoluteExpiry:    Duration(30 * 24 * time.Hour),
+			PasswordMinLen:    8,
+			BootstrapUsername: "admin",
 		},
 		Scanners: ScannerConfig{
 			RecoveryInterval:  Duration(30 * time.Second),
@@ -66,6 +67,7 @@ func Defaults() Config {
 			InternalBearer: SecretRef{Source: "file", Name: "internal-bearer"},
 			AuditKey:       SecretRef{Source: "file", Name: "audit-key"},
 			LidarrAPIKey:   SecretRef{Source: "file", Name: "lidarr-api-key"},
+			BootstrapAdmin: SecretRef{Source: "file", Name: "bootstrap-admin"},
 		},
 	}
 }

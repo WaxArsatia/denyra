@@ -10,6 +10,9 @@ admin_mutation_limit = 262144
 [database]
 pipeline_path = "/data/state/pipeline/denyra.db"
 
+[sessions]
+bootstrap_username = "admin"
+
 [secrets.internal_bearer]
 source = "file"
 name = "/run/secrets/internal_bearer"
@@ -21,3 +24,7 @@ name = "/run/secrets/audit_key"
 [secrets.lidarr_api_key]
 source = "file"
 name = "/run/secrets/lidarr_api_key"
+
+[secrets.bootstrap_admin]
+source = "file"
+name = "/run/secrets/bootstrap_admin"

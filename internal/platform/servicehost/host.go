@@ -36,6 +36,7 @@ type Options struct {
 	CheckFilesystem      func(config.Config) error
 	ExternalDependencies []string
 	ServeAdmin           bool
+	Initialize           func(context.Context, *Prepared) error
 	Now                  func() time.Time
 }
 
@@ -104,12 +105,19 @@ func Prepare(ctx context.Context, logger *slog.Logger, options Options) (_ *Prep
 	for _, dependency := range options.ExternalDependencies {
 		healthService.Set(contracts.DependencyHealth{Name: dependency, State: contracts.DependencyDegraded, Details: "not yet observed", Local: false})
 	}
+	prepared := &Prepared{Config: cfg, DB: db, Health: healthService}
+	if options.Initialize != nil {
+		if err := options.Initialize(ctx, prepared); err != nil {
+			healthService.Stop()
+			return nil, fmt.Errorf("initialize service: %w", err)
+		}
+	}
 	logger.Info("service foundation ready",
 		"service", options.Name,
 		"config_snapshot_sha256", hex.EncodeToString(snapshot.Hash[:]),
 		"database", databasePath,
 	)
-	return &Prepared{Config: cfg, DB: db, Health: healthService}, nil
+	return prepared, nil
 }
 
 func (p *Prepared) Close() error {

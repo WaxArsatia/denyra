@@ -20,8 +20,15 @@ var environmentRegistry = map[string]envSetter{
 	"DENYRA_ACQUISITION_PRIMARY_GRACE_WINDOW": durationSetter(func(c *Config) *Duration { return &c.Acquisition.PrimaryGraceWindow }),
 	"DENYRA_ARBITRATION_WINDOW":               durationSetter(func(c *Config) *Duration { return &c.Arbitration.Window }),
 	"DENYRA_SESSIONS_ABSOLUTE_EXPIRY":         durationSetter(func(c *Config) *Duration { return &c.Sessions.AbsoluteExpiry }),
-	"DENYRA_SCANNERS_RECOVERY_INTERVAL":       durationSetter(func(c *Config) *Duration { return &c.Scanners.RecoveryInterval }),
-	"DENYRA_SCANNERS_STABILITY_INTERVAL":      durationSetter(func(c *Config) *Duration { return &c.Scanners.StabilityInterval }),
+	"DENYRA_SESSIONS_BOOTSTRAP_USERNAME":      func(c *Config, value string) error { c.Sessions.BootstrapUsername = value; return nil },
+	"DENYRA_BOOTSTRAP_ADMIN_PASSWORD":         func(c *Config, value string) error { c.Secrets.BootstrapAdmin.Value = value; return nil },
+	"DENYRA_BOOTSTRAP_ADMIN_FILE": func(c *Config, value string) error {
+		c.Secrets.BootstrapAdmin.Source = "file"
+		c.Secrets.BootstrapAdmin.Name = value
+		return nil
+	},
+	"DENYRA_SCANNERS_RECOVERY_INTERVAL":  durationSetter(func(c *Config) *Duration { return &c.Scanners.RecoveryInterval }),
+	"DENYRA_SCANNERS_STABILITY_INTERVAL": durationSetter(func(c *Config) *Duration { return &c.Scanners.StabilityInterval }),
 	"DENYRA_STORAGE_MINIMUM_FREE_BYTES": func(c *Config, value string) error {
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
