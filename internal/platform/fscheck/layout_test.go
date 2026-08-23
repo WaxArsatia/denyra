@@ -65,6 +65,27 @@ func TestCheckRejectsDownloaderOutsideDataRoot(t *testing.T) {
 	}
 }
 
+func TestCheckDirectoriesValidatesGatewaySubset(t *testing.T) {
+	root := t.TempDir()
+	downloads := filepath.Join(root, "downloads", "spotiflac")
+	state := filepath.Join(root, "state", "gateway")
+	for _, path := range []string{downloads, state} {
+		if err := os.MkdirAll(path, 0o750); err != nil {
+			t.Fatalf("mkdir subset: %v", err)
+		}
+	}
+	report, err := fscheck.CheckDirectories(root, []fscheck.Directory{{Name: "downloads", Path: downloads}, {Name: "state", Path: state}}, os.Getuid(), os.Getgid(), 0o700)
+	if err != nil {
+		t.Fatalf("CheckDirectories: %v", err)
+	}
+	if len(report.Paths) != 2 {
+		t.Fatalf("subset report paths = %d", len(report.Paths))
+	}
+	if _, err := fscheck.CheckDirectories(root, []fscheck.Directory{{Name: "outside", Path: t.TempDir()}}, os.Getuid(), os.Getgid(), 0o700); err == nil {
+		t.Fatal("CheckDirectories accepted path outside data root")
+	}
+}
+
 func makeLayout(t *testing.T, libraryReadOnly bool) fscheck.Layout {
 	t.Helper()
 	root := t.TempDir()

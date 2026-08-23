@@ -6,8 +6,8 @@ CREATE TABLE config_snapshots (
 );
 
 CREATE TABLE build_provenance (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    id TEXT PRIMARY KEY,
     canonical_json BLOB NOT NULL,
-    sha256 TEXT NOT NULL,
+    sha256 TEXT NOT NULL UNIQUE,
     recorded_at TEXT NOT NULL
 );

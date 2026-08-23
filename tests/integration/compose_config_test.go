@@ -237,10 +237,7 @@ func TestComposeMountOwnership(t *testing.T) {
 		assertNoMount(service, "/data/library")
 		assertNoMount(service, "/music")
 	}
-	if document.Services["acquisition-gateway"].User != "10001:10001" || document.Services["media-pipeline"].User != "10002:10002" {
-		t.Errorf("custom service numeric users are not locked")
-	}
-	for _, serviceName := range []string{"slskd", "sftpgo", "navidrome"} {
+	for _, serviceName := range []string{"acquisition-gateway", "media-pipeline", "slskd", "sftpgo", "navidrome"} {
 		if got := document.Services[serviceName].User; got != "1000:1000" {
 			t.Errorf("service %s user = %q, want 1000:1000", serviceName, got)
 		}

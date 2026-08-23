@@ -35,6 +35,11 @@ for path in \
 	/data/library \
 	/data/state/gateway \
 	/data/state/pipeline \
+	/data/state/lidarr \
+	/data/state/slskd \
+	/data/state/sftpgo \
+	/data/state/navidrome \
+	/data/cache/navidrome \
 	/data/backups
 do
 	mkdir -p -- "$path"

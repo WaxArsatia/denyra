@@ -3,7 +3,7 @@ group "default" {
 }
 
 variable "DEPENDENCIES_LOCK_SHA256" {
-  default = "cd7c701e37586a450e0c16193c5b21571d615651d936a8a95cb8d32d18bdfbf0"
+  default = "a207fd601b8ca44c948e39f890085bc4ec8e04b18f7553bc9943ccd22395f730"
 }
 
 target "gateway" {

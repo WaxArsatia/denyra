@@ -36,15 +36,16 @@ FROM docker.io/library/debian:13.6-slim@sha256:3a39a0592364683e6bab97937b72cad5a
 COPY deploy/docker/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates=20250419 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10001 denyra && useradd --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
+    && groupadd --gid 1000 denyra && useradd --uid 1000 --gid 1000 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
 COPY --from=go-builder /out/acquisition-gateway /app/acquisition-gateway
 COPY --from=provider-runtime /opt/node /opt/node
 COPY --from=provider-runtime /opt/spotiflac /opt/spotiflac
 COPY --chmod=0444 deploy/docker/generated/gateway-build-provenance.json /app/build-provenance.json
+COPY --chmod=0444 dependencies.lock.json /app/dependencies.lock.json
 ENV PATH=/opt/node/bin:$PATH \
     SPOTIFLAC_DISABLE_AUTO_INSTALL=1 \
     SPOTIFLAC_DISABLE_AUTO_UPDATE=1 \
     SPOTIFLAC_EXTENSION_DIR=/opt/spotiflac/extensions
 LABEL org.opencontainers.image.title="Denyra Acquisition Gateway" org.opencontainers.image.version="3.0.8-provider-set"
-USER 10001:10001
+USER 1000:1000
 ENTRYPOINT ["/app/acquisition-gateway"]

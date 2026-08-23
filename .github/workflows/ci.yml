@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: 1.27.0
+          cache: true
+      - name: Format
+        run: test -z "$(gofmt -l cmd internal migrations tests)"
+      - name: Vet
+        run: go vet ./...
+      - name: Tests with race detector
+        run: go test -race ./...
+      - name: Migration checksums
+        run: go test ./migrations ./internal/platform/sqlite
+      - name: Dependency lock
+        run: scripts/verify-pins/verify.sh --offline
+      - name: Compose model
+        run: docker compose -f deploy/compose.yaml config --quiet
+      - name: Image provenance contracts
+        run: go test ./tests/integration -run 'ImageProvenance|Compose'
+      - name: Architecture imports
+        run: go test ./internal/architecture
+      - name: Clean implementation tree
+        run: scripts/check-clean-tree.sh
+      - name: Regenerate immutable provenance
+        run: |
+          scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service gateway --output deploy/docker/generated/gateway-build-provenance.json
+          scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service pipeline --output deploy/docker/generated/pipeline-build-provenance.json
+      - name: Generated files are committed
+        run: git diff --exit-code
+
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build reproducible application images
+        run: docker buildx bake gateway pipeline --allow=fs.read=. --file deploy/docker/docker-bake.hcl --set '*.platform=linux/amd64'

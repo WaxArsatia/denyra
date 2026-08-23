@@ -40,11 +40,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates=20250419 ffmpeg=7:7.1.5-0+deb13u1 flac=1.5.0+ds-2 \
     libsqlite3-0=3.46.1-7+deb13u1 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 10002 denyra && useradd --uid 10002 --gid 10002 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
+    && groupadd --gid 1000 denyra && useradd --uid 1000 --gid 1000 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
 COPY --from=go-builder /out/media-pipeline /app/media-pipeline
 COPY --from=python-builder /opt/python /opt/python
 COPY --chmod=0444 deploy/docker/generated/pipeline-build-provenance.json /app/build-provenance.json
+COPY --chmod=0444 dependencies.lock.json /app/dependencies.lock.json
 ENV PATH=/opt/python/bin:$PATH PYTHONNOUSERSITE=1 PIP_NO_INDEX=1 HOME=/tmp XDG_CONFIG_HOME=/tmp/.config
 LABEL org.opencontainers.image.title="Denyra Media Pipeline" org.opencontainers.image.version="baseline"
-USER 10002:10002
+USER 1000:1000
 ENTRYPOINT ["/app/media-pipeline"]

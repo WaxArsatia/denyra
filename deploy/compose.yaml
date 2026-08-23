@@ -8,9 +8,9 @@ x-healthcheck-defaults: &healthcheck-defaults
 
 services:
   acquisition-gateway:
-    image: docker.io/denyra/acquisition-gateway:local@sha256:9ab66c3e6e8ad097f49dfaa808ba99b7545503b491ae4fd9a6a55f81b4518a63
+    image: docker.io/denyra/acquisition-gateway:local@sha256:eb24ab73921848d37458e99db4b9a3acd2e26b236299ba8928d395bf16f2f9ea
     platform: linux/amd64
-    user: "10001:10001"
+    user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     read_only: true
     tmpfs:
       - /tmp:mode=1777
@@ -42,9 +42,9 @@ services:
     restart: unless-stopped
 
   media-pipeline:
-    image: docker.io/denyra/media-pipeline:local@sha256:c616264f524efdf614d1b652a1b6a65033fd0ab00bab7069684124e46c7e4f5d
+    image: docker.io/denyra/media-pipeline:local@sha256:16f42698b375c528d0f29086fb6cef794f48efce46e27ff28ea2929676c4e51c
     platform: linux/amd64
-    user: "10002:10002"
+    user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     read_only: true
     tmpfs:
       - /tmp:mode=1777
