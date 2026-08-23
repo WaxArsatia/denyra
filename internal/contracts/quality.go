@@ -14,9 +14,15 @@ type Warning struct {
 }
 
 type QualityVector struct {
-	ReleaseCorrect      bool `json:"release_correct"`
-	SourceConfidence    int  `json:"source_confidence"`
-	BitDepth            int  `json:"bit_depth"`
-	SampleRate          int  `json:"sample_rate"`
-	QualityWarningCount int  `json:"quality_warning_count"`
+	IdentityRank        int `json:"identity_rank"`
+	EditionRank         int `json:"edition_rank"`
+	QualityWarningCount int `json:"quality_warning_count"`
+	SourceConfidence    int `json:"source_confidence"`
+	BitDepth            int `json:"bit_depth"`
+	SampleRate          int `json:"sample_rate"`
+}
+
+type CallbackResult struct {
+	StatusCode     int    `json:"status_code"`
+	ResponseSHA256 string `json:"response_sha256"`
 }

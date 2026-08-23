@@ -27,7 +27,7 @@ func TestCandidateWinnerGoldenJSON(t *testing.T) {
 	value := contracts.CandidateWinner{
 		RequestID: "req-2", JobID: "job-1", CandidateID: "candidate-1", ConfigSnapshotID: "config-1",
 		WinnerLockedAt: mustTime("2026-08-24T10:30:00Z"), Reason: "quality vector and provenance priority",
-		Quality: contracts.QualityVector{ReleaseCorrect: true, SourceConfidence: 90, BitDepth: 24, SampleRate: 96000, QualityWarningCount: 0},
+		Quality: contracts.QualityVector{IdentityRank: 4, EditionRank: 2, SourceConfidence: 90, BitDepth: 24, SampleRate: 96000, QualityWarningCount: 0},
 	}
 	assertGolden(t, "candidate_winner.json", value)
 }

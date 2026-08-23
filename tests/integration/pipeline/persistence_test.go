@@ -10,11 +10,32 @@ import (
 	"testing"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 	"github.com/waxarsatia/denyra/migrations"
 )
+
+func TestPersistenceQualityIntentIsImmutableAndIdempotent(t *testing.T) {
+	db, repositories, now := pipelineRepositories(t)
+	defer db.Close()
+	if err := repositories.PutQualityIntent(context.Background(), "quality-1", "candidate-1", "hash-a", []byte(`{"candidate":"one"}`), now); err != nil {
+		t.Fatal(err)
+	}
+	if err := repositories.PutQualityIntent(context.Background(), "quality-1", "candidate-1", "hash-a", []byte(`{"candidate":"one"}`), now); err != nil {
+		t.Fatalf("same quality intent rejected: %v", err)
+	}
+	if err := repositories.PutQualityIntent(context.Background(), "quality-1", "candidate-1", "hash-b", []byte(`{"candidate":"two"}`), now); !errors.Is(err, contracts.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting quality intent error = %v", err)
+	}
+	if err := repositories.CompleteQualityIntent(context.Background(), "quality-1", 202, "response-hash", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := repositories.CompleteQualityIntent(context.Background(), "quality-1", 202, "response-hash", now.Add(2*time.Second)); err != nil {
+		t.Fatalf("same completion rejected: %v", err)
+	}
+}
 
 func TestPersistenceUsesOptimisticTransitionAndAtomicAudit(t *testing.T) {
 	db, repositories, now := pipelineRepositories(t)

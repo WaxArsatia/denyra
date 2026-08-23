@@ -6,10 +6,11 @@
   "winner_locked_at": "2026-08-24T10:30:00Z",
   "reason": "quality vector and provenance priority",
   "quality": {
-    "release_correct": true,
+    "identity_rank": 4,
+    "edition_rank": 2,
+    "quality_warning_count": 0,
     "source_confidence": 90,
     "bit_depth": 24,
-    "sample_rate": 96000,
-    "quality_warning_count": 0
+    "sample_rate": 96000
   }
 }
