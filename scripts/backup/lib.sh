@@ -12,12 +12,16 @@ denyra_api() {
     --data "$payload" "$endpoint"
 }
 denyra_device() { stat -c %d "$1"; }
+denyra_backup_compose() {
+  docker compose --project-name "${DENYRA_PROJECT_NAME:-denyra}" \
+    --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$DENYRA_COMPOSE_FILE" "$@"
+}
 denyra_restic() {
-  docker compose -f "${DENYRA_COMPOSE_FILE:-deploy/compose.yaml}" --profile backup run --rm restic "$@"
+  denyra_backup_compose --profile backup run --rm restic "$@"
 }
 
 denyra_restore_tool() {
-  docker compose -f "${DENYRA_COMPOSE_FILE:-deploy/compose.yaml}" run --rm --no-deps \
+  denyra_backup_compose run --rm --no-deps \
     --entrypoint /app/denyra-restore-check "$@"
 }
 

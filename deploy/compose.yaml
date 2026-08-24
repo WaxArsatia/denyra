@@ -265,12 +265,13 @@ services:
       - restic_password
     volumes:
       - type: bind
-        source: ${DENYRA_DATA_ROOT:-/data}
+        source: ${DENYRA_HOME:-/srv/denyra}
         target: /source
         read_only: true
       - type: bind
-        source: ${DENYRA_DATA_ROOT:-/data}/backups
+        source: ${DENYRA_DATA_ROOT:-/srv/denyra/data}/backups
         target: /workspace
+        read_only: true
       - type: bind
         source: ${DENYRA_RESTIC_REPOSITORY_PATH:-/mnt/denyra-restic}
         target: /repository
