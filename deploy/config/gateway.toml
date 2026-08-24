@@ -1,6 +1,6 @@
 [http]
 admin_address = "127.0.0.1:8090"
-internal_address = "172.30.0.2:8081"
+internal_address = "0.0.0.0:8081"
 acquisition_event_address = "0.0.0.0:8082"
 internal_body_limit = 1048576
 external_request_timeout = "30s"

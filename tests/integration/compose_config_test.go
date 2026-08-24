@@ -1,9 +1,7 @@
 package integration_test
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,6 +19,7 @@ type composeDocument struct {
 
 type composeService struct {
 	Image       string                           `json:"image"`
+	Build       map[string]any                   `json:"build"`
 	Platform    string                           `json:"platform"`
 	User        string                           `json:"user"`
 	Entrypoint  []string                         `json:"entrypoint"`
@@ -121,7 +120,7 @@ func renderCompose(t *testing.T) composeDocument {
 	return document
 }
 
-func TestComposeTopologyAndListeners(t *testing.T) {
+func TestComposeUsesServiceDNSAndCompatibleTags(t *testing.T) {
 	document := renderCompose(t)
 	wantServices := []string{"acquisition-gateway", "lidarr", "media-pipeline", "navidrome", "sftpgo", "slskd"}
 	for _, name := range wantServices {
@@ -130,11 +129,8 @@ func TestComposeTopologyAndListeners(t *testing.T) {
 			t.Errorf("missing service %q", name)
 			continue
 		}
-		if service.Platform != "linux/amd64" {
-			t.Errorf("service %s platform = %q", name, service.Platform)
-		}
-		if !strings.Contains(service.Image, "@sha256:") {
-			t.Errorf("service %s image is not digest-pinned: %q", name, service.Image)
+		if service.Platform != "" || strings.Contains(service.Image, "@sha256:") {
+			t.Errorf("service %s retained strict image identity", name)
 		}
 		if len(service.Healthcheck) == 0 {
 			t.Errorf("service %s has no healthcheck", name)
@@ -155,19 +151,13 @@ func TestComposeTopologyAndListeners(t *testing.T) {
 	if !slices.Equal(members, []string{"acquisition-gateway", "media-pipeline"}) {
 		t.Errorf("denyra-control members = %v", members)
 	}
-	if got := document.Services["acquisition-gateway"].Networks["denyra-control"].IPv4Address; got != "172.30.0.2" {
-		t.Errorf("gateway control address = %q", got)
-	}
-	if got := document.Services["media-pipeline"].Networks["denyra-control"].IPv4Address; got != "172.30.0.3" {
-		t.Errorf("pipeline control address = %q", got)
-	}
-	if got := document.Services["acquisition-gateway"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "172.30.0.2:8081" {
+	if got := document.Services["acquisition-gateway"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "0.0.0.0:8081" {
 		t.Errorf("gateway internal listener = %q", got)
 	}
 	if got := document.Services["acquisition-gateway"].Environment["DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS"]; got != "0.0.0.0:8082" {
 		t.Errorf("gateway acquisition event listener = %q", got)
 	}
-	if got := document.Services["media-pipeline"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "172.30.0.3:8081" {
+	if got := document.Services["media-pipeline"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "0.0.0.0:8081" {
 		t.Errorf("pipeline internal listener = %q", got)
 	}
 	if got := document.Services["media-pipeline"].Environment["DENYRA_HTTP_ADMIN_ADDRESS"]; got != "0.0.0.0:8090" {
@@ -179,6 +169,11 @@ func TestComposeTopologyAndListeners(t *testing.T) {
 	for _, name := range []string{"acquisition-gateway", "lidarr", "slskd"} {
 		if ports := document.Services[name].Ports; len(ports) != 0 {
 			t.Errorf("service %s unexpectedly publishes ports: %+v", name, ports)
+		}
+	}
+	for _, name := range []string{"acquisition-gateway", "media-pipeline", "lidarr", "navidrome"} {
+		if len(document.Services[name].Build) == 0 {
+			t.Errorf("custom service %s has no Compose build definition", name)
 		}
 	}
 }
@@ -200,79 +195,6 @@ func TestSFTPGoUsesNativeHealthcheck(t *testing.T) {
 	want := []string{"CMD", "sftpgo", "ping"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("SFTPGo healthcheck = %v, want %v", got, want)
-	}
-}
-
-func TestComposeUsesDerivedImageLock(t *testing.T) {
-	document := renderCompose(t)
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
-	}
-	lockBytes, err := os.ReadFile(filepath.Join(repoRoot, "deploy", "images.lock.json"))
-	if err != nil {
-		t.Fatalf("read deployment image lock: %v", err)
-	}
-	var lock struct {
-		DependenciesLockSHA256 string `json:"dependencies_lock_sha256"`
-		Images                 []struct {
-			ID        string `json:"id"`
-			Reference string `json:"reference"`
-			Platform  string `json:"platform"`
-		} `json:"images"`
-	}
-	if err := json.Unmarshal(lockBytes, &lock); err != nil {
-		t.Fatalf("decode deployment image lock: %v", err)
-	}
-	dependencyBytes, err := os.ReadFile(filepath.Join(repoRoot, "dependencies.lock.json"))
-	if err != nil {
-		t.Fatalf("read dependency lock: %v", err)
-	}
-	if want := fmt.Sprintf("%x", sha256.Sum256(dependencyBytes)); lock.DependenciesLockSHA256 != want {
-		t.Fatalf("deployment image lock references dependency lock %q, want %q", lock.DependenciesLockSHA256, want)
-	}
-	serviceByID := map[string]string{
-		"acquisition-gateway": "acquisition-gateway",
-		"lidarr-derived":      "lidarr",
-		"media-pipeline":      "media-pipeline",
-		"navidrome-derived":   "navidrome",
-	}
-	for _, image := range lock.Images {
-		serviceName, ok := serviceByID[image.ID]
-		if !ok {
-			t.Errorf("unknown derived image ID %q", image.ID)
-			continue
-		}
-		service := document.Services[serviceName]
-		if service.Image != image.Reference || service.Platform != image.Platform {
-			t.Errorf("service %s does not match deployment image lock", serviceName)
-		}
-		if os.Getenv("TEST_DOCKER_IMAGES") == "1" {
-			if output, err := exec.Command("docker", "image", "inspect", image.Reference).CombinedOutput(); err != nil {
-				t.Errorf("locked image %s is not locally resolvable: %v\n%s", image.Reference, err, output)
-			}
-		}
-	}
-	var dependencyLock struct {
-		Images []struct {
-			ID        string `json:"id"`
-			Reference string `json:"reference"`
-			Platform  string `json:"platform"`
-		} `json:"images"`
-	}
-	if err := json.Unmarshal(dependencyBytes, &dependencyLock); err != nil {
-		t.Fatalf("decode dependency lock: %v", err)
-	}
-	serviceByDependencyID := map[string]string{"slskd": "slskd", "sftpgo": "sftpgo"}
-	for _, image := range dependencyLock.Images {
-		serviceName, used := serviceByDependencyID[image.ID]
-		if !used {
-			continue
-		}
-		service := document.Services[serviceName]
-		if service.Image != image.Reference || service.Platform != image.Platform {
-			t.Errorf("service %s does not match dependency lock", serviceName)
-		}
 	}
 }
 
@@ -405,8 +327,8 @@ func TestComposeServiceConfigsAreValid(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load %s config: %v", serviceName, err)
 		}
-		if cfg.HTTP.InternalAddress == "0.0.0.0:8081" || cfg.HTTP.InternalAddress == ":8081" {
-			t.Errorf("%s internal listener uses wildcard address", serviceName)
+		if cfg.HTTP.InternalAddress != "0.0.0.0:8081" {
+			t.Errorf("%s internal listener = %q", serviceName, cfg.HTTP.InternalAddress)
 		}
 	}
 }

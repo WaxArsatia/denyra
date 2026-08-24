@@ -45,7 +45,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	}
 	if len(arguments) > 0 && arguments[0] == "healthcheck" {
 		flags := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
-		address := flags.String("address", "172.30.0.2:8081", "internal health address")
+		address := flags.String("address", "127.0.0.1:8081", "internal health address")
 		timeout := flags.Duration("timeout", time.Duration(config.Defaults().HTTP.HealthcheckTimeout), "healthcheck timeout")
 		if err := flags.Parse(arguments[1:]); err != nil {
 			return err

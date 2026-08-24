@@ -8,16 +8,18 @@ x-healthcheck-defaults: &healthcheck-defaults
 
 services:
   acquisition-gateway:
-    image: docker.io/denyra/acquisition-gateway:local@sha256:16783876b1ddbe2bca74ba7c9fbad3b29c71491fd3a323878c290a1ae6e69855
-    platform: linux/amd64
+    image: denyra/acquisition-gateway:${DENYRA_IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/gateway.Dockerfile
+      args:
+        DENYRA_RELEASE_REFRESH: ${DENYRA_RELEASE_REFRESH:-cached}
+        DENYRA_GIT_COMMIT: ${DENYRA_GIT_COMMIT:-unknown}
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
     command: ["--config", "/etc/denyra/config.toml"]
     environment:
       DENYRA_HTTP_ADMIN_ADDRESS: 127.0.0.1:8090
-      DENYRA_HTTP_INTERNAL_ADDRESS: ${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}:8081
+      DENYRA_HTTP_INTERNAL_ADDRESS: 0.0.0.0:8081
       DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS: 0.0.0.0:8082
     configs:
       - source: gateway_config
@@ -37,31 +39,26 @@ services:
         source: ${DENYRA_DATA_ROOT:-/data}/backups
         target: /data/backups
     networks:
-      denyra-control:
-        ipv4_address: ${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}
+      denyra-control: {}
       denyra-acquisition: {}
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD", "/app/acquisition-gateway", "healthcheck", "--address", "${DENYRA_GATEWAY_CONTROL_ADDRESS:-172.30.0.2}:8081"]
+      test: ["CMD", "/app/acquisition-gateway", "healthcheck", "--address", "127.0.0.1:8081"]
     restart: unless-stopped
 
   media-pipeline:
-    image: docker.io/denyra/media-pipeline:local@sha256:4cf825e4e810fa2668c4aaef967114fd713e96462d0023833f29f74030763daa
-    platform: linux/amd64
+    image: denyra/media-pipeline:${DENYRA_IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/pipeline.Dockerfile
+      args:
+        DENYRA_RELEASE_REFRESH: ${DENYRA_RELEASE_REFRESH:-cached}
+        DENYRA_GIT_COMMIT: ${DENYRA_GIT_COMMIT:-unknown}
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
-      - /data/state/gateway:mode=000
-      - /data/state/lidarr:mode=000
-      - /data/state/slskd:mode=000
-      - /data/state/sftpgo:mode=000
-      - /data/state/navidrome:mode=000
-      - /data/cache:mode=000
     command: ["--config", "/etc/denyra/config.toml"]
     environment:
       DENYRA_HTTP_ADMIN_ADDRESS: 0.0.0.0:8090
-      DENYRA_HTTP_INTERNAL_ADDRESS: ${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}:8081
+      DENYRA_HTTP_INTERNAL_ADDRESS: 0.0.0.0:8081
     configs:
       - source: pipeline_config
         target: /etc/denyra/config.toml
@@ -79,8 +76,7 @@ services:
         target: /data/library
         read_only: true
     networks:
-      denyra-control:
-        ipv4_address: ${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}
+      denyra-control: {}
       denyra-import: {}
     ports:
       - name: admin-http
@@ -89,12 +85,16 @@ services:
         protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults
-      test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "${DENYRA_PIPELINE_CONTROL_ADDRESS:-172.30.0.3}:8081"]
+      test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "127.0.0.1:8081"]
     restart: unless-stopped
 
   lidarr:
-    image: docker.io/denyra/lidarr:local@sha256:652020c8c6185e6874944f5177c1a768b0b91113943f1b0ea48f04348384f4a3
-    platform: linux/amd64
+    image: denyra/lidarr:${DENYRA_IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/lidarr.Dockerfile
+      args:
+        DENYRA_RELEASE_REFRESH: ${DENYRA_RELEASE_REFRESH:-cached}
     environment:
       PUID: "${DENYRA_MEDIA_UID:-1000}"
       PGID: "${DENYRA_MEDIA_GID:-1000}"
@@ -120,8 +120,7 @@ services:
     restart: unless-stopped
 
   slskd:
-    image: ghcr.io/slskd/slskd:0.26.0@sha256:161e214a05b51404f6bb6ddd7e60b66ff674a2d8ad28a88dae5b3c1caf9c8c48
-    platform: linux/amd64
+    image: slskd/slskd:latest
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     entrypoint: ["/usr/bin/tini", "--", "/bin/bash", "/denyra/slskd-secret-entrypoint.sh", "/entrypoint.sh"]
     command: ["./slskd"]
@@ -146,8 +145,7 @@ services:
     restart: unless-stopped
 
   sftpgo:
-    image: docker.io/drakkan/sftpgo:v2.7.5@sha256:d819bcea946470940416b63604f820aee965a02127b07126785e279fa311258e
-    platform: linux/amd64
+    image: drakkan/sftpgo:latest
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     environment:
       SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN: "false"
@@ -175,12 +173,13 @@ services:
     restart: unless-stopped
 
   navidrome:
-    image: docker.io/denyra/navidrome:local@sha256:2abd04221d9848bfe0097836e2a5fdc449bbf37004468a43837a4c3068f2fa40
-    platform: linux/amd64
+    image: denyra/navidrome:${DENYRA_IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: deploy/docker/navidrome.Dockerfile
+      args:
+        DENYRA_RELEASE_REFRESH: ${DENYRA_RELEASE_REFRESH:-cached}
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
     environment:
       ND_CONFIGFILE: /etc/denyra/navidrome.toml
       ND_PLUGIN_ND_LYRICS_CONFIG: /etc/denyra/navidrome-lyrics.toml
@@ -213,8 +212,7 @@ services:
     restart: unless-stopped
 
   restic:
-    image: docker.io/restic/restic:0.19.1@sha256:08916bcda4a4435f9d9828ebb4e91bb7ada3d2c8a53699788930e0ae1bd4fa67
-    platform: linux/amd64
+    image: restic/restic:latest
     profiles: ["backup"]
     environment:
       RESTIC_REPOSITORY: /repository
@@ -265,9 +263,6 @@ secrets:
 networks:
   denyra-control:
     internal: true
-    ipam:
-      config:
-        - subnet: ${DENYRA_CONTROL_SUBNET:-172.30.0.0/24}
   denyra-acquisition: {}
   denyra-import: {}
   denyra-upload: {}

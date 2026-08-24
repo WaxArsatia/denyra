@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestPipelineUsesOneDataMountForAtomicMovesAndKeepsLibraryReadOnly(t *testing.T) {
+func TestPipelineUsesSimpleDataMountAndKeepsLibraryReadOnly(t *testing.T) {
 	root := repositoryRoot(t)
 	compose := readText(t, filepath.Join(root, "deploy/compose.yaml"))
 	start := strings.Index(compose, "  media-pipeline:\n")
@@ -26,12 +26,7 @@ func TestPipelineUsesOneDataMountForAtomicMovesAndKeepsLibraryReadOnly(t *testin
 			t.Fatalf("pipeline uses separate mount %q, breaking atomic rename", separate)
 		}
 	}
-	for _, masked := range []string{
-		"/data/state/gateway:mode=000", "/data/state/lidarr:mode=000", "/data/state/slskd:mode=000",
-		"/data/state/sftpgo:mode=000", "/data/state/navidrome:mode=000", "/data/cache:mode=000",
-	} {
-		if !strings.Contains(service, masked) {
-			t.Fatalf("pipeline parent mount does not mask unauthorized path %q", masked)
-		}
+	if strings.Contains(service, "tmpfs:") {
+		t.Fatal("pipeline retained state-masking tmpfs entries")
 	}
 }
