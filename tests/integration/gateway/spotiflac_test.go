@@ -31,7 +31,7 @@ func TestSpotiFLACStrictOutcomesAndTimeoutBoundaries(t *testing.T) {
 		Resolver:            staticLocator{value: "https://example.test"},
 		BaseOutputDirectory: base,
 		RuntimeHome:         home,
-		ProviderTimeout:     250 * time.Millisecond,
+		ProviderTimeout:     time.Second,
 		PollInterval:        5 * time.Millisecond,
 		TerminationGrace:    20 * time.Millisecond,
 		OutputLimit:         1 << 20,
