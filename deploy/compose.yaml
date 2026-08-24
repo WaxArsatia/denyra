@@ -76,9 +76,6 @@ services:
         source: ${DENYRA_DATA_ROOT:-/data}/library
         target: /data/library
         read_only: true
-      - type: bind
-        source: ${DENYRA_DATA_ROOT:-/data}/library-unmanaged
-        target: /data/library-unmanaged
     networks:
       denyra-control: {}
       denyra-import: {}

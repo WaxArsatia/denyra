@@ -312,7 +312,7 @@ func TestComposeMountOwnership(t *testing.T) {
 	assertNoMount("acquisition-gateway", "/data/downloads/slskd")
 	assertMount("media-pipeline", "/data", false)
 	assertMount("media-pipeline", "/data/library", true)
-	assertMount("media-pipeline", "/data/library-unmanaged", false)
+	assertNoMount("media-pipeline", "/data/library-unmanaged")
 	assertMount("sftpgo", "/data/incoming/manual", false)
 	assertMount("navidrome", "/music-managed", true)
 	assertMount("navidrome", "/music-unmanaged", true)
