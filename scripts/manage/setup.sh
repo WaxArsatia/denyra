@@ -88,6 +88,21 @@ denyra_setup_reconcile() {
   done
 }
 
+denyra_setup_start_all() {
+  denyra_setup_start_attempt=1
+  denyra_setup_start_attempts=${DENYRA_START_ATTEMPTS:-3}
+  denyra_setup_start_interval=${DENYRA_START_RETRY_SECONDS:-3}
+  while [ "$denyra_setup_start_attempt" -le "$denyra_setup_start_attempts" ]; do
+    if denyra_compose up -d --remove-orphans --wait; then
+      return 0
+    fi
+    [ "$denyra_setup_start_attempt" -lt "$denyra_setup_start_attempts" ] || return 1
+    printf 'denyra: final start attempt %s/%s failed; retrying\n' "$denyra_setup_start_attempt" "$denyra_setup_start_attempts" >&2
+    sleep "$denyra_setup_start_interval"
+    denyra_setup_start_attempt=$((denyra_setup_start_attempt + 1))
+  done
+}
+
 denyra_setup() {
   git --version >/dev/null 2>&1 || denyra_die "Git is required"
   docker version >/dev/null 2>&1 || denyra_die "Docker Engine is required"
@@ -145,6 +160,8 @@ denyra_setup() {
     printf 'DENYRA_CONFIG_DIR=%s\n' "$DENYRA_CONFIG_DIR"
     printf 'DENYRA_SECRETS_DIR=%s\n' "$DENYRA_SECRETS_DIR"
     printf 'DENYRA_DATA_ROOT=%s\n' "$DENYRA_DATA_ROOT"
+    printf 'DENYRA_PROJECT_NAME=%s\n' "$DENYRA_PROJECT_NAME"
+    printf 'DENYRA_COMPOSE_OVERRIDE=%s\n' "${DENYRA_COMPOSE_OVERRIDE:-}"
     printf 'DENYRA_MEDIA_UID=%s\n' "$denyra_setup_uid"
     printf 'DENYRA_MEDIA_GID=%s\n' "$denyra_setup_gid"
     printf 'DENYRA_IMAGE_TAG=%s\n' "$denyra_setup_short_commit"
@@ -168,7 +185,7 @@ denyra_setup() {
   denyra_compose up -d --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}" lidarr slskd sftpgo navidrome
   denyra_setup_lidarr_api_key
   denyra_setup_reconcile
-  denyra_compose up -d --remove-orphans --wait
+  denyra_setup_start_all
   . "$repo_root/scripts/manage/smoke.sh"
   denyra_smoke
   denyra_unlock

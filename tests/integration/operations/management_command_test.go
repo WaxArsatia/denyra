@@ -49,6 +49,12 @@ case "$*" in
       printf '<Config><ApiKey>%s</ApiKey><Unrelated>keep</Unrelated></Config>\n' "${DENYRA_TEST_LIDARR_API_KEY:-fixture-lidarr-api-key}" > "$DENYRA_DATA_ROOT/state/lidarr/config.xml"
     fi
     ;;
+  *" up -d --remove-orphans --wait")
+    if [ "${DENYRA_TEST_DOCKER_FAIL:-}" = start-once ] && [ ! -e "$DENYRA_TEST_START_MARKER" ]; then
+      : > "$DENYRA_TEST_START_MARKER"
+      exit 22
+    fi
+    ;;
   *" --profile setup run --rm reconciler")
     [ "${DENYRA_TEST_DOCKER_FAIL:-}" != reconcile ] || exit 21
     if [ "${DENYRA_TEST_DOCKER_FAIL:-}" = reconcile-once ] && [ ! -e "$DENYRA_TEST_RECONCILE_MARKER" ]; then
@@ -389,6 +395,42 @@ func TestSetupRetriesTransientReconciliation(t *testing.T) {
 	}
 	if got := strings.Count(f.log(), "--profile setup run --rm reconciler"); got != 2 {
 		t.Fatalf("reconcile attempts=%d log=\n%s", got, f.log())
+	}
+}
+
+func TestSetupRetriesTransientFinalStart(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	cmd := f.setupCommand()
+	cmd.Env = append(cmd.Env,
+		"DENYRA_TEST_DOCKER_FAIL=start-once",
+		"DENYRA_TEST_START_MARKER="+filepath.Join(f.home, "start-once"),
+		"DENYRA_START_RETRY_SECONDS=0",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("setup did not recover transient final start: %v\n%s", err, out)
+	}
+	if got := strings.Count(f.log(), "up -d --remove-orphans --wait"); got != 2 {
+		t.Fatalf("final start attempts=%d log=\n%s", got, f.log())
+	}
+}
+
+func TestSetupPersistsComposeContextForLaterCommands(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	override := filepath.Join(f.home, "local.compose.yaml")
+	cmd := f.setupCommand()
+	cmd.Env = append(cmd.Env, "DENYRA_PROJECT_NAME=denyra-local", "DENYRA_COMPOSE_OVERRIDE="+override)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("setup: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(f.logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.run("status")
+	log := f.log()
+	if !strings.Contains(log, "--project-name denyra-local") || !strings.Contains(log, "-f "+override) {
+		t.Fatalf("persisted compose context missing:\n%s", log)
 	}
 }
 

@@ -43,6 +43,18 @@ denyra_context() {
     [ "$data_root_count" -eq 1 ] || denyra_die "denyra.env has an invalid data root"
     DENYRA_DATA_ROOT=$(sed -n 's/^DENYRA_DATA_ROOT=//p' "$DENYRA_CONFIG_DIR/denyra.env")
   fi
+  if [ -f "$DENYRA_CONFIG_DIR/denyra.env" ]; then
+    if [ -z "${DENYRA_PROJECT_NAME:-}" ]; then
+      denyra_project_count=$(sed -n '/^DENYRA_PROJECT_NAME=/p' "$DENYRA_CONFIG_DIR/denyra.env" | wc -l)
+      [ "$denyra_project_count" -le 1 ] || denyra_die "denyra.env has an invalid project name"
+      [ "$denyra_project_count" -eq 0 ] || DENYRA_PROJECT_NAME=$(sed -n 's/^DENYRA_PROJECT_NAME=//p' "$DENYRA_CONFIG_DIR/denyra.env")
+    fi
+    if [ -z "${DENYRA_COMPOSE_OVERRIDE:-}" ]; then
+      denyra_override_count=$(sed -n '/^DENYRA_COMPOSE_OVERRIDE=/p' "$DENYRA_CONFIG_DIR/denyra.env" | wc -l)
+      [ "$denyra_override_count" -le 1 ] || denyra_die "denyra.env has an invalid compose override"
+      [ "$denyra_override_count" -eq 0 ] || DENYRA_COMPOSE_OVERRIDE=$(sed -n 's/^DENYRA_COMPOSE_OVERRIDE=//p' "$DENYRA_CONFIG_DIR/denyra.env")
+    fi
+  fi
   DENYRA_DATA_ROOT=${DENYRA_DATA_ROOT:-$DENYRA_HOME/data}
   case "$DENYRA_DATA_ROOT" in
     /*) ;;
@@ -50,8 +62,14 @@ denyra_context() {
   esac
   [ "$DENYRA_DATA_ROOT" != / ] || denyra_die "DENYRA_DATA_ROOT cannot be /"
 
+  DENYRA_PROJECT_NAME=${DENYRA_PROJECT_NAME:-denyra}
+  case "$DENYRA_PROJECT_NAME" in ''|*[!A-Za-z0-9_.-]*) denyra_die "DENYRA_PROJECT_NAME is invalid" ;; esac
+  if [ -n "${DENYRA_COMPOSE_OVERRIDE:-}" ]; then
+    case "$DENYRA_COMPOSE_OVERRIDE" in /*) ;; *) denyra_die "DENYRA_COMPOSE_OVERRIDE must be an absolute path" ;; esac
+  fi
+
   DENYRA_UPDATES_DIR=$DENYRA_HOME/updates
-  export DENYRA_HOME DENYRA_CONFIG_DIR DENYRA_SECRETS_DIR DENYRA_DATA_ROOT DENYRA_UPDATES_DIR
+  export DENYRA_HOME DENYRA_CONFIG_DIR DENYRA_SECRETS_DIR DENYRA_DATA_ROOT DENYRA_UPDATES_DIR DENYRA_PROJECT_NAME DENYRA_COMPOSE_OVERRIDE
 }
 
 denyra_lock() {
