@@ -96,7 +96,7 @@ func liveJSONRequest(t *testing.T, ctx context.Context, client *http.Client, met
 		t.Fatal(err)
 	}
 	if bearer != "" {
-		request.Header.Set("Authorization", "Bearer "+bearer)
+		request.Header.Set("X-ND-Authorization", "Bearer "+bearer)
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")

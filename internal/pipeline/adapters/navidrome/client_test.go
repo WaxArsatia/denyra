@@ -37,7 +37,7 @@ func TestClientReconcilesLibrariesAndUsesTokenAuthentication(t *testing.T) {
 			switch r.Method {
 			case http.MethodGet:
 				requireBearer(t, r, "fixture-token", "refreshed-token")
-				w.Header().Set("Authorization", "Bearer refreshed-token")
+				w.Header().Set("X-ND-Authorization", "Bearer refreshed-token")
 				writeJSON(t, w, libraries)
 			case http.MethodPost:
 				requireBearer(t, r, "refreshed-token")
@@ -125,13 +125,13 @@ func TestClientReconcilesLibrariesAndUsesTokenAuthentication(t *testing.T) {
 
 func requireBearer(t *testing.T, r *http.Request, accepted ...string) {
 	t.Helper()
-	got := r.Header.Get("Authorization")
+	got := r.Header.Get("X-ND-Authorization")
 	for _, token := range accepted {
 		if got == "Bearer "+token {
 			return
 		}
 	}
-	t.Fatalf("Authorization=%q, accepted=%v", got, accepted)
+	t.Fatalf("X-ND-Authorization=%q, accepted=%v", got, accepted)
 }
 
 func requireSubsonicToken(t *testing.T, query url.Values) {

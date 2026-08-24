@@ -245,7 +245,7 @@ func (c *Client) native(ctx context.Context, method, path string, input, output 
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Authorization", "Bearer "+c.currentJWT())
+	request.Header.Set("X-ND-Authorization", "Bearer "+c.currentJWT())
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -254,7 +254,11 @@ func (c *Client) native(ctx context.Context, method, path string, input, output 
 		return fmt.Errorf("Navidrome %s %s: %w", method, path, err)
 	}
 	defer response.Body.Close()
-	c.refreshJWT(response.Header.Get("Authorization"))
+	refreshed := response.Header.Get("X-ND-Authorization")
+	if refreshed == "" {
+		refreshed = response.Header.Get("Authorization")
+	}
+	c.refreshJWT(refreshed)
 	data, err := c.readBody(response.Body)
 	if err != nil {
 		return err
