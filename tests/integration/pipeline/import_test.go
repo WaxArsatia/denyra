@@ -40,9 +40,13 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 		}
 		switch {
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/config/downloadclient":
-			_, _ = writer.Write([]byte(`{"enableCompletedDownloadHandling":false}`))
+			_, _ = writer.Write([]byte(validDownloadConfig))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/config/mediamanagement":
-			_, _ = writer.Write([]byte(`{"importExtraFiles":true,"extraFileExtensions":"lrc,nfo"}`))
+			_, _ = writer.Write([]byte(validMediaManagementConfig))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/config/naming":
+			_, _ = writer.Write([]byte(validNamingConfig))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/metadata":
+			_, _ = writer.Write([]byte(validMetadataConfig))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/manualimport":
 			if request.URL.Query().Has("downloadId") {
 				_, _ = writer.Write([]byte(`[]`))

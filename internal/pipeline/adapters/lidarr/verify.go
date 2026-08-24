@@ -17,6 +17,17 @@ import (
 
 type ConfigVerifier struct{ Client Client }
 
+type metadataField struct {
+	Name  string `json:"name"`
+	Value bool   `json:"value"`
+}
+
+type metadataConsumer struct {
+	Enable         bool            `json:"enable"`
+	Implementation string          `json:"implementation"`
+	Fields         []metadataField `json:"fields"`
+}
+
 func (v ConfigVerifier) Verify(ctx context.Context) error {
 	var download struct {
 		EnableCompletedDownloadHandling bool `json:"enableCompletedDownloadHandling"`
@@ -34,8 +45,48 @@ func (v ConfigVerifier) Verify(ctx context.Context) error {
 	if err := v.Client.Get(ctx, "/api/v1/config/mediamanagement", nil, &mediaConfig); err != nil {
 		return err
 	}
-	if !mediaConfig.ImportExtraFiles || !containsExtension(mediaConfig.ExtraFileExtensions, "lrc") {
-		return fmt.Errorf("Lidarr Import Extra Files must include lrc")
+	if !mediaConfig.ImportExtraFiles ||
+		!containsExtension(mediaConfig.ExtraFileExtensions, "lrc") ||
+		!containsExtension(mediaConfig.ExtraFileExtensions, "elrc") ||
+		!containsExtension(mediaConfig.ExtraFileExtensions, "ttml") {
+		return fmt.Errorf("Lidarr Import Extra Files must include lrc, elrc, and ttml")
+	}
+	var naming struct {
+		RenameTracks         bool   `json:"renameTracks"`
+		StandardTrackFormat  string `json:"standardTrackFormat"`
+		MultiDiscTrackFormat string `json:"multiDiscTrackFormat"`
+	}
+	if err := v.Client.Get(ctx, "/api/v1/config/naming", nil, &naming); err != nil {
+		return err
+	}
+	if !naming.RenameTracks {
+		return fmt.Errorf("Lidarr Rename Tracks must be enabled")
+	}
+	if !hasAlbumDirectory(naming.StandardTrackFormat) {
+		return fmt.Errorf("Lidarr Standard Track Format must create an album directory")
+	}
+	if !hasAlbumDirectory(naming.MultiDiscTrackFormat) {
+		return fmt.Errorf("Lidarr Multi Disc Track Format must create an album directory")
+	}
+	var metadata []metadataConsumer
+	if err := v.Client.Get(ctx, "/api/v1/metadata", nil, &metadata); err != nil {
+		return err
+	}
+	var artworkConsumer *metadataConsumer
+	for index := range metadata {
+		if strings.EqualFold(metadata[index].Implementation, "XbmcMetadata") {
+			artworkConsumer = &metadata[index]
+			break
+		}
+	}
+	if artworkConsumer == nil || !artworkConsumer.Enable {
+		return fmt.Errorf("Lidarr Kodi (XBMC) / Emby metadata consumer must be enabled")
+	}
+	if !hasEnabledMetadataField(artworkConsumer.Fields, "artistImages") {
+		return fmt.Errorf("Lidarr Kodi (XBMC) / Emby Artist Images must be enabled")
+	}
+	if !hasEnabledMetadataField(artworkConsumer.Fields, "albumImages") {
+		return fmt.Errorf("Lidarr Kodi (XBMC) / Emby Album Images must be enabled")
 	}
 	return nil
 }
@@ -122,6 +173,24 @@ func containsExtension(value, expected string) bool {
 	for _, extension := range strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == ' ' }) {
 		if strings.EqualFold(strings.TrimPrefix(strings.TrimSpace(extension), "."), expected) {
 			return true
+		}
+	}
+	return false
+}
+
+func hasAlbumDirectory(format string) bool {
+	parts := strings.FieldsFunc(format, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) < 2 {
+		return false
+	}
+	albumDirectory := strings.ToLower(parts[0])
+	return strings.Contains(albumDirectory, "{album title") || strings.Contains(albumDirectory, "{album cleantitle")
+}
+
+func hasEnabledMetadataField(fields []metadataField, expected string) bool {
+	for _, field := range fields {
+		if strings.EqualFold(field.Name, expected) {
+			return field.Value
 		}
 	}
 	return false

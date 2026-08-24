@@ -57,7 +57,16 @@ docker compose -f deploy/compose.yaml ps
 
 Complete these setup steps:
 
-1. In Lidarr, disable automatic Completed Download Handling. Confirm that `/data/processing/approved` is the only download/import path visible to Lidarr and `/data/library` is its final library path.
+1. Configure Lidarr before enabling imports:
+
+   - Under **Settings > Download Clients**, disable **Completed Download Handling**.
+   - Under **Settings > Media Management**, enable **Rename Tracks** and **Import Extra Files**. Set **Extra File Extensions** to `lrc,elrc,ttml`.
+   - Set **Standard Track Format** to `{Album Title} ({Release Year})/{Artist Name} - {Album Title} - {track:00} - {Track Title}`.
+   - Set **Multi Disc Track Format** to `{Album Title} ({Release Year})/{Medium Format} {medium:00}/{Artist Name} - {Album Title} - {track:00} - {Track Title}`.
+   - Under **Settings > Metadata**, enable **Kodi (XBMC) / Emby**, **Artist Images**, and **Album Images**. The NFO metadata options may remain disabled.
+   - Confirm that `/data/processing/approved` is the only download/import path visible to Lidarr and `/data/library` is its final library path.
+
+   The media pipeline checks this contract before moving an approved candidate or recording an import intent. Configuration drift blocks the import with an actionable error. Denyra does not change Lidarr settings automatically.
 2. Configure the baked Lidarr.Plugin.Slskd integration to reach `slskd` on the acquisition network. Lidarr owns AlbumSearch and the primary queue.
 3. Add the following slskd webhook configuration, then restart slskd:
 
@@ -81,6 +90,8 @@ Complete these setup steps:
 4. Sign in to SFTPGo WebAdmin on port `8080`, create its first admin, then create upload users restricted to `/data/incoming/manual`.
 5. Create Navidrome music users on port `4533`. Navidrome owns playback authentication and has `/music` mounted read-only.
 6. Sign in to the Denyra Admin UI on port `8090` with the one-time bootstrap account, change its password, then empty the bootstrap secret file in the active secret directory.
+
+If the server already contains music, complete a backup before changing the naming formats. Use Lidarr's Preview Rename on one album first, confirm that each lyric sidecar keeps the same basename as its FLAC file, then organize the remaining artists from Lidarr. The import guard protects new imports; it does not reorganize an existing library.
 
 Check local service state:
 
