@@ -49,7 +49,13 @@ case "$*" in
       printf '<Config><ApiKey>%s</ApiKey><Unrelated>keep</Unrelated></Config>\n' "${DENYRA_TEST_LIDARR_API_KEY:-fixture-lidarr-api-key}" > "$DENYRA_DATA_ROOT/state/lidarr/config.xml"
     fi
     ;;
-  *" --profile setup run --rm reconciler") [ "${DENYRA_TEST_DOCKER_FAIL:-}" != reconcile ] || exit 21 ;;
+  *" --profile setup run --rm reconciler")
+    [ "${DENYRA_TEST_DOCKER_FAIL:-}" != reconcile ] || exit 21
+    if [ "${DENYRA_TEST_DOCKER_FAIL:-}" = reconcile-once ] && [ ! -e "$DENYRA_TEST_RECONCILE_MARKER" ]; then
+      : > "$DENYRA_TEST_RECONCILE_MARKER"
+      exit 21
+    fi
+    ;;
 esac
 `)
 	return f
@@ -366,6 +372,23 @@ func TestSetupBuildOrderAndLidarrAPIKeyExtraction(t *testing.T) {
 	key, err := os.ReadFile(filepath.Join(f.home, "secrets", "lidarr_api_key"))
 	if err != nil || string(key) != "fixture-lidarr-api-key" {
 		t.Fatalf("Lidarr API key=%q err=%v", key, err)
+	}
+}
+
+func TestSetupRetriesTransientReconciliation(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	cmd := f.setupCommand()
+	cmd.Env = append(cmd.Env,
+		"DENYRA_TEST_DOCKER_FAIL=reconcile-once",
+		"DENYRA_TEST_RECONCILE_MARKER="+filepath.Join(f.home, "reconcile-once"),
+		"DENYRA_RECONCILE_RETRY_SECONDS=0",
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("setup did not recover transient reconciliation: %v\n%s", err, out)
+	}
+	if got := strings.Count(f.log(), "--profile setup run --rm reconciler"); got != 2 {
+		t.Fatalf("reconcile attempts=%d log=\n%s", got, f.log())
 	}
 }
 

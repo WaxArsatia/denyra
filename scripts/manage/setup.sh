@@ -73,6 +73,21 @@ denyra_setup_lidarr_api_key() {
   printf '%s' "$denyra_setup_lidarr_key" | denyra_atomic_file "$denyra_setup_lidarr_secret" 0600
 }
 
+denyra_setup_reconcile() {
+  denyra_setup_reconcile_attempt=1
+  denyra_setup_reconcile_attempts=${DENYRA_RECONCILE_ATTEMPTS:-5}
+  denyra_setup_reconcile_interval=${DENYRA_RECONCILE_RETRY_SECONDS:-3}
+  while [ "$denyra_setup_reconcile_attempt" -le "$denyra_setup_reconcile_attempts" ]; do
+    if denyra_compose --profile setup run --rm reconciler; then
+      return 0
+    fi
+    [ "$denyra_setup_reconcile_attempt" -lt "$denyra_setup_reconcile_attempts" ] || return 1
+    printf 'denyra: reconciliation attempt %s/%s failed; retrying\n' "$denyra_setup_reconcile_attempt" "$denyra_setup_reconcile_attempts" >&2
+    sleep "$denyra_setup_reconcile_interval"
+    denyra_setup_reconcile_attempt=$((denyra_setup_reconcile_attempt + 1))
+  done
+}
+
 denyra_setup() {
   git --version >/dev/null 2>&1 || denyra_die "Git is required"
   docker version >/dev/null 2>&1 || denyra_die "Docker Engine is required"
@@ -152,7 +167,7 @@ denyra_setup() {
   denyra_compose build --pull
   denyra_compose up -d --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}" lidarr slskd sftpgo navidrome
   denyra_setup_lidarr_api_key
-  denyra_compose --profile setup run --rm reconciler
+  denyra_setup_reconcile
   denyra_compose up -d --remove-orphans --wait
   . "$repo_root/scripts/manage/smoke.sh"
   denyra_smoke
