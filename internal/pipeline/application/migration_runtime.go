@@ -19,6 +19,25 @@ type MigrationChecker interface {
 	CheckItem(context.Context, string) (domain.MigrationItem, error)
 }
 
+type MigrationCoordinator struct {
+	Check     MigrationCheckService
+	Migration MigrationService
+}
+
+func (c MigrationCoordinator) CheckItem(ctx context.Context, itemID string) (domain.MigrationItem, error) {
+	item, err := c.Check.Item(ctx, itemID)
+	if err != nil {
+		return item, err
+	}
+	if item.State == domain.MigrationCheckPending || item.State == domain.MigrationChecking || item.State == domain.MigrationFailedRetryable && item.ResumeState == domain.MigrationChecking {
+		return c.Check.CheckItem(ctx, itemID)
+	}
+	if err := c.Migration.Process(ctx, itemID); err != nil {
+		return item, err
+	}
+	return c.Check.Item(ctx, itemID)
+}
+
 type MigrationRuntime struct {
 	Store         MigrationRuntimeStore
 	Check         MigrationChecker

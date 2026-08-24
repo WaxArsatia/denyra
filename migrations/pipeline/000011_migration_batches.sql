@@ -18,6 +18,7 @@ CREATE TABLE migration_items (
     approved_release_mbid TEXT,
     request_evidence_json BLOB,
     response_evidence_json BLOB,
+    migration_evidence_json BLOB,
     idempotency_key TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

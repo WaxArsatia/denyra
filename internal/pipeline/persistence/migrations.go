@@ -19,7 +19,7 @@ func (r *Repositories) SelectUnmanaged(ctx context.Context, filter application.U
 	query := strings.ToLower(strings.TrimSpace(filter.Query))
 	like := "%" + query + "%"
 	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id FROM unmanaged_releases
-WHERE (?='' OR status=?) AND (?='' OR lower(candidate_id) LIKE ? OR lower(COALESCE(final_path,'')) LIKE ?
+WHERE (?='' OR status=?) AND NOT EXISTS(SELECT 1 FROM migration_items mi WHERE mi.unmanaged_candidate_id=unmanaged_releases.candidate_id AND mi.state='MIGRATED') AND (?='' OR lower(candidate_id) LIKE ? OR lower(COALESCE(final_path,'')) LIKE ?
 OR lower(COALESCE(json_extract(approved_plan_json,'$.metadata.album_artist'),'')) LIKE ?
 OR lower(COALESCE(json_extract(approved_plan_json,'$.metadata.album'),'')) LIKE ?)
 ORDER BY candidate_id`, status, status, query, like, like, like, like)
@@ -60,9 +60,9 @@ func (r *Repositories) PutMigrationBatch(ctx context.Context, batch domain.Migra
 			if status != "IMPORTED" {
 				return fmt.Errorf("unmanaged release %s is not imported", item.UnmanagedCandidateID)
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO migration_items(id,batch_id,unmanaged_candidate_id,state,state_revision,resume_state,approved_release_mbid,request_evidence_json,response_evidence_json,idempotency_key,created_at,updated_at)
-VALUES(?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),?,?,?, ?,?)`, item.ID, item.BatchID, item.UnmanagedCandidateID, item.State, item.StateRevision, item.ResumeState,
-				item.ApprovedReleaseMBID, nullableJSON(item.RequestEvidence), nullableJSON(item.ResponseEvidence), item.IdempotencyKey, formatTime(item.CreatedAt), formatTime(item.UpdatedAt)); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO migration_items(id,batch_id,unmanaged_candidate_id,state,state_revision,resume_state,approved_release_mbid,request_evidence_json,response_evidence_json,migration_evidence_json,idempotency_key,created_at,updated_at)
+VALUES(?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),?,?,?,?,?,?)`, item.ID, item.BatchID, item.UnmanagedCandidateID, item.State, item.StateRevision, item.ResumeState,
+				item.ApprovedReleaseMBID, nullableJSON(item.RequestEvidence), nullableJSON(item.ResponseEvidence), nullableJSON(item.MigrationEvidence), item.IdempotencyKey, formatTime(item.CreatedAt), formatTime(item.UpdatedAt)); err != nil {
 				return err
 			}
 		}
@@ -108,13 +108,45 @@ func (r *Repositories) MigrationItem(ctx context.Context, itemID string) (domain
 	return scanMigrationItem(row)
 }
 
+func (r *Repositories) ConfirmMigrationItem(ctx context.Context, itemID string, expected uint64, releaseMBID, actor string, at time.Time) (domain.MigrationItem, error) {
+	var confirmed domain.MigrationItem
+	auditID, err := ids.NewToken(16)
+	if err != nil {
+		return confirmed, err
+	}
+	err = denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		item, err := scanMigrationItem(tx.QueryRowContext(ctx, migrationItemSelect+` WHERE id=?`, itemID))
+		if err != nil {
+			return err
+		}
+		if item.StateRevision != expected || item.State != domain.MigrationExactMatch || item.ApprovedReleaseMBID != releaseMBID {
+			return fmt.Errorf("migration confirmation conflicts with exact match or revision")
+		}
+		confirmed, err = domain.TransitionMigration(item, domain.MigrationConfirmed, at)
+		if err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE migration_items SET state=?,state_revision=?,updated_at=? WHERE id=? AND state_revision=? AND state='EXACT_MATCH' AND approved_release_mbid=?`, confirmed.State, confirmed.StateRevision, formatTime(confirmed.UpdatedAt), itemID, expected, releaseMBID)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return fmt.Errorf("migration confirmation revision changed")
+		}
+		details, _ := json.Marshal(map[string]any{"migration_item_id": itemID, "release_mbid": releaseMBID})
+		_, err = tx.ExecContext(ctx, `INSERT INTO audit_events(id,candidate_id,actor,action,reason,target_release_mbid,state_revision,details_json,occurred_at) VALUES(?,?,?,'MIGRATION_CONFIRMED','operator confirmed exact migration',?,?,?,?)`, auditID, item.UnmanagedCandidateID, actor, releaseMBID, confirmed.StateRevision, details, formatTime(at))
+		return err
+	})
+	return confirmed, err
+}
+
 func (r *Repositories) UpdateMigrationItem(ctx context.Context, itemID string, expected uint64, next domain.MigrationItem, failure *domain.MigrationItemError) error {
 	if next.ID != itemID || next.StateRevision != expected+1 {
 		return fmt.Errorf("invalid migration item revision")
 	}
 	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, `UPDATE migration_items SET state=?,state_revision=?,resume_state=NULLIF(?,''),approved_release_mbid=COALESCE(NULLIF(?,''),approved_release_mbid),request_evidence_json=COALESCE(request_evidence_json,?),response_evidence_json=COALESCE(response_evidence_json,?),updated_at=? WHERE id=? AND state_revision=?`,
-			next.State, next.StateRevision, next.ResumeState, next.ApprovedReleaseMBID, nullableJSON(next.RequestEvidence), nullableJSON(next.ResponseEvidence), formatTime(next.UpdatedAt), itemID, expected)
+		result, err := tx.ExecContext(ctx, `UPDATE migration_items SET state=?,state_revision=?,resume_state=NULLIF(?,''),approved_release_mbid=COALESCE(NULLIF(?,''),approved_release_mbid),request_evidence_json=COALESCE(request_evidence_json,?),response_evidence_json=COALESCE(response_evidence_json,?),migration_evidence_json=COALESCE(?,migration_evidence_json),updated_at=? WHERE id=? AND state_revision=?`,
+			next.State, next.StateRevision, next.ResumeState, next.ApprovedReleaseMBID, nullableJSON(next.RequestEvidence), nullableJSON(next.ResponseEvidence), nullableJSON(next.MigrationEvidence), formatTime(next.UpdatedAt), itemID, expected)
 		if err != nil {
 			return err
 		}
@@ -136,6 +168,20 @@ AND NOT EXISTS(SELECT 1 FROM migration_items WHERE batch_id=(SELECT batch_id FRO
 		}
 		return err
 	})
+}
+
+func (r *Repositories) SaveMigrationEvidence(ctx context.Context, itemID string, expected uint64, evidence []byte, at time.Time) error {
+	if len(evidence) == 0 {
+		return fmt.Errorf("migration evidence is required")
+	}
+	result, err := r.DB.ExecContext(ctx, `UPDATE migration_items SET migration_evidence_json=?,updated_at=? WHERE id=? AND state_revision=?`, evidence, formatTime(at), itemID, expected)
+	if err != nil {
+		return err
+	}
+	if rows, _ := result.RowsAffected(); rows != 1 {
+		return fmt.Errorf("migration item revision changed")
+	}
+	return nil
 }
 
 func (r *Repositories) MigrationItemErrors(ctx context.Context, batchID string) ([]domain.MigrationItemError, error) {
@@ -164,7 +210,7 @@ func (r *Repositories) MigrationItemErrors(ctx context.Context, batchID string) 
 
 func (r *Repositories) ReadyMigrationChecks(ctx context.Context, limit int) ([]domain.MigrationItem, error) {
 	rows, err := r.DB.QueryContext(ctx, migrationItemSelect+` JOIN migration_batches b ON b.id=migration_items.batch_id
-WHERE b.status='RUNNING' AND (migration_items.state IN ('CHECK_PENDING','CHECKING') OR (migration_items.state='FAILED_RETRYABLE' AND migration_items.resume_state='CHECKING'))
+WHERE (migration_items.state IN ('CHECK_PENDING','CHECKING','CONFIRMED','LIDARR_CATALOG_READY','IMPORT_SUBMITTED','RECONCILING') OR (migration_items.state='FAILED_RETRYABLE' AND migration_items.resume_state IN ('CHECKING','CONFIRMED','LIDARR_CATALOG_READY','RECONCILING')))
 AND NOT EXISTS(SELECT 1 FROM leases WHERE resource_type='migration_check' AND resource_id=migration_items.id)
 ORDER BY migration_items.updated_at,migration_items.id LIMIT ?`, limit)
 	if err != nil {
@@ -202,19 +248,19 @@ func (r *Repositories) ReleaseMigrationLease(ctx context.Context, itemID, owner 
 	return nil
 }
 
-const migrationItemSelect = `SELECT migration_items.id,migration_items.batch_id,migration_items.unmanaged_candidate_id,migration_items.state,migration_items.state_revision,COALESCE(migration_items.resume_state,''),COALESCE(migration_items.approved_release_mbid,''),migration_items.request_evidence_json,migration_items.response_evidence_json,migration_items.idempotency_key,migration_items.created_at,migration_items.updated_at FROM migration_items`
+const migrationItemSelect = `SELECT migration_items.id,migration_items.batch_id,migration_items.unmanaged_candidate_id,migration_items.state,migration_items.state_revision,COALESCE(migration_items.resume_state,''),COALESCE(migration_items.approved_release_mbid,''),migration_items.request_evidence_json,migration_items.response_evidence_json,migration_items.migration_evidence_json,migration_items.idempotency_key,migration_items.created_at,migration_items.updated_at FROM migration_items`
 
 type migrationScanner interface{ Scan(...any) error }
 
 func scanMigrationItem(scanner migrationScanner) (domain.MigrationItem, error) {
 	var item domain.MigrationItem
-	var request, response []byte
+	var request, response, migration []byte
 	var created, updated string
-	err := scanner.Scan(&item.ID, &item.BatchID, &item.UnmanagedCandidateID, &item.State, &item.StateRevision, &item.ResumeState, &item.ApprovedReleaseMBID, &request, &response, &item.IdempotencyKey, &created, &updated)
+	err := scanner.Scan(&item.ID, &item.BatchID, &item.UnmanagedCandidateID, &item.State, &item.StateRevision, &item.ResumeState, &item.ApprovedReleaseMBID, &request, &response, &migration, &item.IdempotencyKey, &created, &updated)
 	if err != nil {
 		return item, err
 	}
-	item.RequestEvidence, item.ResponseEvidence = request, response
+	item.RequestEvidence, item.ResponseEvidence, item.MigrationEvidence = request, response, migration
 	item.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
 	if err == nil {
 		item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)

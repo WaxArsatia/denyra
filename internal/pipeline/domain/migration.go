@@ -41,6 +41,7 @@ type MigrationItem struct {
 	ApprovedReleaseMBID  string         `json:"approved_release_mbid,omitempty"`
 	RequestEvidence      []byte         `json:"request_evidence,omitempty"`
 	ResponseEvidence     []byte         `json:"response_evidence,omitempty"`
+	MigrationEvidence    []byte         `json:"migration_evidence,omitempty"`
 	IdempotencyKey       string         `json:"idempotency_key"`
 	CreatedAt            time.Time      `json:"created_at"`
 	UpdatedAt            time.Time      `json:"updated_at"`
