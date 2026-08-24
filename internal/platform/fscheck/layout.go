@@ -14,10 +14,12 @@ type Layout struct {
 	DownloadsSpotiFLAC     string
 	DownloadsOther         string
 	IncomingManual         string
+	IncomingUploading      string
 	Work                   string
 	Approved               string
 	Quarantine             string
 	Library                string
+	LibraryUnmanaged       string
 	ExpectedUID            int
 	ExpectedGID            int
 	MinimumMode            os.FileMode
@@ -92,10 +94,12 @@ func Check(layout Layout) (Report, error) {
 		{"downloads_spotiflac", layout.DownloadsSpotiFLAC, false},
 		{"downloads_other", layout.DownloadsOther, false},
 		{"incoming_manual", layout.IncomingManual, false},
+		{"incoming_uploading", layout.IncomingUploading, false},
 		{"work", layout.Work, false},
 		{"approved", layout.Approved, false},
 		{"quarantine", layout.Quarantine, false},
 		{"library", layout.Library, layout.RequireLibraryReadOnly},
+		{"library_unmanaged", layout.LibraryUnmanaged, false},
 	}
 	report := Report{Paths: make([]PathReport, 0, len(paths))}
 	var mountedDevice uint64

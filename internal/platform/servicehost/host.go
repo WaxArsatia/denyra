@@ -30,6 +30,7 @@ type Options struct {
 	RequiredBinaries        []string
 	CheckFilesystem         func(config.Config) error
 	ExternalDependencies    []string
+	AdditionalSecrets       func(*config.Config) []*config.SecretRef
 	ServeAdmin              bool
 	Initialize              func(context.Context, *Prepared) error
 	BuildInternalHandler    func(*Prepared) (http.Handler, error)
@@ -56,7 +57,7 @@ func Prepare(ctx context.Context, logger *slog.Logger, options Options) (_ *Prep
 	if err != nil {
 		return nil, fmt.Errorf("load configuration: %w", err)
 	}
-	if err := resolveSnapshotSecrets(&cfg); err != nil {
+	if err := resolveSnapshotSecrets(&cfg, options.AdditionalSecrets); err != nil {
 		return nil, err
 	}
 	for _, binary := range options.RequiredBinaries {
@@ -218,8 +219,11 @@ func validateOptions(options Options) error {
 	return nil
 }
 
-func resolveSnapshotSecrets(cfg *config.Config) error {
+func resolveSnapshotSecrets(cfg *config.Config, additional func(*config.Config) []*config.SecretRef) error {
 	references := []*config.SecretRef{&cfg.Secrets.InternalBearer, &cfg.Secrets.AuditKey, &cfg.Secrets.LidarrAPIKey}
+	if additional != nil {
+		references = append(references, additional(cfg)...)
+	}
 	for _, reference := range references {
 		if reference.Source != "file" {
 			return fmt.Errorf("secret %q uses unsupported source %q", reference.Name, reference.Source)

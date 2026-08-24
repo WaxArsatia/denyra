@@ -1,4 +1,4 @@
-MusicFolder = "/music"
+MusicFolder = "/music-managed"
 DataFolder = "/data"
 CacheFolder = "/cache"
 EnableTranscodingConfig = true

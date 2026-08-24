@@ -74,6 +74,27 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	}
 }
 
+func TestDefaultsIncludeUnmanagedUploadPolicy(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.Defaults()
+	if cfg.Filesystem.IncomingUploading != "/data/incoming/uploading" || cfg.Filesystem.LibraryUnmanaged != "/data/library-unmanaged" {
+		t.Fatalf("unexpected unmanaged roots: %+v", cfg.Filesystem)
+	}
+	if cfg.Uploads.MaxFileBytes != 8<<30 || cfg.Uploads.MaxSessionBytes != 100<<30 || cfg.Uploads.MaxEntries != 1_000 {
+		t.Fatalf("unexpected upload limits: %+v", cfg.Uploads)
+	}
+	if cfg.Uploads.BrowserConcurrency != 3 || cfg.Uploads.ImageMaxBytes != 20<<20 || cfg.Uploads.ImageMaxPixels != 40_000_000 {
+		t.Fatalf("unexpected browser/image policy: %+v", cfg.Uploads)
+	}
+	if cfg.Concurrency.MigrationCheck != 3 {
+		t.Fatalf("migration check concurrency = %d, want 3", cfg.Concurrency.MigrationCheck)
+	}
+	if cfg.Services.NavidromeURL != "http://navidrome:4533" || cfg.Services.SpotifyOEmbedURL != "https://open.spotify.com" || cfg.Services.CoverArtURL != "https://coverartarchive.org" {
+		t.Fatalf("unexpected external service defaults: %+v", cfg.Services)
+	}
+}
+
 func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "denyra.toml")
@@ -175,11 +196,35 @@ func TestValidateRejectsRetryAndPathContradictions(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsInvalidUploadPolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]func(*config.Config){
+		"file bytes":          func(cfg *config.Config) { cfg.Uploads.MaxFileBytes = 0 },
+		"session bytes":       func(cfg *config.Config) { cfg.Uploads.MaxSessionBytes = cfg.Uploads.MaxFileBytes - 1 },
+		"entries":             func(cfg *config.Config) { cfg.Uploads.MaxEntries = 0 },
+		"browser concurrency": func(cfg *config.Config) { cfg.Uploads.BrowserConcurrency = 0 },
+		"image bytes":         func(cfg *config.Config) { cfg.Uploads.ImageMaxBytes = 0 },
+		"image pixels":        func(cfg *config.Config) { cfg.Uploads.ImageMaxPixels = 0 },
+		"migration workers":   func(cfg *config.Config) { cfg.Concurrency.MigrationCheck = 0 },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := config.Defaults()
+			mutate(&cfg)
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("Validate accepted invalid unmanaged upload policy")
+			}
+		})
+	}
+}
+
 func TestSnapshotIsCanonicalAndNeverContainsSecret(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.Defaults()
 	cfg.Secrets.InternalBearer = config.SecretRef{Source: "file", Name: "internal-bearer", Value: "low-entropy-secret"}
+	cfg.Secrets.NavidromeAdmin = config.SecretRef{Source: "file", Name: "navidrome-admin", Value: "navidrome-password"}
 	auditKey := []byte("separate-audit-key-with-enough-entropy")
 	first, err := config.NewSnapshot(cfg, auditKey)
 	if err != nil {
@@ -195,9 +240,21 @@ func TestSnapshotIsCanonicalAndNeverContainsSecret(t *testing.T) {
 	if strings.Contains(string(first.CanonicalJSON), "low-entropy-secret") {
 		t.Fatal("snapshot contains secret value")
 	}
+	if strings.Contains(string(first.CanonicalJSON), "navidrome-password") {
+		t.Fatal("snapshot contains Navidrome secret value")
+	}
 	expectedHash := sha256.Sum256(first.CanonicalJSON)
 	if first.Hash != expectedHash {
 		t.Fatal("snapshot hash does not cover canonical JSON")
+	}
+	changedSecret := cfg
+	changedSecret.Secrets.NavidromeAdmin.Value = "different-navidrome-password"
+	secretSnapshot, err := config.NewSnapshot(changedSecret, auditKey)
+	if err != nil {
+		t.Fatalf("NewSnapshot changed Navidrome secret: %v", err)
+	}
+	if secretSnapshot.Hash == first.Hash {
+		t.Fatal("Navidrome secret rotation retained the old snapshot hash")
 	}
 
 	changed := cfg

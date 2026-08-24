@@ -312,11 +312,15 @@ func TestComposeMountOwnership(t *testing.T) {
 	assertNoMount("acquisition-gateway", "/data/downloads/slskd")
 	assertMount("media-pipeline", "/data", false)
 	assertMount("media-pipeline", "/data/library", true)
+	assertMount("media-pipeline", "/data/library-unmanaged", false)
 	assertMount("sftpgo", "/data/incoming/manual", false)
-	assertMount("navidrome", "/music", true)
+	assertMount("navidrome", "/music-managed", true)
+	assertMount("navidrome", "/music-unmanaged", true)
+	assertNoMount("lidarr", "/data/library-unmanaged")
 	for _, service := range []string{"acquisition-gateway", "slskd", "sftpgo"} {
 		assertNoMount(service, "/data/library")
-		assertNoMount(service, "/music")
+		assertNoMount(service, "/music-managed")
+		assertNoMount(service, "/music-unmanaged")
 	}
 	for _, serviceName := range []string{"acquisition-gateway", "media-pipeline", "slskd", "sftpgo", "navidrome"} {
 		if got := document.Services[serviceName].User; got != "1000:1000" {
@@ -333,7 +337,7 @@ func TestComposePurposeNetworksCannotReachControlListeners(t *testing.T) {
 	wantMembers := map[string][]string{
 		"denyra-acquisition": {"acquisition-gateway", "lidarr", "slskd"},
 		"denyra-import":      {"lidarr", "media-pipeline"},
-		"denyra-playback":    {"navidrome"},
+		"denyra-playback":    {"media-pipeline", "navidrome"},
 		"denyra-upload":      {"sftpgo"},
 	}
 	for networkName, want := range wantMembers {

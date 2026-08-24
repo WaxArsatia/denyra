@@ -71,13 +71,16 @@ func (c Config) Validate() error {
 	if c.Concurrency.Acquisition != 2 {
 		return fmt.Errorf("concurrency.acquisition must be exactly 2 for the pinned SpotiFLAC provider policy")
 	}
-	if c.Concurrency.Validation <= 0 || c.Concurrency.Import <= 0 {
-		return fmt.Errorf("validation and import concurrency must be positive")
+	if c.Concurrency.Validation <= 0 || c.Concurrency.Import <= 0 || c.Concurrency.MigrationCheck <= 0 {
+		return fmt.Errorf("validation, import, and migration check concurrency must be positive")
+	}
+	if c.Uploads.MaxFileBytes <= 0 || c.Uploads.MaxSessionBytes <= 0 || c.Uploads.MaxSessionBytes < c.Uploads.MaxFileBytes || c.Uploads.MaxEntries <= 0 || c.Uploads.BrowserConcurrency <= 0 || c.Uploads.ImageMaxBytes <= 0 || c.Uploads.ImageMaxPixels <= 0 {
+		return fmt.Errorf("upload limits, entry counts, concurrency, and image limits must be positive, with session bytes at least file bytes")
 	}
 	if c.Backup.Daily <= 0 || c.Backup.Weekly <= 0 || c.Backup.Monthly <= 0 {
 		return fmt.Errorf("backup retention values must be positive")
 	}
-	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.gateway_url": c.Services.GatewayURL, "services.pipeline_url": c.Services.PipelineURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL} {
+	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.gateway_url": c.Services.GatewayURL, "services.pipeline_url": c.Services.PipelineURL, "services.navidrome_url": c.Services.NavidromeURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL, "services.spotify_oembed_url": c.Services.SpotifyOEmbedURL, "services.cover_art_url": c.Services.CoverArtURL} {
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 			return fmt.Errorf("%s must be an HTTP URL", name)
 		}
@@ -124,7 +127,7 @@ func (c Config) Validate() error {
 		c.Validation.ReleaseManualFloorMS < c.Validation.ReleaseAutoFloorMS || c.Validation.ReleaseManualPercentBasisPoints < c.Validation.ReleaseAutoPercentBasisPoints {
 		return fmt.Errorf("validation manual thresholds must not be lower than auto thresholds")
 	}
-	paths := []string{c.Filesystem.DownloadsSlskd, c.Filesystem.DownloadsSpotiFLAC, c.Filesystem.DownloadsOther, c.Filesystem.IncomingManual, c.Filesystem.Work, c.Filesystem.Approved, c.Filesystem.Quarantine, c.Filesystem.Library}
+	paths := []string{c.Filesystem.DownloadsSlskd, c.Filesystem.DownloadsSpotiFLAC, c.Filesystem.DownloadsOther, c.Filesystem.IncomingManual, c.Filesystem.IncomingUploading, c.Filesystem.Work, c.Filesystem.Approved, c.Filesystem.Quarantine, c.Filesystem.Library, c.Filesystem.LibraryUnmanaged}
 	cleaned := make([]string, 0, len(paths))
 	for _, path := range paths {
 		clean := filepath.Clean(path)

@@ -51,6 +51,9 @@ services:
       DENYRA_LIDARR_URL: http://acceptance-fixture:18080
       DENYRA_MUSICBRAINZ_URL: http://acceptance-fixture:18080
       DENYRA_LRCLIB_URL: http://acceptance-fixture:18080
+      DENYRA_NAVIDROME_URL: http://acceptance-fixture:18080
+      DENYRA_SPOTIFY_OEMBED_URL: http://acceptance-fixture:18080
+      DENYRA_COVER_ART_URL: http://acceptance-fixture:18080
     depends_on:
       acceptance-fixture:
         condition: service_healthy

@@ -37,10 +37,12 @@ for path in \
 	downloads/spotiflac \
 	downloads/other \
 	incoming/manual \
+	incoming/uploading \
 	processing/work \
 	processing/approved \
 	quarantine \
 	library \
+	library-unmanaged \
 	state/gateway \
 	state/pipeline \
 	state/lidarr \

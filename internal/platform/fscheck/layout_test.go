@@ -15,8 +15,8 @@ func TestCheckAcceptsSameDeviceOwnedLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if len(report.Paths) != 8 {
-		t.Fatalf("report paths = %d, want 8", len(report.Paths))
+	if len(report.Paths) != 10 {
+		t.Fatalf("report paths = %d, want 10", len(report.Paths))
 	}
 	for _, path := range report.Paths {
 		if path.Canonical == "" || path.DeviceID == 0 {
@@ -98,8 +98,8 @@ func makeLayout(t *testing.T, libraryReadOnly bool) fscheck.Layout {
 	root := t.TempDir()
 	paths := map[string]string{
 		"slskd": "downloads/slskd", "spotiflac": "downloads/spotiflac", "other": "downloads/other",
-		"incoming": "incoming/manual", "work": "processing/work", "approved": "processing/approved",
-		"quarantine": "quarantine", "library": "library",
+		"incoming": "incoming/manual", "uploading": "incoming/uploading", "work": "processing/work", "approved": "processing/approved",
+		"quarantine": "quarantine", "library": "library", "unmanaged": "library-unmanaged",
 	}
 	for _, relative := range paths {
 		path := filepath.Join(root, relative)
@@ -114,8 +114,8 @@ func makeLayout(t *testing.T, libraryReadOnly bool) fscheck.Layout {
 	}
 	return fscheck.Layout{
 		DataRoot: root, DownloadsSlskd: filepath.Join(root, paths["slskd"]), DownloadsSpotiFLAC: filepath.Join(root, paths["spotiflac"]),
-		DownloadsOther: filepath.Join(root, paths["other"]), IncomingManual: filepath.Join(root, paths["incoming"]), Work: filepath.Join(root, paths["work"]),
-		Approved: filepath.Join(root, paths["approved"]), Quarantine: filepath.Join(root, paths["quarantine"]), Library: filepath.Join(root, paths["library"]),
+		DownloadsOther: filepath.Join(root, paths["other"]), IncomingManual: filepath.Join(root, paths["incoming"]), IncomingUploading: filepath.Join(root, paths["uploading"]), Work: filepath.Join(root, paths["work"]),
+		Approved: filepath.Join(root, paths["approved"]), Quarantine: filepath.Join(root, paths["quarantine"]), Library: filepath.Join(root, paths["library"]), LibraryUnmanaged: filepath.Join(root, paths["unmanaged"]),
 		ExpectedUID: os.Getuid(), ExpectedGID: os.Getgid(), MinimumMode: 0o500, RequireLibraryReadOnly: libraryReadOnly,
 	}
 }

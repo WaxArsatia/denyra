@@ -20,6 +20,9 @@ lidarr_url = "http://lidarr:8686"
 pipeline_url = "http://media-pipeline:8081"
 musicbrainz_url = "https://musicbrainz.org"
 lrclib_url = "https://lrclib.net"
+navidrome_url = "http://navidrome:4533"
+spotify_oembed_url = "https://open.spotify.com"
+cover_art_url = "https://coverartarchive.org"
 
 [database]
 pipeline_path = "/data/state/pipeline/denyra.db"
@@ -37,6 +40,14 @@ musicbrainz_rate_interval = "1s"
 [sessions]
 bootstrap_username = "admin"
 
+[uploads]
+max_file_bytes = 8589934592
+max_session_bytes = 107374182400
+max_entries = 1000
+browser_concurrency = 3
+image_max_bytes = 20971520
+image_max_pixels = 40000000
+
 [secrets.internal_bearer]
 source = "file"
 name = "/run/secrets/internal_bearer"
@@ -52,3 +63,7 @@ name = "/run/secrets/lidarr_api_key"
 [secrets.bootstrap_admin]
 source = "file"
 name = "/run/secrets/bootstrap_admin"
+
+[secrets.navidrome_admin]
+source = "file"
+name = "/run/secrets/navidrome_admin"

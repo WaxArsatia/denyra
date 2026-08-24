@@ -36,6 +36,7 @@ func NewSnapshot(cfg Config, auditKey []byte) (Snapshot, error) {
 			"audit_key":       snapshotSecret(cfg.Secrets.AuditKey, auditKey),
 			"internal_bearer": snapshotSecret(cfg.Secrets.InternalBearer, auditKey),
 			"lidarr_api_key":  snapshotSecret(cfg.Secrets.LidarrAPIKey, auditKey),
+			"navidrome_admin": snapshotSecret(cfg.Secrets.NavidromeAdmin, auditKey),
 		},
 	}
 	encoded, err := json.Marshal(document)

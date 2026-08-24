@@ -69,13 +69,14 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			_, err := fscheck.Check(fscheck.Layout{
 				DataRoot: cfg.Filesystem.DataRoot, DownloadsSlskd: cfg.Filesystem.DownloadsSlskd,
 				DownloadsSpotiFLAC: cfg.Filesystem.DownloadsSpotiFLAC, DownloadsOther: cfg.Filesystem.DownloadsOther,
-				IncomingManual: cfg.Filesystem.IncomingManual, Work: cfg.Filesystem.Work, Approved: cfg.Filesystem.Approved,
-				Quarantine: cfg.Filesystem.Quarantine, Library: cfg.Filesystem.Library,
+				IncomingManual: cfg.Filesystem.IncomingManual, IncomingUploading: cfg.Filesystem.IncomingUploading, Work: cfg.Filesystem.Work, Approved: cfg.Filesystem.Approved,
+				Quarantine: cfg.Filesystem.Quarantine, Library: cfg.Filesystem.Library, LibraryUnmanaged: cfg.Filesystem.LibraryUnmanaged,
 				ExpectedUID: os.Getuid(), ExpectedGID: os.Getgid(), MinimumMode: 0o700,
 			})
 			return err
 		},
 		ExternalDependencies: []string{"musicbrainz", "lrclib"},
+		AdditionalSecrets:    func(cfg *config.Config) []*config.SecretRef { return []*config.SecretRef{&cfg.Secrets.NavidromeAdmin} },
 		ServeAdmin:           true,
 		Initialize: func(ctx context.Context, prepared *servicehost.Prepared) error {
 			repositories := persistence.New(prepared.DB, time.Now)

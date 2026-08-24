@@ -34,6 +34,7 @@ type Config struct {
 	Storage     StorageConfig     `toml:"storage" json:"storage"`
 	Backup      BackupConfig      `toml:"backup" json:"backup"`
 	Concurrency ConcurrencyConfig `toml:"concurrency" json:"concurrency"`
+	Uploads     UploadConfig      `toml:"uploads" json:"uploads"`
 	Services    ServicesConfig    `toml:"services" json:"services"`
 	Secrets     SecretsConfig     `toml:"secrets" json:"secrets"`
 }
@@ -54,11 +55,14 @@ type HTTPConfig struct {
 }
 
 type ServicesConfig struct {
-	LidarrURL      string `toml:"lidarr_url" json:"lidarr_url"`
-	GatewayURL     string `toml:"gateway_url" json:"gateway_url"`
-	PipelineURL    string `toml:"pipeline_url" json:"pipeline_url"`
-	MusicBrainzURL string `toml:"musicbrainz_url" json:"musicbrainz_url"`
-	LRCLIBURL      string `toml:"lrclib_url" json:"lrclib_url"`
+	LidarrURL        string `toml:"lidarr_url" json:"lidarr_url"`
+	GatewayURL       string `toml:"gateway_url" json:"gateway_url"`
+	PipelineURL      string `toml:"pipeline_url" json:"pipeline_url"`
+	NavidromeURL     string `toml:"navidrome_url" json:"navidrome_url"`
+	MusicBrainzURL   string `toml:"musicbrainz_url" json:"musicbrainz_url"`
+	LRCLIBURL        string `toml:"lrclib_url" json:"lrclib_url"`
+	SpotifyOEmbedURL string `toml:"spotify_oembed_url" json:"spotify_oembed_url"`
+	CoverArtURL      string `toml:"cover_art_url" json:"cover_art_url"`
 }
 
 type DatabaseConfig struct {
@@ -75,10 +79,12 @@ type FilesystemConfig struct {
 	DownloadsSpotiFLAC string `toml:"downloads_spotiflac" json:"downloads_spotiflac"`
 	DownloadsOther     string `toml:"downloads_other" json:"downloads_other"`
 	IncomingManual     string `toml:"incoming_manual" json:"incoming_manual"`
+	IncomingUploading  string `toml:"incoming_uploading" json:"incoming_uploading"`
 	Work               string `toml:"work" json:"work"`
 	Approved           string `toml:"approved" json:"approved"`
 	Quarantine         string `toml:"quarantine" json:"quarantine"`
 	Library            string `toml:"library" json:"library"`
+	LibraryUnmanaged   string `toml:"library_unmanaged" json:"library_unmanaged"`
 }
 
 type AcquisitionConfig struct {
@@ -144,9 +150,19 @@ type BackupConfig struct {
 }
 
 type ConcurrencyConfig struct {
-	Acquisition int `toml:"acquisition" json:"acquisition"`
-	Validation  int `toml:"validation" json:"validation"`
-	Import      int `toml:"import" json:"import"`
+	Acquisition    int `toml:"acquisition" json:"acquisition"`
+	Validation     int `toml:"validation" json:"validation"`
+	Import         int `toml:"import" json:"import"`
+	MigrationCheck int `toml:"migration_check" json:"migration_check"`
+}
+
+type UploadConfig struct {
+	MaxFileBytes       int64 `toml:"max_file_bytes" json:"max_file_bytes"`
+	MaxSessionBytes    int64 `toml:"max_session_bytes" json:"max_session_bytes"`
+	MaxEntries         int   `toml:"max_entries" json:"max_entries"`
+	BrowserConcurrency int   `toml:"browser_concurrency" json:"browser_concurrency"`
+	ImageMaxBytes      int64 `toml:"image_max_bytes" json:"image_max_bytes"`
+	ImageMaxPixels     int64 `toml:"image_max_pixels" json:"image_max_pixels"`
 }
 
 type SecretRef struct {
@@ -160,6 +176,7 @@ type SecretsConfig struct {
 	AuditKey       SecretRef `toml:"audit_key" json:"audit_key"`
 	LidarrAPIKey   SecretRef `toml:"lidarr_api_key" json:"lidarr_api_key"`
 	BootstrapAdmin SecretRef `toml:"bootstrap_admin" json:"bootstrap_admin"`
+	NavidromeAdmin SecretRef `toml:"navidrome_admin" json:"navidrome_admin"`
 }
 
 type Policy struct {

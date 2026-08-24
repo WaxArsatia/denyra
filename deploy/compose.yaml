@@ -67,6 +67,7 @@ services:
       - audit_key
       - lidarr_api_key
       - bootstrap_admin
+      - navidrome_admin
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}
@@ -75,9 +76,13 @@ services:
         source: ${DENYRA_DATA_ROOT:-/data}/library
         target: /data/library
         read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library-unmanaged
+        target: /data/library-unmanaged
     networks:
       denyra-control: {}
       denyra-import: {}
+      denyra-playback: {}
     ports:
       - name: admin-http
         target: 8090
@@ -235,7 +240,11 @@ services:
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/library
-        target: /music
+        target: /music-managed
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library-unmanaged
+        target: /music-unmanaged
         read_only: true
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/navidrome
