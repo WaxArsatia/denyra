@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
@@ -99,6 +100,41 @@ func TestPersistenceRejectsDuplicateHandoffAndImmutableEvidenceMutation(t *testi
 	}
 	if _, err := db.Exec("DELETE FROM audit_events WHERE id=?", auditID); err == nil {
 		t.Fatal("append-only audit deleted")
+	}
+}
+
+func TestMigrationPersistenceKeepsManualAuditAndRejectsStaleOrMutableEvidence(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	candidate, err := domain.CreateCandidate(domain.NewCandidate{ID: "migration-persistence", Source: domain.SourceManual, ReleaseDirectory: t.TempDir(), ConfigSnapshotID: "config-1", AcquisitionEvidenceID: "manual:migration-persistence", Now: now})
+	if err != nil || repository.CreateCandidate(context.Background(), candidate) != nil {
+		t.Fatalf("candidate=%+v err=%v", candidate, err)
+	}
+	release := integrationMigrationRelease(candidate.ID, "Kaleb J", "error", candidate.ReleaseDirectory, "fingerprint", now)
+	if err := repository.PutUnmanagedRelease(context.Background(), release, now); err != nil {
+		t.Fatal(err)
+	}
+	service := application.MigrationCheckService{Store: repository, Identity: integrationMigrationIdentity{}, Now: func() time.Time { return now }}
+	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: []string{candidate.ID}}, "admin-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = service.CheckItem(context.Background(), items[0].ID)
+	item, err := repository.MigrationItem(context.Background(), items[0].ID)
+	if err != nil || item.State != domain.MigrationFailedRetryable {
+		t.Fatalf("item=%+v err=%v", item, err)
+	}
+	var audits int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action='MIGRATION_BATCH_CREATED' AND actor='admin-1' AND details_json LIKE ?`, "%"+batch.ID+"%").Scan(&audits); err != nil || audits != 1 {
+		t.Fatalf("manual batch audit count=%d err=%v", audits, err)
+	}
+	stale := item
+	stale.StateRevision = item.StateRevision
+	if err := repository.UpdateMigrationItem(context.Background(), item.ID, item.StateRevision-1, stale, nil); err == nil {
+		t.Fatal("stale migration revision updated")
+	}
+	if _, err := db.Exec(`UPDATE migration_item_errors SET error_text='rewritten' WHERE item_id=?`, item.ID); err == nil {
+		t.Fatal("append-only migration error was rewritten")
 	}
 }
 

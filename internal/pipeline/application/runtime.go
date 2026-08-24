@@ -11,6 +11,7 @@ type Runtime struct {
 	Discovery        DiscoveryService
 	Recovery         RecoveryService
 	Worker           *Worker
+	Migration        *MigrationRuntime
 	RecoveryInterval time.Duration
 	discovery        chan struct{}
 	once             sync.Once
@@ -28,6 +29,11 @@ func (r *Runtime) NotifyCandidate(candidateID string) {
 		r.Worker.Notify(candidateID)
 	}
 }
+func (r *Runtime) NotifyMigrationBatch(batchID string) {
+	if r.Migration != nil {
+		r.Migration.NotifyBatch(batchID)
+	}
+}
 func (r *Runtime) Run(ctx context.Context) error {
 	if r.RecoveryInterval <= 0 {
 		return fmt.Errorf("runtime recovery interval must be positive")
@@ -39,9 +45,20 @@ func (r *Runtime) Run(ctx context.Context) error {
 	if _, err := r.Discovery.Scan(ctx); err != nil {
 		return fmt.Errorf("startup discovery: %w", err)
 	}
-	errors := make(chan error, 1)
+	errors := make(chan error, 2)
 	if r.Worker != nil {
-		go func() { errors <- r.Worker.Run(ctx, r.RecoveryInterval) }()
+		go func() {
+			if err := r.Worker.Run(ctx, r.RecoveryInterval); err != nil {
+				errors <- err
+			}
+		}()
+	}
+	if r.Migration != nil {
+		go func() {
+			if err := r.Migration.Run(ctx); err != nil {
+				errors <- err
+			}
+		}()
 	}
 	ticker := time.NewTicker(r.RecoveryInterval)
 	defer ticker.Stop()
