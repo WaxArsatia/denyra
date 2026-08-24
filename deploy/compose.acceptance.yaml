@@ -1,21 +1,50 @@
 services:
   acceptance-fixture:
-    image: docker.io/denyra/media-pipeline:local@sha256:4cf825e4e810fa2668c4aaef967114fd713e96462d0023833f29f74030763daa
-    platform: linux/amd64
+    image: denyra/media-pipeline:${DENYRA_IMAGE_TAG:-local}
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
     entrypoint: ["/app/denyra-acceptance-fixture"]
-    command: []
+    environment:
+      DENYRA_ACCEPTANCE_FIXTURE_ADDRESS: 0.0.0.0:18080
+      DENYRA_ACCEPTANCE_EVIDENCE_FILE: /acceptance/state.json
+    volumes:
+      - type: bind
+        source: ${DENYRA_HOME}/acceptance
+        target: /acceptance
     networks:
-      denyra-control:
-        ipv4_address: ${DENYRA_ACCEPTANCE_FIXTURE_ADDRESS:-172.30.0.4}
+      denyra-control: {}
+      denyra-acquisition: {}
+      denyra-import: {}
+      denyra-upload: {}
+      denyra-playback: {}
     healthcheck:
       interval: 2s
       timeout: 2s
-      retries: 20
-      test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "${DENYRA_ACCEPTANCE_FIXTURE_ADDRESS:-172.30.0.4}:18080"]
+      retries: 30
+      test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "127.0.0.1:18080"]
+
+  reconciler:
+    command:
+      - --lidarr-url
+      - http://acceptance-fixture:18080
+      - --lidarr-api-key-file
+      - /run/secrets/lidarr_api_key
+      - --slskd-url
+      - http://slskd:5030
+      - --slskd-api-key-file
+      - /run/secrets/slskd_api_key
+      - --sftpgo-url
+      - http://acceptance-fixture:18080
+      - --sftpgo-admin-file
+      - /run/secrets/sftpgo_admin
+      - --sftpgo-upload-file
+      - /run/secrets/sftpgo_upload
+      - --navidrome-url
+      - http://acceptance-fixture:18080
+      - --navidrome-admin-file
+      - /run/secrets/navidrome_admin
+    depends_on:
+      acceptance-fixture:
+        condition: service_healthy
 
   media-pipeline:
     environment:
@@ -37,23 +66,19 @@ services:
         condition: service_healthy
 
   navidrome:
-    depends_on:
-      media-pipeline:
-        condition: service_healthy
+    ports: !reset []
+
+  sftpgo:
     ports: !reset []
 
   live-provider-acceptance:
-    image: docker.io/denyra/acquisition-gateway:local@sha256:16783876b1ddbe2bca74ba7c9fbad3b29c71491fd3a323878c290a1ae6e69855
-    platform: linux/amd64
+    image: denyra/acquisition-gateway:${DENYRA_IMAGE_TAG:-local}
     profiles: ["live-provider-acceptance"]
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
     command: ["live-provider-acceptance", "--config", "/etc/denyra/config.toml"]
     environment:
       DENYRA_LIVE_PROVIDER_ACCEPTANCE: ${DENYRA_LIVE_PROVIDER_ACCEPTANCE:-NOT_ACCEPTED}
-      DENYRA_HTTP_INTERNAL_ADDRESS: ${DENYRA_LIVE_GATEWAY_CONTROL_ADDRESS:-172.30.0.5}:8081
+      DENYRA_HTTP_INTERNAL_ADDRESS: 0.0.0.0:8081
     configs:
       - source: gateway_config
         target: /etc/denyra/config.toml
@@ -69,6 +94,5 @@ services:
         source: ${DENYRA_DATA_ROOT:-/data}/state/acceptance-gateway
         target: /data/state/gateway
     networks:
-      denyra-control:
-        ipv4_address: ${DENYRA_LIVE_GATEWAY_CONTROL_ADDRESS:-172.30.0.5}
+      denyra-control: {}
       denyra-acquisition: {}

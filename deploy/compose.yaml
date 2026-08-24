@@ -134,8 +134,6 @@ services:
       PUID: "${DENYRA_MEDIA_UID:-1000}"
       PGID: "${DENYRA_MEDIA_GID:-1000}"
       TZ: UTC
-    secrets:
-      - lidarr_api_key
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/lidarr
@@ -187,6 +185,7 @@ services:
     image: drakkan/sftpgo:latest
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     entrypoint: ["/bin/sh", "/denyra/sftpgo-secret-entrypoint.sh"]
+    command: ["sftpgo", "serve"]
     configs:
       - source: sftpgo_secret_entrypoint
         target: /denyra/sftpgo-secret-entrypoint.sh
@@ -213,6 +212,8 @@ services:
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "sftpgo", "ping"]
+      timeout: 20s
+      start_period: 45s
     restart: unless-stopped
 
   navidrome:

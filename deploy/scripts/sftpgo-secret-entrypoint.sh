@@ -15,4 +15,5 @@ SFTPGO_DEFAULT_ADMIN_USERNAME=admin
 export SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN SFTPGO_DEFAULT_ADMIN_USERNAME
 load_secret SFTPGO_DEFAULT_ADMIN_PASSWORD "${SFTPGO_DEFAULT_ADMIN_PASSWORD_FILE:-/run/secrets/sftpgo_admin}"
 
-exec "${SFTPGO_ENTRYPOINT:-/entrypoint.sh}" "$@"
+[ "$#" -gt 0 ] || { echo "SFTPGo secret entrypoint requires a command" >&2; exit 1; }
+exec "$@"

@@ -38,6 +38,31 @@ denyra_setup_copy_config() {
   denyra_atomic_file "$denyra_setup_config_target" 0640 < "$denyra_setup_config_source"
 }
 
+denyra_setup_lidarr_api_key() {
+  denyra_setup_lidarr_config=$DENYRA_DATA_ROOT/state/lidarr/config.xml
+  denyra_setup_wait_seconds=${DENYRA_WAIT_SECONDS:-180}
+  denyra_setup_waited=0
+  while [ ! -s "$denyra_setup_lidarr_config" ] && [ "$denyra_setup_waited" -lt "$denyra_setup_wait_seconds" ]; do
+    sleep 1
+    denyra_setup_waited=$((denyra_setup_waited + 1))
+  done
+  [ -s "$denyra_setup_lidarr_config" ] || denyra_die "Lidarr config.xml was not created within ${denyra_setup_wait_seconds}s"
+
+  denyra_setup_lidarr_keys=$(sed -n 's:.*<ApiKey>\([^<]*\)</ApiKey>.*:\1:p' "$denyra_setup_lidarr_config")
+  denyra_setup_lidarr_key_count=$(printf '%s\n' "$denyra_setup_lidarr_keys" | sed '/^$/d' | wc -l)
+  [ "$denyra_setup_lidarr_key_count" -eq 1 ] || denyra_die "Lidarr config.xml must contain exactly one API key"
+  denyra_setup_lidarr_key=$denyra_setup_lidarr_keys
+  printf '%s\n' "$denyra_setup_lidarr_key" | LC_ALL=C grep -Eq '^[!-~]{16,}$' || denyra_die "Lidarr API key is invalid"
+
+  denyra_setup_lidarr_secret=$DENYRA_SECRETS_DIR/lidarr_api_key
+  if [ -s "$denyra_setup_lidarr_secret" ]; then
+    denyra_setup_existing_lidarr_key=$(tr -d '\r\n' < "$denyra_setup_lidarr_secret")
+    [ "$denyra_setup_existing_lidarr_key" = "$denyra_setup_lidarr_key" ] || denyra_die "existing Lidarr API key does not match persistent Lidarr state"
+    return 0
+  fi
+  printf '%s' "$denyra_setup_lidarr_key" | denyra_atomic_file "$denyra_setup_lidarr_secret" 0600
+}
+
 denyra_setup() {
   git --version >/dev/null 2>&1 || denyra_die "Git is required"
   docker version >/dev/null 2>&1 || denyra_die "Docker Engine is required"
@@ -106,5 +131,15 @@ denyra_setup() {
   } | denyra_atomic_file "$DENYRA_HOME/credentials.txt" 0600
 
   printf '%s\n' "$DENYRA_HOME" | denyra_atomic_file "$repo_root/.denyra-home" 0600
+
+  DENYRA_RELEASE_REFRESH=setup-$(date -u +%Y%m%dT%H%M%SZ)
+  export DENYRA_RELEASE_REFRESH
+  denyra_compose build --pull
+  denyra_compose up -d --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}" lidarr slskd sftpgo navidrome
+  denyra_setup_lidarr_api_key
+  denyra_compose --profile setup run --rm reconciler
+  denyra_compose up -d --remove-orphans --wait
+  . "$repo_root/scripts/manage/smoke.sh"
+  denyra_smoke
   denyra_unlock
 }

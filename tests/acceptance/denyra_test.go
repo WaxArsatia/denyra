@@ -2,6 +2,8 @@ package acceptance_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +19,103 @@ import (
 	"github.com/waxarsatia/denyra/internal/platform/storage"
 	"github.com/waxarsatia/denyra/tests/acceptance/harness"
 )
+
+func TestSetupReconcilesEmptyDeploymentAndRerunsCleanly(t *testing.T) {
+	if os.Getenv("DENYRA_ACCEPTANCE_COMPOSE") != "1" {
+		t.Skip("set DENYRA_ACCEPTANCE_COMPOSE=1 to run setup acceptance")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Docker is unavailable: %v", err)
+	}
+	repository, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	for _, path := range []string{"acceptance", filepath.Join("data", "library", "fixture-artist", "fixture-album")} {
+		if err := os.MkdirAll(filepath.Join(home, path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	libraryFixture := filepath.Join(home, "data", "library", "fixture-artist", "fixture-album", "keep.txt")
+	if err := os.WriteFile(libraryFixture, []byte("keep-library-content\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	project := fmt.Sprintf("denyra-setup-acceptance-%d", os.Getpid())
+	override := filepath.Join(repository, "deploy", "compose.acceptance.yaml")
+	environment := append(os.Environ(),
+		"DENYRA_HOME="+home,
+		"DENYRA_PROJECT_NAME="+project,
+		"DENYRA_COMPOSE_OVERRIDE="+override,
+		"DENYRA_SOULSEEK_USERNAME=acceptance-disabled",
+		"DENYRA_SOULSEEK_PASSWORD=acceptance-disabled",
+		"DENYRA_WAIT_SECONDS=240",
+	)
+	t.Cleanup(func() {
+		envFile := filepath.Join(home, "config", "denyra.env")
+		if _, err := os.Stat(envFile); err != nil {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		command := exec.CommandContext(ctx, "docker", "compose", "--project-name", project, "--env-file", envFile, "-f", filepath.Join(repository, "deploy", "compose.yaml"), "-f", override, "down", "--volumes", "--remove-orphans")
+		command.Dir = repository
+		command.Env = environment
+		_ = command.Run()
+		cleanup := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", home+":/cleanup", "debian:stable-slim", "sh", "-c", fmt.Sprintf("chown -R %d:%d /cleanup && chmod -R u+rwX /cleanup", os.Getuid(), os.Getgid()))
+		_ = cleanup.Run()
+	})
+
+	runSetupAcceptance(t, repository, home, project, override, environment)
+	first := readSetupEvidence(t, filepath.Join(home, "acceptance", "state.json"))
+	if first.LidarrMutations == 0 || first.NavidromeCreates != 1 || first.SFTPGoCreates != 1 {
+		t.Fatalf("first reconciliation evidence=%+v", first)
+	}
+	runSetupAcceptance(t, repository, home, project, override, environment)
+	second := readSetupEvidence(t, filepath.Join(home, "acceptance", "state.json"))
+	if second.LidarrMutations != first.LidarrMutations || second.NavidromeCreates != 1 || second.SFTPGoCreates != 1 {
+		t.Fatalf("rerun was not idempotent: first=%+v second=%+v", first, second)
+	}
+	content, err := os.ReadFile(libraryFixture)
+	if err != nil || string(content) != "keep-library-content\n" {
+		t.Fatalf("library fixture changed: %q err=%v", content, err)
+	}
+}
+
+type setupEvidence struct {
+	LidarrMutations  int `json:"lidarr_mutations"`
+	NavidromeCreates int `json:"navidrome_creates"`
+	SFTPGoCreates    int `json:"sftpgo_creates"`
+}
+
+func runSetupAcceptance(t *testing.T, repository, home, project, override string, environment []string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, filepath.Join(repository, "denyra"), "setup")
+	command.Dir = repository
+	command.Env = environment
+	if output, err := command.CombinedOutput(); err != nil {
+		diagnostic := exec.Command("docker", "compose", "--project-name", project, "--env-file", filepath.Join(home, "config", "denyra.env"), "-f", filepath.Join(repository, "deploy", "compose.yaml"), "-f", override, "logs", "--no-color", "--tail", "120", "lidarr", "slskd", "sftpgo", "navidrome")
+		diagnostic.Dir = repository
+		diagnostic.Env = environment
+		logs, _ := diagnostic.CombinedOutput()
+		t.Fatalf("setup acceptance failed: %v\n%s\nservice logs:\n%s", err, output, logs)
+	}
+}
+
+func readSetupEvidence(t *testing.T, path string) setupEvidence {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evidence setupEvidence
+	if err := json.Unmarshal(content, &evidence); err != nil {
+		t.Fatal(err)
+	}
+	return evidence
+}
 
 func TestDenyraPinnedComposeStartsReadyWithLocalAdapters(t *testing.T) {
 	stack := harness.StartCompose(t)

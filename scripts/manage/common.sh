@@ -69,11 +69,14 @@ denyra_atomic_file() {
   denyra_atomic_mode=$2
   denyra_atomic_temporary=$denyra_atomic_target.tmp.$$
   umask 077
-  trap 'rm -f "$denyra_atomic_temporary"' HUP INT TERM
-  cat > "$denyra_atomic_temporary"
-  chmod "$denyra_atomic_mode" "$denyra_atomic_temporary"
-  mv "$denyra_atomic_temporary" "$denyra_atomic_target"
-  trap - HUP INT TERM
+  if ! cat > "$denyra_atomic_temporary"; then
+    rm -f "$denyra_atomic_temporary"
+    return 1
+  fi
+  if ! chmod "$denyra_atomic_mode" "$denyra_atomic_temporary" || ! mv "$denyra_atomic_temporary" "$denyra_atomic_target"; then
+    rm -f "$denyra_atomic_temporary"
+    return 1
+  fi
 }
 
 denyra_secret() {
@@ -85,7 +88,16 @@ denyra_secret() {
 }
 
 denyra_compose() {
-  docker compose --project-name denyra --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$repo_root/deploy/compose.yaml" "$@"
+  denyra_project_name=${DENYRA_PROJECT_NAME:-denyra}
+  if [ -n "${DENYRA_COMPOSE_OVERRIDE:-}" ]; then
+    case "$DENYRA_COMPOSE_OVERRIDE" in
+      /*) ;;
+      *) denyra_die "DENYRA_COMPOSE_OVERRIDE must be an absolute path" ;;
+    esac
+    docker compose --project-name "$denyra_project_name" --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$repo_root/deploy/compose.yaml" -f "$DENYRA_COMPOSE_OVERRIDE" "$@"
+    return
+  fi
+  docker compose --project-name "$denyra_project_name" --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$repo_root/deploy/compose.yaml" "$@"
 }
 
 denyra_unavailable() {

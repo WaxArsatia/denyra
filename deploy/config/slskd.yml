@@ -2,11 +2,11 @@ directories:
   downloads: /data/downloads/slskd
   incomplete: /data/downloads/slskd/incomplete
 
-permissions:
-  file:
-    mode: 777
-  directory:
-    mode: 777
+transfers:
+  download:
+    destination:
+      permissions:
+        mode: 777
 
 integrations:
   webhooks:

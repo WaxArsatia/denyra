@@ -105,10 +105,9 @@ test "$SFTPGO_DEFAULT_ADMIN_PASSWORD" = test-sftpgo-password
 	if err := os.WriteFile(child, []byte(childScript), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("sh", filepath.Join(repoRoot, "deploy", "scripts", "sftpgo-secret-entrypoint.sh"))
+	command := exec.Command("sh", filepath.Join(repoRoot, "deploy", "scripts", "sftpgo-secret-entrypoint.sh"), child)
 	command.Env = append(os.Environ(),
 		"SFTPGO_DEFAULT_ADMIN_PASSWORD_FILE="+passwordPath,
-		"SFTPGO_ENTRYPOINT="+child,
 	)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("load SFTPGo bootstrap secret: %v\n%s", err, output)
@@ -147,6 +146,9 @@ func TestComposeMountsHeadlessServiceConfiguration(t *testing.T) {
 	sftpgo := document.Services["sftpgo"]
 	if !slices.Equal(sftpgo.Entrypoint, []string{"/bin/sh", "/denyra/sftpgo-secret-entrypoint.sh"}) {
 		t.Errorf("SFTPGo entrypoint = %v", sftpgo.Entrypoint)
+	}
+	if !slices.Equal(sftpgo.Command, []string{"sftpgo", "serve"}) {
+		t.Errorf("SFTPGo command = %v", sftpgo.Command)
 	}
 	for _, key := range []string{"SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN", "SFTPGO_DEFAULT_ADMIN_PASSWORD"} {
 		if _, present := sftpgo.Environment[key]; present {

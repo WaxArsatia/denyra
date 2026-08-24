@@ -33,6 +33,7 @@ esac
 
 for path in \
 	downloads/slskd \
+	downloads/slskd/incomplete \
 	downloads/spotiflac \
 	downloads/other \
 	incoming/manual \

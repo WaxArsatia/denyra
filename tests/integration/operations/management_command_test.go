@@ -39,7 +39,18 @@ func newManagementFixture(t *testing.T) *managementFixture {
 	}
 	f.writeExecutable("docker", `#!/bin/sh
 printf '%s\n' "$*" >> "$DENYRA_TEST_LOG"
-case "$*" in "compose version"*) exit 0;; esac
+case "$*" in
+  "compose version"*) exit 0 ;;
+  *" build --pull"*) [ "${DENYRA_TEST_DOCKER_FAIL:-}" != build ] || exit 19 ;;
+  *" up -d --wait --wait-timeout "*" lidarr slskd sftpgo navidrome")
+    [ "${DENYRA_TEST_DOCKER_FAIL:-}" != dependencies ] || exit 20
+    mkdir -p "$DENYRA_DATA_ROOT/state/lidarr"
+    if [ ! -s "$DENYRA_DATA_ROOT/state/lidarr/config.xml" ]; then
+      printf '<Config><ApiKey>%s</ApiKey><Unrelated>keep</Unrelated></Config>\n' "${DENYRA_TEST_LIDARR_API_KEY:-fixture-lidarr-api-key}" > "$DENYRA_DATA_ROOT/state/lidarr/config.xml"
+    fi
+    ;;
+  *" --profile setup run --rm reconciler") [ "${DENYRA_TEST_DOCKER_FAIL:-}" != reconcile ] || exit 21 ;;
+esac
 `)
 	return f
 }
@@ -198,6 +209,7 @@ esac
 	cmd.Env = append(cmd.Env,
 		"DENYRA_SOULSEEK_USERNAME=test-listener",
 		"DENYRA_SOULSEEK_PASSWORD=test-password",
+		"DENYRA_WAIT_SECONDS=1",
 	)
 	return cmd
 }
@@ -308,5 +320,76 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	}
 	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("%s mode=%#o want=%#o", path, got, want)
+	}
+}
+
+func TestSetupBuildOrderAndLidarrAPIKeyExtraction(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	f.runSetup()
+	log := f.log()
+	assertOrderedFragments(t, log, []string{
+		"build --pull",
+		"up -d --wait --wait-timeout 1 lidarr slskd sftpgo navidrome",
+		"--profile setup run --rm reconciler",
+		"up -d --remove-orphans --wait",
+		"ps",
+	})
+	key, err := os.ReadFile(filepath.Join(f.home, "secrets", "lidarr_api_key"))
+	if err != nil || string(key) != "fixture-lidarr-api-key" {
+		t.Fatalf("Lidarr API key=%q err=%v", key, err)
+	}
+}
+
+func TestSetupFailureStopsBeforeUnsafeNextStage(t *testing.T) {
+	tests := []struct {
+		name      string
+		failure   string
+		forbidden string
+	}{
+		{name: "build", failure: "build", forbidden: "up -d --wait"},
+		{name: "dependencies", failure: "dependencies", forbidden: "--profile setup run --rm reconciler"},
+		{name: "reconcile", failure: "reconcile", forbidden: "up -d --remove-orphans --wait"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newManagementFixture(t)
+			t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+			cmd := f.setupCommand()
+			cmd.Env = append(cmd.Env, "DENYRA_TEST_DOCKER_FAIL="+tt.failure)
+			out, err := cmd.CombinedOutput()
+			if err == nil {
+				t.Fatalf("setup unexpectedly succeeded: %s", out)
+			}
+			if strings.Contains(f.log(), tt.forbidden) {
+				t.Fatalf("setup continued after %s failure:\n%s", tt.failure, f.log())
+			}
+		})
+	}
+}
+
+func TestLidarrAPIKeyMismatchIsRejected(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	f.runSetup()
+	configPath := filepath.Join(f.home, "data", "state", "lidarr", "config.xml")
+	if err := os.WriteFile(configPath, []byte("<Config><ApiKey>different-lidarr-api-key</ApiKey></Config>\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := f.setupCommand().CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "existing Lidarr API key does not match persistent Lidarr state") {
+		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
+func assertOrderedFragments(t *testing.T, text string, fragments []string) {
+	t.Helper()
+	position := 0
+	for _, fragment := range fragments {
+		next := strings.Index(text[position:], fragment)
+		if next < 0 {
+			t.Fatalf("missing ordered fragment %q after byte %d:\n%s", fragment, position, text)
+		}
+		position += next + len(fragment)
 	}
 }
