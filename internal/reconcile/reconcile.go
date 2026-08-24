@@ -44,6 +44,10 @@ func Run(ctx context.Context, services []Service) ([]Outcome, error) {
 
 // Services returns the configured service reconcilers. Concrete reconcilers
 // are added incrementally while keeping command-line secret handling stable.
-func Services(Options) []Service {
-	return nil
+func Services(options Options) []Service {
+	lidarr := Lidarr{
+		BaseURL: options.LidarrURL, APIKey: options.LidarrAPIKey,
+		SlskdURL: options.SlskdURL, SlskdAPIKey: options.SlskdAPIKey, HTTP: options.HTTP,
+	}
+	return []Service{{Name: "lidarr", Apply: lidarr.Apply}}
 }
