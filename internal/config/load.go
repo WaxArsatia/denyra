@@ -15,6 +15,7 @@ type envSetter func(*Config, string) error
 var environmentRegistry = map[string]envSetter{
 	"DENYRA_HTTP_ADMIN_ADDRESS":               func(c *Config, value string) error { c.HTTP.AdminAddress = value; return nil },
 	"DENYRA_HTTP_INTERNAL_ADDRESS":            func(c *Config, value string) error { c.HTTP.InternalAddress = value; return nil },
+	"DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS":   func(c *Config, value string) error { c.HTTP.AcquisitionEventAddress = value; return nil },
 	"DENYRA_LIDARR_URL":                       func(c *Config, value string) error { c.Services.LidarrURL = value; return nil },
 	"DENYRA_PIPELINE_URL":                     func(c *Config, value string) error { c.Services.PipelineURL = value; return nil },
 	"DENYRA_GATEWAY_URL":                      func(c *Config, value string) error { c.Services.GatewayURL = value; return nil },

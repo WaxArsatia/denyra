@@ -61,6 +61,15 @@ func Decode(data []byte) (Lock, error) {
 	return lock, nil
 }
 
+func (l Lock) Image(id string) (Image, error) {
+	for _, image := range l.Images {
+		if image.ID == id {
+			return image, nil
+		}
+	}
+	return Image{}, fmt.Errorf("dependency lock has no image %q", id)
+}
+
 func ensureJSONEOF(decoder *json.Decoder) error {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {

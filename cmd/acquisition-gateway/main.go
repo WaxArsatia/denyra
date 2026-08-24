@@ -21,6 +21,7 @@ import (
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 	"github.com/waxarsatia/denyra/internal/gateway/transport"
+	"github.com/waxarsatia/denyra/internal/platform/deplock"
 	"github.com/waxarsatia/denyra/internal/platform/fscheck"
 	"github.com/waxarsatia/denyra/internal/platform/servicehost"
 	"github.com/waxarsatia/denyra/migrations"
@@ -128,6 +129,20 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				}
 			}
 			handoff := application.CandidateHandoffService{Pipeline: pipelineClient, Store: repositories, ReplayAttempts: prepared.Config.HTTP.InternalReplayAttempts}
+			lockBytes, err := os.ReadFile(*lockPath)
+			if err != nil {
+				return err
+			}
+			dependencyLock, err := deplock.Decode(lockBytes)
+			if err != nil {
+				return err
+			}
+			slskdImage, err := dependencyLock.Image("slskd")
+			if err != nil {
+				return err
+			}
+			completion := application.PrimaryCompletionService{Queue: lidarrClient, Store: repositories, Handoff: handoff, DownloadsRoot: prepared.Config.Filesystem.DownloadsSlskd, PageSize: prepared.Config.Acquisition.LidarrPageSize, EngineVersion: slskdImage.Version}
+			completionMonitor := &application.PrimaryCompletionMonitor{Service: completion, Safety: time.Duration(prepared.Config.Acquisition.ReconciliationSafety), OnError: func(err error) { logger.Error("primary completion reconciliation failed", "error", err) }}
 			primary := application.PrimarySearch{Lidarr: lidarrClient, Store: repositories, Policy: policy, CommandTimeout: time.Duration(prepared.Config.Acquisition.AlbumSearchTimeout), PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), GraceWindow: time.Duration(prepared.Config.Acquisition.PrimaryGraceWindow), Pause: pause}
 			reconciler := application.PrimaryReconciler{Lidarr: lidarrClient, Store: repositories, Policy: policy, PageSize: prepared.Config.Acquisition.LidarrPageSize, PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), Pause: pause, Handoff: handoff}
 			canceller := application.TransferCancellationService{Lidarr: lidarrClient, SpotiFLAC: processes}
@@ -137,7 +152,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			worker := &application.AcquisitionWorker{Store: repositories, Admission: admission, Primary: primary, Reconciler: reconciler, Fallback: fallback, Arbitration: arbitration, Concurrency: prepared.Config.Concurrency.Acquisition, Lease: time.Duration(prepared.Config.Acquisition.LeaseDuration), SafetyScan: time.Duration(prepared.Config.Acquisition.ReconciliationSafety), MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions, OnError: func(jobID string, err error) { logger.Error("acquisition job failed", "job_id", jobID, "error", err) }}
 			lateHandler := application.LatePrimaryService{Store: repositories, Canceller: processes, Handoff: handoff}
 			recovery := application.GatewayRecovery{Store: repositories, Arbitration: arbitration, Handoff: handoff, Primary: primary, Reconciler: reconciler, RetryPolicy: policy, SpotiFLACRoot: prepared.Config.Filesystem.DownloadsSpotiFLAC, ActiveProcess: processes.Active, CancelProcess: processes.CancelSuperseded}
-			runtime = &application.GatewayRuntime{Discovery: application.WantedDiscovery{Lidarr: lidarrClient, Store: repositories, ConfigSnapshotID: snapshotID}, Recovery: recovery, LatePrimary: application.LatePrimaryMonitor{Store: repositories, Reconciler: reconciler, Handler: lateHandler}, Worker: worker, Safety: time.Duration(prepared.Config.Acquisition.ReconciliationSafety)}
+			runtime = &application.GatewayRuntime{Discovery: application.WantedDiscovery{Lidarr: lidarrClient, Store: repositories, ConfigSnapshotID: snapshotID}, Recovery: recovery, LatePrimary: application.LatePrimaryMonitor{Store: repositories, Reconciler: reconciler, Handler: lateHandler}, PrimaryCompletion: completionMonitor, Worker: worker, Safety: time.Duration(prepared.Config.Acquisition.ReconciliationSafety)}
 			go func() {
 				if err := runtime.Run(ctx); err != nil {
 					logger.Error("acquisition runtime stopped", "error", err)
@@ -149,6 +164,10 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			repositories := persistence.New(prepared.DB, time.Now)
 			quality := transport.QualityCallbackAPI{Service: runtime.Worker.Arbitration, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value)}
 			return (transport.Routes{Quality: quality, Store: repositories, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), BackupRoot: filepath.Join(prepared.Config.Filesystem.DataRoot, "backups"), Notify: runtime.NotifyLidarr}).Handler()
+		},
+		BuildAcquisitionHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
+			repositories := persistence.New(prepared.DB, time.Now)
+			return (transport.SlskdEventRoutes{Store: repositories, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Notify: runtime.NotifySlskd}).Handler()
 		},
 	})
 }

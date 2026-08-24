@@ -54,6 +54,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if cfg.HTTP.InternalReplayAttempts != 2 {
 		t.Fatalf("unexpected internal replay attempts: %d", cfg.HTTP.InternalReplayAttempts)
 	}
+	if cfg.HTTP.AcquisitionEventAddress != "0.0.0.0:8082" {
+		t.Fatalf("unexpected acquisition event address: %q", cfg.HTTP.AcquisitionEventAddress)
+	}
 	if cfg.Services.LidarrURL != "http://lidarr:8686" || cfg.Services.GatewayURL != "http://acquisition-gateway:8081" || cfg.Services.PipelineURL != "http://media-pipeline:8081" {
 		t.Fatalf("unexpected internal service defaults: %+v", cfg.Services)
 	}
@@ -84,6 +87,7 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	t.Setenv("DENYRA_GATEWAY_URL", "http://gateway-test:8081")
 	t.Setenv("DENYRA_ACQUISITION_LEASE_DURATION", "20m")
 	t.Setenv("DENYRA_ACQUISITION_MAX_INLINE_TRANSITIONS", "12")
+	t.Setenv("DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS", "127.0.0.1:18082")
 
 	cfg, err := config.Load(path, os.Environ())
 	if err != nil {
@@ -106,6 +110,9 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	}
 	if cfg.Acquisition.MaxInlineTransitions != 12 {
 		t.Fatalf("maximum inline transitions = %d, want 12", cfg.Acquisition.MaxInlineTransitions)
+	}
+	if cfg.HTTP.AcquisitionEventAddress != "127.0.0.1:18082" {
+		t.Fatalf("acquisition event address = %q", cfg.HTTP.AcquisitionEventAddress)
 	}
 }
 

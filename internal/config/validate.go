@@ -9,6 +9,9 @@ import (
 )
 
 func (c Config) Validate() error {
+	if strings.TrimSpace(c.HTTP.AdminAddress) == "" || strings.TrimSpace(c.HTTP.InternalAddress) == "" || strings.TrimSpace(c.HTTP.AcquisitionEventAddress) == "" {
+		return fmt.Errorf("HTTP listener addresses are required")
+	}
 	positiveDurations := map[string]Duration{
 		"database.busy_timeout":                c.Database.BusyTimeout,
 		"database.idempotency_ttl":             c.Database.IdempotencyTTL,

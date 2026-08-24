@@ -59,9 +59,28 @@ Complete these setup steps:
 
 1. In Lidarr, disable automatic Completed Download Handling. Confirm that `/data/processing/approved` is the only download/import path visible to Lidarr and `/data/library` is its final library path.
 2. Configure the baked Lidarr.Plugin.Slskd integration to reach `slskd` on the acquisition network. Lidarr owns AlbumSearch and the primary queue.
-3. Sign in to SFTPGo WebAdmin on port `8080`, create its first admin, then create upload users restricted to `/data/incoming/manual`.
-4. Create Navidrome music users on port `4533`. Navidrome owns playback authentication and has `/music` mounted read-only.
-5. Sign in to the Denyra Admin UI on port `8090` with the one-time bootstrap account, change its password, then empty the bootstrap secret file in the active secret directory.
+3. Add the following slskd webhook configuration, then restart slskd:
+
+   ```yaml
+   integrations:
+     webhooks:
+       denyra_completion:
+         on:
+           - DownloadFileComplete
+         call:
+           url: http://acquisition-gateway:8082/events/slskd
+           headers:
+             - name: User-Agent
+               value: slskd/0.26.0
+         timeout: 5000
+         retry:
+           attempts: 3
+   ```
+
+   Port `8082` is reachable only through `denyra-acquisition` and must not be published on the host. The event is only a wake-up signal. Denyra claims nothing until Lidarr.Plugin.Slskd reports the correlated download ID as a completed, healthy batch at `/data/downloads/slskd/lidarr/<download-id>`.
+4. Sign in to SFTPGo WebAdmin on port `8080`, create its first admin, then create upload users restricted to `/data/incoming/manual`.
+5. Create Navidrome music users on port `4533`. Navidrome owns playback authentication and has `/music` mounted read-only.
+6. Sign in to the Denyra Admin UI on port `8090` with the one-time bootstrap account, change its password, then empty the bootstrap secret file in the active secret directory.
 
 Check local service state:
 

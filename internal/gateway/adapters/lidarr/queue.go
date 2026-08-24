@@ -8,13 +8,17 @@ import (
 )
 
 type QueueRecord struct {
-	ID                  int64  `json:"id"`
-	AlbumID             int64  `json:"albumId"`
-	DownloadID          string `json:"downloadId"`
-	Title               string `json:"title"`
-	Added               string `json:"added"`
-	ReleaseGroupMBID    string `json:"releaseGroupId"`
-	SelectedReleaseMBID string `json:"releaseId"`
+	ID                    int64  `json:"id"`
+	AlbumID               int64  `json:"albumId"`
+	DownloadID            string `json:"downloadId"`
+	Title                 string `json:"title"`
+	Added                 string `json:"added"`
+	ReleaseGroupMBID      string `json:"releaseGroupId"`
+	SelectedReleaseMBID   string `json:"releaseId"`
+	Status                string `json:"status"`
+	TrackedDownloadStatus string `json:"trackedDownloadStatus"`
+	OutputPath            string `json:"outputPath"`
+	ErrorMessage          string `json:"errorMessage"`
 }
 
 func (c Client) QueuePage(ctx context.Context, page, size int) ([]QueueRecord, int, error) {
@@ -55,6 +59,23 @@ func (c Client) QueueAfter(ctx context.Context, watermark string, pageSize int) 
 			}
 		}
 		if len(records) == 0 || page*pageSize >= total || records[len(records)-1].ID <= minimum {
+			return result, nil
+		}
+	}
+}
+
+func (c Client) QueueRecords(ctx context.Context, pageSize int) ([]QueueRecord, error) {
+	if pageSize <= 0 {
+		return nil, fmt.Errorf("invalid queue page size")
+	}
+	var result []QueueRecord
+	for page := 1; ; page++ {
+		records, total, err := c.QueuePage(ctx, page, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, records...)
+		if len(records) == 0 || page*pageSize >= total {
 			return result, nil
 		}
 	}

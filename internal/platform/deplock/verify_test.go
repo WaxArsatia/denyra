@@ -63,3 +63,22 @@ func TestCanonicalJSONIsDeterministic(t *testing.T) {
 		t.Fatalf("canonical bytes differ:\n%s\n%s", first, second)
 	}
 }
+
+func TestImageReturnsExactLockedIdentity(t *testing.T) {
+	digest := strings.Repeat("d", 64)
+	document := `{"schema":1,"images":[{"id":"slskd","reference":"ghcr.io/slskd/slskd:0.26.0@sha256:` + digest + `","platform":"linux/amd64","version":"0.26.0","digest":"sha256:` + digest + `"}],"artifacts":[],"registries":[],"components":[]}`
+	lock, err := deplock.Decode([]byte(document))
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := lock.Image("slskd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if image.Version != "0.26.0" || image.Reference == "" || image.Digest == "" {
+		t.Fatalf("image=%+v", image)
+	}
+	if _, err := lock.Image("missing"); err == nil {
+		t.Fatal("missing locked image was accepted")
+	}
+}

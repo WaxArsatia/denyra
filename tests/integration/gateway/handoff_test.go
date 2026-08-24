@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -111,12 +110,11 @@ func TestHandoffReplaysLostAcknowledgementWithoutSharingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	completed := now.Add(time.Minute)
-	outputChecksum := strings.Repeat("a", 64)
-	candidate := gatewaypersistence.Candidate{ID: candidateID, JobID: job.ID, Source: "slskd", SourceLocator: releaseDirectory, DownloadID: "download-1", CompletedAt: &completed, OutputSHA256: outputChecksum, OutputManifest: []byte(`[{"path":"track.flac"}]`), Provenance: pendingEvidence, ProvenanceSHA256: hex.EncodeToString(pendingSum[:]), CreatedAt: completed}
+	candidate := gatewaypersistence.Candidate{ID: candidateID, JobID: job.ID, Source: "slskd", SourceLocator: releaseDirectory, DownloadID: "download-1", CompletedAt: &completed, Provenance: pendingEvidence, ProvenanceSHA256: hex.EncodeToString(pendingSum[:]), CreatedAt: completed}
 	if err := gatewayStore.InsertCandidate(context.Background(), candidate); err != nil {
 		t.Fatal(err)
 	}
-	provenance := contracts.AcquisitionProvenance{Provider: "slskd", EngineVersion: "0.26.0", OutputSHA256: outputChecksum}
+	provenance := contracts.AcquisitionProvenance{Provider: "slskd", EngineVersion: "0.26.0", DownloadID: "download-1", ObservedStatus: "completed"}
 	if err := handoff.AcceptCompleted(context.Background(), candidate, provenance); err != nil {
 		t.Fatalf("AcceptCompleted: %v", err)
 	}

@@ -72,12 +72,18 @@ func (s HandoffService) Accept(ctx context.Context, key string, request contract
 	if _, err := domain.CanonicalMBID(request.MusicBrainzReleaseID); err != nil {
 		return 0, nil, fmt.Errorf("explicit MusicBrainz release ID: %w", err)
 	}
-	if request.Provenance.Provider == "" || len(request.Provenance.OutputSHA256) != 64 {
+	if request.Provenance.Provider == "" {
 		return 0, nil, fmt.Errorf("candidate provenance is incomplete")
 	}
-	decodedChecksum, decodeErr := hex.DecodeString(request.Provenance.OutputSHA256)
-	if decodeErr != nil || len(decodedChecksum) != sha256.Size || request.Provenance.OutputSHA256 != strings.ToLower(request.Provenance.OutputSHA256) {
-		return 0, nil, fmt.Errorf("candidate output checksum must be lowercase SHA-256")
+	if request.Provenance.OutputSHA256 == "" {
+		if source != domain.SourceSlskd {
+			return 0, nil, fmt.Errorf("candidate output checksum is required")
+		}
+	} else {
+		decodedChecksum, decodeErr := hex.DecodeString(request.Provenance.OutputSHA256)
+		if decodeErr != nil || len(decodedChecksum) != sha256.Size || request.Provenance.OutputSHA256 != strings.ToLower(request.Provenance.OutputSHA256) {
+			return 0, nil, fmt.Errorf("candidate output checksum must be lowercase SHA-256")
+		}
 	}
 	candidate, err := domain.CreateCandidate(domain.NewCandidate{ID: request.CandidateID, Source: source, ReleaseDirectory: path, ConfigSnapshotID: s.LocalConfigSnapshotID, AcquisitionEvidenceID: request.RequestID, GatewayJobID: request.JobID, Now: s.now()})
 	if err != nil {

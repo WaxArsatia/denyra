@@ -26,6 +26,8 @@ Enter maintenance if the service still responds. Stop stateful services, preserv
 
 Gateway reconciliation runs every 30 seconds as safety recovery; pipeline discovery also has a 30-second scanner. Triggering another webhook is safe because request IDs, idempotency keys, watermarks, correlation evidence, and state revisions prevent duplicate effects. Inspect the durable state before forcing Retry in the Admin UI.
 
+For primary downloads, confirm slskd has the `denyra_completion` webhook configured for `DownloadFileComplete` and the gateway listens on `0.0.0.0:8082` inside its container. Do not publish port `8082` on the host. A missing webhook delays detection until the safety reconciliation; it never bypasses the Lidarr batch-completion gate.
+
 ## Session compromise
 
 Use logout-all or explicit session revocation from the Admin UI. A password change revokes prior sessions. Session tokens are stored only as hashes. The accepted 30-day absolute expiry still applies; there is no idle timeout. If the audit or internal bearer secret may be exposed, stop the custom services, replace the affected secret, revoke sessions, and retain the audit trail.

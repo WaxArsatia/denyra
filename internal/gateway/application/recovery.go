@@ -65,9 +65,7 @@ func (recovery GatewayRecovery) Reconcile(ctx context.Context) (RecoveryReport, 
 			}
 			report.ReplayedHandoffs++
 		case "PIPELINE_ACCEPT":
-			var request struct {
-				CandidateID string `json:"candidate_id"`
-			}
+			var request contracts.CandidateAccepted
 			if err := json.Unmarshal(effect.Request, &request); err != nil {
 				return report, err
 			}
@@ -75,16 +73,7 @@ func (recovery GatewayRecovery) Reconcile(ctx context.Context) (RecoveryReport, 
 			if err != nil {
 				return report, err
 			}
-			var original struct {
-				Provenance map[string]any `json:"provenance"`
-			}
-			if err := json.Unmarshal(effect.Request, &original); err != nil {
-				return report, err
-			}
-			provider, _ := original.Provenance["provider"].(string)
-			engine, _ := original.Provenance["engine_version"].(string)
-			provenance := contracts.AcquisitionProvenance{Provider: provider, EngineVersion: engine, OutputSHA256: candidate.OutputSHA256}
-			if err := recovery.Handoff.AcceptCompleted(ctx, candidate, provenance); err != nil {
+			if err := recovery.Handoff.AcceptCompleted(ctx, candidate, request.Provenance); err != nil {
 				return report, err
 			}
 			report.ReplayedHandoffs++

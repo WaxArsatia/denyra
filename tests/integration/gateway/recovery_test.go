@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/gateway/adapters/lidarr"
+	pipelineadapter "github.com/waxarsatia/denyra/internal/gateway/adapters/pipeline"
 	"github.com/waxarsatia/denyra/internal/gateway/adapters/spotiflac"
 	"github.com/waxarsatia/denyra/internal/gateway/application"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
@@ -22,6 +24,23 @@ import (
 )
 
 type runtimeClock struct{ now time.Time }
+
+type recoveryPipelineClient struct {
+	acceptErr error
+	accepted  []contracts.CandidateAccepted
+}
+
+func (client *recoveryPipelineClient) Register(context.Context, contracts.CandidateRegistered, string, string) (pipelineadapter.Response, error) {
+	return pipelineadapter.Response{Status: http.StatusAccepted, Body: []byte(`{"status":"ok"}`)}, nil
+}
+
+func (client *recoveryPipelineClient) Accept(_ context.Context, request contracts.CandidateAccepted, _, _ string) (pipelineadapter.Response, error) {
+	client.accepted = append(client.accepted, request)
+	if client.acceptErr != nil {
+		return pipelineadapter.Response{}, client.acceptErr
+	}
+	return pipelineadapter.Response{Status: http.StatusAccepted, Body: []byte(`{"status":"ok"}`)}, nil
+}
 
 func (clock *runtimeClock) Now() time.Time { return clock.now }
 func (clock *runtimeClock) Pause(_ context.Context, duration time.Duration) error {
@@ -172,6 +191,40 @@ func TestAcquisitionRecoveryAcknowledgesInterruptedSpotiFLACCancellation(t *test
 	}
 	if cancelled != 1 {
 		t.Fatalf("acknowledged cancellation replayed %d times", cancelled)
+	}
+}
+
+func TestAcquisitionRecoveryReplaysExactPrimaryCompletionProvenance(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	candidateID, err := persistence.NewCandidateID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{ID: candidateID, JobID: job.ID, Source: "slskd", SourceLocator: "/data/downloads/slskd/lidarr/download-1", DownloadID: "download-1", CompletedAt: &completedAt, Provenance: []byte(`{"source":"slskd"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	lost := &recoveryPipelineClient{acceptErr: &pipelineadapter.RetryableError{Err: context.DeadlineExceeded}}
+	handoff := application.CandidateHandoffService{Pipeline: lost, Store: store, ReplayAttempts: 1, Now: func() time.Time { return completedAt }}
+	provenance := contracts.AcquisitionProvenance{Provider: "slskd", EngineVersion: "0.26.0", DownloadID: "download-1", ObservedStatus: "completed"}
+	if err := handoff.AcceptCompleted(context.Background(), candidate, provenance); err == nil {
+		t.Fatal("lost acknowledgement did not leave a retryable handoff")
+	}
+
+	replayed := &recoveryPipelineClient{}
+	recovery := application.GatewayRecovery{Store: store, Handoff: application.CandidateHandoffService{Pipeline: replayed, Store: store, ReplayAttempts: 1, Now: func() time.Time { return completedAt }}, RetryPolicy: domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour}, SpotiFLACRoot: t.TempDir(), Now: func() time.Time { return completedAt }}
+	report, err := recovery.Reconcile(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.ReplayedHandoffs != 1 || len(replayed.accepted) != 1 || replayed.accepted[0].Provenance != provenance {
+		t.Fatalf("report=%+v accepted=%+v", report, replayed.accepted)
 	}
 }
 

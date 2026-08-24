@@ -164,6 +164,9 @@ func TestComposeTopologyAndListeners(t *testing.T) {
 	if got := document.Services["acquisition-gateway"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "172.30.0.2:8081" {
 		t.Errorf("gateway internal listener = %q", got)
 	}
+	if got := document.Services["acquisition-gateway"].Environment["DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS"]; got != "0.0.0.0:8082" {
+		t.Errorf("gateway acquisition event listener = %q", got)
+	}
 	if got := document.Services["media-pipeline"].Environment["DENYRA_HTTP_INTERNAL_ADDRESS"]; got != "172.30.0.3:8081" {
 		t.Errorf("pipeline internal listener = %q", got)
 	}
@@ -300,6 +303,7 @@ func TestComposeMountOwnership(t *testing.T) {
 	assertMount("lidarr", "/data/library", false)
 	assertMount("slskd", "/data/downloads/slskd", false)
 	assertMount("acquisition-gateway", "/data/downloads/spotiflac", false)
+	assertNoMount("acquisition-gateway", "/data/downloads/slskd")
 	for _, target := range []string{"/data/downloads/slskd", "/data/downloads/spotiflac", "/data/downloads/other", "/data/incoming/manual", "/data/processing/work", "/data/processing/approved", "/data/quarantine"} {
 		assertMount("media-pipeline", target, false)
 	}

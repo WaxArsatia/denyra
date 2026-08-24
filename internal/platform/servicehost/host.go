@@ -26,20 +26,21 @@ import (
 )
 
 type Options struct {
-	Name                 string
-	ConfigPath           string
-	LockPath             string
-	ProvenancePath       string
-	DatabasePath         func(config.Config) string
-	Migrations           []denysqlite.Migration
-	RequiredBinaries     []string
-	CheckFilesystem      func(config.Config) error
-	ExternalDependencies []string
-	ServeAdmin           bool
-	Initialize           func(context.Context, *Prepared) error
-	BuildInternalHandler func(*Prepared) (http.Handler, error)
-	BuildAdminHandler    func(*Prepared) (http.Handler, error)
-	Now                  func() time.Time
+	Name                    string
+	ConfigPath              string
+	LockPath                string
+	ProvenancePath          string
+	DatabasePath            func(config.Config) string
+	Migrations              []denysqlite.Migration
+	RequiredBinaries        []string
+	CheckFilesystem         func(config.Config) error
+	ExternalDependencies    []string
+	ServeAdmin              bool
+	Initialize              func(context.Context, *Prepared) error
+	BuildInternalHandler    func(*Prepared) (http.Handler, error)
+	BuildAcquisitionHandler func(*Prepared) (http.Handler, error)
+	BuildAdminHandler       func(*Prepared) (http.Handler, error)
+	Now                     func() time.Time
 }
 
 type Prepared struct {
@@ -134,8 +135,8 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 	}
 	defer prepared.Close()
 
-	listeners := make([]net.Listener, 0, 2)
-	servers := make([]*http.Server, 0, 2)
+	listeners := make([]net.Listener, 0, 3)
+	servers := make([]*http.Server, 0, 3)
 	addServer := func(address string, handler http.Handler) error {
 		listener, err := net.Listen("tcp", address)
 		if err != nil {
@@ -160,6 +161,18 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 	}
 	if err := addServer(prepared.Config.HTTP.InternalAddress, internalMux); err != nil {
 		return fmt.Errorf("listen internal API: %w", err)
+	}
+	if options.BuildAcquisitionHandler != nil {
+		acquisitionHandler, err := options.BuildAcquisitionHandler(prepared)
+		if err != nil {
+			return fmt.Errorf("build acquisition event handler: %w", err)
+		}
+		if err := addServer(prepared.Config.HTTP.AcquisitionEventAddress, acquisitionHandler); err != nil {
+			for _, listener := range listeners {
+				_ = listener.Close()
+			}
+			return fmt.Errorf("listen acquisition event API: %w", err)
+		}
 	}
 	if options.ServeAdmin {
 		adminHandler := health.Handler(prepared.Health)

@@ -1,6 +1,6 @@
 services:
   acceptance-fixture:
-    image: docker.io/denyra/media-pipeline:local@sha256:76995bc1150c6537fd7d9213a4604f812f6c333d4ba5961e12415a7a1f64484d
+    image: docker.io/denyra/media-pipeline:local@sha256:5d4138bafb4e6a2a202ef91c7d296cb088c3b6803b4a493f0fed565d0a39bf8c
     platform: linux/amd64
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     read_only: true
@@ -43,7 +43,7 @@ services:
     ports: !reset []
 
   live-provider-acceptance:
-    image: docker.io/denyra/acquisition-gateway:local@sha256:15de3c7d9fa23f1b46c74e8f3edb0ed331dee74a1b53fe240de65b9043da0ad7
+    image: docker.io/denyra/acquisition-gateway:local@sha256:00ddb7d300362bc5b8831c804dab1f9c7316f2d5c7fd77ed5a241b56f60a120e
     platform: linux/amd64
     profiles: ["live-provider-acceptance"]
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"

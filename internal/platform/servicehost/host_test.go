@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +88,9 @@ func TestPrepareRejectsInvalidPin(t *testing.T) {
 func TestRunShutsDownGracefully(t *testing.T) {
 	options := makeOptions(t)
 	options.ServeAdmin = true
+	options.BuildAcquisitionHandler = func(*servicehost.Prepared) (http.Handler, error) {
+		return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(http.StatusAccepted) }), nil
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(50*time.Millisecond, cancel)
 	if err := servicehost.Run(ctx, slog.Default(), options); err != nil {
@@ -120,6 +124,7 @@ func makeOptions(t *testing.T) servicehost.Options {
 [http]
 admin_address = "127.0.0.1:0"
 internal_address = "127.0.0.1:0"
+acquisition_event_address = "127.0.0.1:0"
 
 [database]
 gateway_path = %q

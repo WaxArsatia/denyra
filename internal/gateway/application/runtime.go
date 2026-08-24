@@ -8,13 +8,14 @@ import (
 )
 
 type GatewayRuntime struct {
-	Discovery   WantedDiscovery
-	Recovery    GatewayRecovery
-	LatePrimary LatePrimaryMonitor
-	Worker      *AcquisitionWorker
-	Safety      time.Duration
-	events      chan struct{}
-	once        sync.Once
+	Discovery         WantedDiscovery
+	Recovery          GatewayRecovery
+	LatePrimary       LatePrimaryMonitor
+	PrimaryCompletion *PrimaryCompletionMonitor
+	Worker            *AcquisitionWorker
+	Safety            time.Duration
+	events            chan struct{}
+	once              sync.Once
 }
 
 func (runtime *GatewayRuntime) NotifyLidarr() {
@@ -22,6 +23,12 @@ func (runtime *GatewayRuntime) NotifyLidarr() {
 	select {
 	case runtime.events <- struct{}{}:
 	default:
+	}
+}
+
+func (runtime *GatewayRuntime) NotifySlskd() {
+	if runtime.PrimaryCompletion != nil {
+		runtime.PrimaryCompletion.Notify()
 	}
 }
 
@@ -37,8 +44,11 @@ func (runtime *GatewayRuntime) Run(ctx context.Context) error {
 		// Lidarr is external. The worker retry model remains available and
 		// readiness must stay true during an outage.
 	}
-	errors := make(chan error, 1)
+	errors := make(chan error, 2)
 	go func() { errors <- runtime.Worker.Run(ctx) }()
+	if runtime.PrimaryCompletion != nil {
+		go func() { errors <- runtime.PrimaryCompletion.Run(ctx) }()
+	}
 	ticker := time.NewTicker(runtime.Safety)
 	defer ticker.Stop()
 	for {

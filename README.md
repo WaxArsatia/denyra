@@ -339,6 +339,32 @@ Konfigurasikan:
 - autentikasi Web UI yang kuat
 - read/write API key untuk Lidarr.Plugin.Slskd
 - incoming listen port `50300`
+- webhook `DownloadFileComplete` ke
+  `http://acquisition-gateway:8082/events/slskd`
+
+Konfigurasi webhook:
+
+```yaml
+integrations:
+  webhooks:
+    denyra_completion:
+      on:
+        - DownloadFileComplete
+      call:
+        url: http://acquisition-gateway:8082/events/slskd
+        headers:
+          - name: User-Agent
+            value: slskd/0.26.0
+      timeout: 5000
+      retry:
+        attempts: 3
+```
+
+Port `8082` hanya hidup di network acquisition dan tidak dipublikasikan ke
+host. Event per-file hanya membangunkan reconciliation. Release baru diterima
+setelah queue Lidarr yang dikelola Lidarr.Plugin.Slskd menyatakan download ID
+terkorelasi selesai tanpa warning/error pada path
+`/data/downloads/slskd/lidarr/<download-id>`.
 
 Deployment memasang state slskd di `/app`, sehingga konfigurasi tersimpan saat
 container dibuat ulang.

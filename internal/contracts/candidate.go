@@ -11,9 +11,11 @@ const (
 )
 
 type AcquisitionProvenance struct {
-	Provider      string `json:"provider"`
-	EngineVersion string `json:"engine_version"`
-	OutputSHA256  string `json:"output_sha256"`
+	Provider       string `json:"provider"`
+	EngineVersion  string `json:"engine_version"`
+	OutputSHA256   string `json:"output_sha256,omitempty"`
+	DownloadID     string `json:"download_id,omitempty"`
+	ObservedStatus string `json:"observed_status,omitempty"`
 }
 
 type CandidateRegistered struct {

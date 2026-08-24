@@ -39,17 +39,18 @@ type Config struct {
 }
 
 type HTTPConfig struct {
-	AdminAddress           string   `toml:"admin_address" json:"admin_address"`
-	InternalAddress        string   `toml:"internal_address" json:"internal_address"`
-	InternalBodyLimit      int64    `toml:"internal_body_limit" json:"internal_body_limit"`
-	AdminMutationLimit     int64    `toml:"admin_mutation_limit" json:"admin_mutation_limit"`
-	ExternalRequestTimeout Duration `toml:"external_request_timeout" json:"external_request_timeout"`
-	ExternalResponseLimit  int64    `toml:"external_response_limit" json:"external_response_limit"`
-	InternalReplayAttempts int      `toml:"internal_replay_attempts" json:"internal_replay_attempts"`
-	ReadHeaderTimeout      Duration `toml:"read_header_timeout" json:"read_header_timeout"`
-	ServerIdleTimeout      Duration `toml:"server_idle_timeout" json:"server_idle_timeout"`
-	ShutdownTimeout        Duration `toml:"shutdown_timeout" json:"shutdown_timeout"`
-	HealthcheckTimeout     Duration `toml:"healthcheck_timeout" json:"healthcheck_timeout"`
+	AdminAddress            string   `toml:"admin_address" json:"admin_address"`
+	InternalAddress         string   `toml:"internal_address" json:"internal_address"`
+	AcquisitionEventAddress string   `toml:"acquisition_event_address" json:"acquisition_event_address"`
+	InternalBodyLimit       int64    `toml:"internal_body_limit" json:"internal_body_limit"`
+	AdminMutationLimit      int64    `toml:"admin_mutation_limit" json:"admin_mutation_limit"`
+	ExternalRequestTimeout  Duration `toml:"external_request_timeout" json:"external_request_timeout"`
+	ExternalResponseLimit   int64    `toml:"external_response_limit" json:"external_response_limit"`
+	InternalReplayAttempts  int      `toml:"internal_replay_attempts" json:"internal_replay_attempts"`
+	ReadHeaderTimeout       Duration `toml:"read_header_timeout" json:"read_header_timeout"`
+	ServerIdleTimeout       Duration `toml:"server_idle_timeout" json:"server_idle_timeout"`
+	ShutdownTimeout         Duration `toml:"shutdown_timeout" json:"shutdown_timeout"`
+	HealthcheckTimeout      Duration `toml:"healthcheck_timeout" json:"healthcheck_timeout"`
 }
 
 type ServicesConfig struct {

@@ -23,7 +23,14 @@ type Candidate struct {
 }
 
 func (r *Repositories) InsertCandidate(ctx context.Context, c Candidate) error {
-	if c.CompletedAt == nil || len(c.OutputSHA256) != 64 || len(c.OutputManifest) == 0 {
+	if c.CompletedAt == nil {
+		return fmt.Errorf("completed candidate output evidence is incomplete")
+	}
+	hasOutputEvidence := c.OutputSHA256 != "" || len(c.OutputManifest) != 0
+	if hasOutputEvidence && (len(c.OutputSHA256) != 64 || len(c.OutputManifest) == 0) {
+		return fmt.Errorf("completed candidate output evidence is incomplete")
+	}
+	if c.Source != "slskd" && !hasOutputEvidence {
 		return fmt.Errorf("completed candidate output evidence is incomplete")
 	}
 	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
@@ -40,6 +47,9 @@ func (r *Repositories) InsertCandidate(ctx context.Context, c Candidate) error {
 			if hash != c.ProvenanceSHA256 {
 				return contracts.ErrIdempotencyConflict
 			}
+		}
+		if !hasOutputEvidence {
+			return nil
 		}
 		manifestHash := sha256.Sum256(c.OutputManifest)
 		result, err = tx.ExecContext(ctx, `INSERT INTO candidate_output_evidence(candidate_id,output_sha256,manifest_json,manifest_sha256,completed_at,created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(candidate_id) DO NOTHING`, c.ID, c.OutputSHA256, c.OutputManifest, hex.EncodeToString(manifestHash[:]), formatTime(*c.CompletedAt), formatTime(c.CreatedAt))
@@ -63,7 +73,7 @@ func (r *Repositories) Candidate(ctx context.Context, id string) (Candidate, err
 	var c Candidate
 	var completed sql.NullString
 	var created string
-	err := r.DB.QueryRowContext(ctx, `SELECT c.candidate_id,c.job_id,c.source,c.source_locator,COALESCE(c.download_id,''),c.completed_at,c.provenance_json,c.provenance_sha256,c.created_at,o.output_sha256,o.manifest_json FROM candidates c JOIN candidate_output_evidence o ON o.candidate_id=c.candidate_id WHERE c.candidate_id=?`, id).Scan(&c.ID, &c.JobID, &c.Source, &c.SourceLocator, &c.DownloadID, &completed, &c.Provenance, &c.ProvenanceSHA256, &created, &c.OutputSHA256, &c.OutputManifest)
+	err := r.DB.QueryRowContext(ctx, `SELECT c.candidate_id,c.job_id,c.source,c.source_locator,COALESCE(c.download_id,''),c.completed_at,c.provenance_json,c.provenance_sha256,c.created_at,COALESCE(o.output_sha256,''),COALESCE(o.manifest_json,'') FROM candidates c LEFT JOIN candidate_output_evidence o ON o.candidate_id=c.candidate_id WHERE c.candidate_id=?`, id).Scan(&c.ID, &c.JobID, &c.Source, &c.SourceLocator, &c.DownloadID, &completed, &c.Provenance, &c.ProvenanceSHA256, &created, &c.OutputSHA256, &c.OutputManifest)
 	if err != nil {
 		return c, err
 	}
@@ -136,6 +146,28 @@ func (r *Repositories) IncompletePendingCandidates(ctx context.Context, jobID st
 	return candidates, rows.Err()
 }
 
+func (r *Repositories) IncompletePendingCandidatesBySource(ctx context.Context, source string) ([]PendingCandidate, error) {
+	rows, err := r.DB.QueryContext(ctx, `SELECT p.candidate_id,p.job_id,p.source,p.source_locator,COALESCE(p.download_id,''),p.provenance_json,p.provenance_sha256,p.created_at FROM pending_acquisition_candidates p LEFT JOIN candidates c ON c.candidate_id=p.candidate_id WHERE p.source=? AND c.candidate_id IS NULL ORDER BY p.created_at,p.candidate_id`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var candidates []PendingCandidate
+	for rows.Next() {
+		var candidate PendingCandidate
+		var created string
+		if err := rows.Scan(&candidate.ID, &candidate.JobID, &candidate.Source, &candidate.SourceLocator, &candidate.DownloadID, &candidate.Provenance, &candidate.ProvenanceSHA256, &created); err != nil {
+			return nil, err
+		}
+		candidate.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+	return candidates, rows.Err()
+}
+
 func (r *Repositories) CandidateForJobSource(ctx context.Context, jobID, source string, completed bool) (string, error) {
 	table := "pending_acquisition_candidates"
 	column := "candidate_id"
@@ -146,6 +178,34 @@ func (r *Repositories) CandidateForJobSource(ctx context.Context, jobID, source 
 	var id string
 	err := r.DB.QueryRowContext(ctx, fmt.Sprintf(`SELECT %s FROM %s WHERE job_id=? AND source=? ORDER BY created_at LIMIT 1`, column, table), jobID, source).Scan(&id)
 	return id, err
+}
+
+func (r *Repositories) CandidatesWithoutEffect(ctx context.Context, source, effectType string) ([]Candidate, error) {
+	rows, err := r.DB.QueryContext(ctx, `SELECT c.candidate_id FROM candidates c LEFT JOIN external_effects e ON e.idempotency_key=('candidate-complete-' || c.candidate_id) AND e.effect_type=? WHERE c.source=? AND c.completed_at IS NOT NULL AND e.id IS NULL ORDER BY c.completed_at,c.candidate_id`, effectType, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]Candidate, 0, len(ids))
+	for _, id := range ids {
+		candidate, err := r.Candidate(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, candidate)
+	}
+	return result, nil
 }
 
 func NewCandidateID() (string, error) { return ids.NewToken(16) }
