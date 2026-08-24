@@ -62,6 +62,8 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 		return err
 	}
 	var runtime *application.Runtime
+	var migrationChecks application.MigrationCheckService
+	var migrationService application.MigrationService
 	return servicehost.Run(ctx, logger, servicehost.Options{
 		Name:             "media-pipeline",
 		ConfigPath:       *configPath,
@@ -135,8 +137,8 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			worker := &application.Worker{Store: repositories, Processor: workflow, Admission: admission, Concurrency: prepared.Config.Concurrency.Validation, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline", Queue: make(chan string, prepared.Config.Concurrency.Validation*4), OnError: func(candidateID string, err error) {
 				logger.Error("pipeline candidate failed", "candidate_id", candidateID, "error", err)
 			}}
-			migrationChecks := application.MigrationCheckService{Store: repositories, Identity: application.IdentityService{Search: musicBrainz, DurationPolicy: durationPolicy}}
-			migrationService := application.MigrationService{Store: repositories, Identity: application.IdentityService{Search: musicBrainz, DurationPolicy: durationPolicy}, Catalog: application.LidarrCatalogService{Catalog: lidarr.Catalog{Client: lidarrClient}}, Mutation: application.MigrationMutationService{ApprovedRoot: prepared.Config.Filesystem.Approved, Tags: metaflac, Integrity: flac, Checksum: media.SHA256}, Import: importService, Navidrome: navidromeClient, UnmanagedRoot: prepared.Config.Filesystem.LibraryUnmanaged, ApprovedRoot: prepared.Config.Filesystem.Approved, ScanPoll: time.Duration(prepared.Config.Scanners.NavidromeWatcher)}
+			migrationChecks = application.MigrationCheckService{Store: repositories, Identity: application.IdentityService{Search: musicBrainz, DurationPolicy: durationPolicy}}
+			migrationService = application.MigrationService{Store: repositories, Identity: application.IdentityService{Search: musicBrainz, DurationPolicy: durationPolicy}, Catalog: application.LidarrCatalogService{Catalog: lidarr.Catalog{Client: lidarrClient}}, Mutation: application.MigrationMutationService{ApprovedRoot: prepared.Config.Filesystem.Approved, Tags: metaflac, Integrity: flac, Checksum: media.SHA256}, Import: importService, Navidrome: navidromeClient, UnmanagedRoot: prepared.Config.Filesystem.LibraryUnmanaged, ApprovedRoot: prepared.Config.Filesystem.Approved, ScanPoll: time.Duration(prepared.Config.Scanners.NavidromeWatcher)}
 			migrationRuntime := &application.MigrationRuntime{Store: repositories, Check: application.MigrationCoordinator{Check: migrationChecks, Migration: migrationService}, Concurrency: prepared.Config.Concurrency.MigrationCheck, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline-migration-check", OnError: func(itemID string, err error) {
 				logger.Error("migration check failed", "item_id", itemID, "error", err)
 			}}
@@ -190,7 +192,8 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				Policy: prepared.Config.Uploads,
 			}
 			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
-				Acquisition: gatewayClient,
+				Acquisition:     gatewayClient,
+				MigrationReader: repositories, MigrationChecks: migrationChecks, Migrations: migrationService, NotifyMigrationBatch: runtime.NotifyMigrationBatch,
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
 				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual},
 				Uploads:     uploads, Previews: previews})

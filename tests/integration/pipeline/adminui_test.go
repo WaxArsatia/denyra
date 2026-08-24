@@ -113,6 +113,111 @@ func TestAdminUIStreamsFolderUploadWithCSRFAndDeclaredSizeLimit(t *testing.T) {
 	}
 }
 
+func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"ui-none", "ui-ambiguous", "ui-exact", "ui-error", "ui-checking", "ui-migrated"}
+	for _, id := range ids {
+		candidate, err := domain.CreateCandidate(domain.NewCandidate{ID: id, Source: domain.SourceManual, ReleaseDirectory: filepath.Join(t.TempDir(), id), ConfigSnapshotID: "config-1", AcquisitionEvidenceID: "manual:" + id, Now: now})
+		if err != nil || repository.CreateCandidate(context.Background(), candidate) != nil {
+			t.Fatalf("candidate %s: %v", id, err)
+		}
+		release := integrationMigrationRelease(id, "Kaleb J", strings.TrimPrefix(id, "ui-"), candidate.ReleaseDirectory, "fingerprint-"+id, now)
+		if err := repository.PutUnmanagedRelease(context.Background(), release, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	checks := application.MigrationCheckService{Store: repository, Identity: integrationMigrationIdentity{}, Now: func() time.Time { return now }}
+	batch, items, err := checks.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids}, "admin-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := map[string]domain.MigrationState{"ui-none": domain.MigrationNoMatch, "ui-ambiguous": domain.MigrationAmbiguous, "ui-exact": domain.MigrationExactMatch, "ui-error": domain.MigrationFailedRetryable, "ui-checking": domain.MigrationChecking, "ui-migrated": domain.MigrationMigrated}
+	exactItemID := ""
+	for _, item := range items {
+		resume, mbid := "", ""
+		if item.UnmanagedCandidateID == "ui-error" {
+			resume = string(domain.MigrationChecking)
+		}
+		if item.UnmanagedCandidateID == "ui-exact" || item.UnmanagedCandidateID == "ui-migrated" {
+			mbid = releaseMBID
+		}
+		if item.UnmanagedCandidateID == "ui-exact" {
+			exactItemID = item.ID
+		}
+		if _, err := db.Exec(`UPDATE migration_items SET state=?,state_revision=2,resume_state=NULLIF(?,''),approved_release_mbid=NULLIF(?,'') WHERE id=?`, states[item.UnmanagedCandidateID], resume, mbid, item.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bundle, _ := assets.New()
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	notified := ""
+	handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, MigrationReader: repository, MigrationChecks: checks, Migrations: application.MigrationService{Store: repository, Now: func() time.Time { return now }}, NotifyMigrationBatch: func(id string) { notified = id }, Assets: bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+	pageRequest := httptest.NewRequest(http.MethodGet, "/unmanaged?q=Kaleb&status=IMPORTED", nil)
+	pageRequest.AddCookie(session)
+	pageRequest.AddCookie(csrf)
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, pageRequest)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "ui-exact") || strings.Contains(page.Body.String(), "approved_release_mbid") {
+		t.Fatalf("unmanaged page=%d %s", page.Code, page.Body.String())
+	}
+	checkForm := url.Values{"release_id": {"ui-exact"}, "q": {"Kaleb"}, "status": {"IMPORTED"}}
+	missingCSRF := httptest.NewRequest(http.MethodPost, "/unmanaged/check", strings.NewReader(checkForm.Encode()))
+	missingCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	missingCSRF.AddCookie(session)
+	missingCSRF.AddCookie(csrf)
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, missingCSRF)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF status=%d", denied.Code)
+	}
+	check := authenticatedMutation(http.MethodPost, "/unmanaged/check", strings.NewReader(checkForm.Encode()), session, csrf)
+	check.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	checked := httptest.NewRecorder()
+	handler.ServeHTTP(checked, check)
+	if checked.Code != http.StatusSeeOther || notified == "" || !strings.HasPrefix(checked.Header().Get("Location"), "/migration-batches/") {
+		t.Fatalf("check response=%d location=%q notified=%q", checked.Code, checked.Header().Get("Location"), notified)
+	}
+	createdBatchID := strings.TrimPrefix(checked.Header().Get("Location"), "/migration-batches/")
+	createdBatch, err := repository.MigrationBatchDetail(context.Background(), createdBatchID)
+	if err != nil || createdBatch.Actor == "" || createdBatch.Actor == "admin-1" {
+		t.Fatalf("authenticated batch actor=%q err=%v", createdBatch.Actor, err)
+	}
+	detailRequest := httptest.NewRequest(http.MethodGet, "/migration-batches/"+batch.ID, nil)
+	detailRequest.AddCookie(session)
+	detailRequest.AddCookie(csrf)
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, detailRequest)
+	for _, label := range []string{"No match", "Ambiguous", "Exact candidate", "Error", "Checking", "Migrated"} {
+		if !strings.Contains(detail.Body.String(), label) {
+			t.Fatalf("batch detail missing %q: %s", label, detail.Body.String())
+		}
+	}
+	if strings.Count(detail.Body.String(), `name="item_id"`) != 1 || !strings.Contains(detail.Body.String(), `name="confirm_migrations"`) {
+		t.Fatalf("confirmation form exposed non-exact items: %s", detail.Body.String())
+	}
+	confirmForm := url.Values{
+		"item_id":                       {exactItemID},
+		"state_revision_" + exactItemID: {"1"},
+		"release_mbid_" + exactItemID:   {releaseMBID},
+		"confirm_migrations":            {"yes"},
+	}
+	confirm := authenticatedMutation(http.MethodPost, "/migration-batches/"+batch.ID+"/confirm", strings.NewReader(confirmForm.Encode()), session, csrf)
+	confirm.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	conflict := httptest.NewRecorder()
+	handler.ServeHTTP(conflict, confirm)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("stale confirmation status=%d body=%q", conflict.Code, conflict.Body.String())
+	}
+}
+
 func TestAdminUIEditsPreviewAndSubmitsSealedDecision(t *testing.T) {
 	db, repository, now := pipelineRepositories(t)
 	defer db.Close()

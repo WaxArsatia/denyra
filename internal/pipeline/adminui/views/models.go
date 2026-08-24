@@ -66,6 +66,16 @@ type AccountPage struct {
 	Shell Shell
 	Error string
 }
+type UnmanagedPage struct {
+	Shell                Shell
+	Items                []application.UnmanagedSummary
+	Query, Status, Error string
+}
+type MigrationPage struct {
+	Shell  Shell
+	Detail application.MigrationBatchDetail
+	Error  string
+}
 
 func FormatTime(value time.Time) string {
 	if value.IsZero() {
@@ -81,13 +91,47 @@ func StateClass(value any) string {
 		return "review"
 	case "quarantined", "rejected":
 		return "blocked"
-	case "approved", "imported":
+	case "approved", "imported", "exact_match", "migrated":
 		return "approved"
 	case "superseded", "cancelled":
 		return "settled"
 	default:
 		return ""
 	}
+}
+
+func MigrationStateLabel(state string) string {
+	switch state {
+	case "NO_MATCH":
+		return "No match"
+	case "AMBIGUOUS":
+		return "Ambiguous"
+	case "EXACT_MATCH":
+		return "Exact candidate"
+	case "FAILED_RETRYABLE":
+		return "Error"
+	case "CHECK_PENDING", "CHECKING":
+		return "Checking"
+	case "MIGRATED":
+		return "Migrated"
+	case "CONFIRMED":
+		return "Confirmed"
+	case "LIDARR_CATALOG_READY":
+		return "Catalog ready"
+	case "IMPORT_SUBMITTED", "RECONCILING":
+		return "Importing"
+	default:
+		return state
+	}
+}
+
+func MigrationPolling(detail application.MigrationBatchDetail) bool {
+	for _, item := range detail.Items {
+		if item.State == "CHECK_PENDING" || item.State == "CHECKING" || item.State == "CONFIRMED" || item.State == "LIDARR_CATALOG_READY" || item.State == "IMPORT_SUBMITTED" || item.State == "RECONCILING" {
+			return true
+		}
+	}
+	return false
 }
 
 func Millis(value int64) string { return fmt.Sprintf("%d ms", value) }

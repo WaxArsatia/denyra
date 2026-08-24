@@ -16,15 +16,19 @@ import (
 )
 
 type Dependencies struct {
-	Auth           application.AuthService
-	Reader         application.AdminReader
-	Acquisition    application.AcquisitionEvidenceReader
-	Reviews        application.ReviewDecisionService
-	Submissions    application.SubmissionService
-	Uploads        *application.UploadService
-	Previews       *application.SubmissionPreviewService
-	Assets         *assets.Bundle
-	ConfigSnapshot string
+	Auth                 application.AuthService
+	Reader               application.AdminReader
+	Acquisition          application.AcquisitionEvidenceReader
+	Reviews              application.ReviewDecisionService
+	Submissions          application.SubmissionService
+	Uploads              *application.UploadService
+	Previews             *application.SubmissionPreviewService
+	MigrationReader      application.MigrationAdminReader
+	MigrationChecks      application.MigrationCheckService
+	Migrations           application.MigrationService
+	NotifyMigrationBatch func(string)
+	Assets               *assets.Bundle
+	ConfigSnapshot       string
 }
 
 type Console struct{ dependencies Dependencies }
@@ -46,6 +50,11 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("GET /reviews/{candidateID}", console.review)
 	private.HandleFunc("POST /reviews/{candidateID}/{action}", console.reviewAction)
 	private.HandleFunc("GET /incoming", console.incoming)
+	private.HandleFunc("GET /unmanaged", console.unmanaged)
+	private.HandleFunc("POST /unmanaged/check", console.checkUnmanaged)
+	private.HandleFunc("GET /migration-batches/{batchID}", console.migrationBatch)
+	private.HandleFunc("POST /migration-batches/{batchID}/confirm", console.confirmMigrations)
+	private.HandleFunc("POST /migration-items/{itemID}/retry", console.retryMigration)
 	private.HandleFunc("GET /incoming/{submissionID}/artwork", console.incomingArtwork)
 	private.HandleFunc("POST /incoming/{submissionID}/artwork", console.replaceIncomingArtwork)
 	private.HandleFunc("GET /incoming/{submissionID}", console.incomingDetail)

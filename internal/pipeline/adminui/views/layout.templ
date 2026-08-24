@@ -29,6 +29,7 @@ templ Layout(title string, active string, shell Shell, content templ.Component) 
 			<div class="shell">
 				<nav aria-label="Admin">
 					<a href="/incoming" aria-current={ templ.KV("page", active == "incoming") }>@Icon(shell, "tray") Incoming</a>
+					<a href="/unmanaged" aria-current={ templ.KV("page", active == "unmanaged") }>@Icon(shell, "tray") Unmanaged</a>
 					<a href="/reviews" aria-current={ templ.KV("page", active == "reviews") }>@Icon(shell, "warning-circle") Reviews</a>
 					<a href="/audit" aria-current={ templ.KV("page", active == "audit") }>@Icon(shell, "clock-counter-clockwise") Audit</a>
 					<a href="/sessions" aria-current={ templ.KV("page", active == "sessions") }>@Icon(shell, "users-three") Sessions</a>

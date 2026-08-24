@@ -74,6 +74,24 @@ func (s MigrationService) ConfirmSelected(ctx context.Context, selections []Conf
 	return nil
 }
 
+func (s MigrationService) Retry(ctx context.Context, itemID string, expected uint64, actor string) error {
+	if s.Store == nil || strings.TrimSpace(actor) == "" {
+		return fmt.Errorf("migration store and actor are required")
+	}
+	item, err := s.Store.MigrationItem(ctx, itemID)
+	if err != nil {
+		return err
+	}
+	if item.StateRevision != expected || item.State != domain.MigrationFailedRetryable {
+		return fmt.Errorf("migration retry conflicts with current state or revision")
+	}
+	next, err := domain.TransitionMigration(item, item.ResumeState, s.now())
+	if err != nil {
+		return err
+	}
+	return s.Store.UpdateMigrationItem(ctx, item.ID, item.StateRevision, next, nil)
+}
+
 func (s MigrationService) Process(ctx context.Context, itemID string) error {
 	if err := s.validate(); err != nil {
 		return err

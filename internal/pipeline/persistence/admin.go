@@ -9,6 +9,50 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
+func (r *Repositories) UnmanagedSummaries(ctx context.Context, filter application.UnmanagedFilter) ([]application.UnmanagedSummary, error) {
+	ids, err := r.SelectUnmanaged(ctx, filter)
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	result := make([]application.UnmanagedSummary, 0, len(ids))
+	for _, id := range ids {
+		var item application.UnmanagedSummary
+		var updated string
+		err := r.DB.QueryRowContext(ctx, `SELECT candidate_id,COALESCE(json_extract(approved_plan_json,'$.metadata.album_artist'),''),COALESCE(json_extract(approved_plan_json,'$.metadata.album'),''),substr(COALESCE(json_extract(approved_plan_json,'$.metadata.date'),''),1,4),status,state_revision,updated_at FROM unmanaged_releases WHERE candidate_id=?`, id).
+			Scan(&item.CandidateID, &item.AlbumArtist, &item.Album, &item.Year, &item.State, &item.Revision, &updated)
+		if err != nil {
+			return nil, err
+		}
+		item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func (r *Repositories) MigrationBatchDetail(ctx context.Context, batchID string) (application.MigrationBatchDetail, error) {
+	batch, err := r.MigrationBatch(ctx, batchID)
+	if err != nil {
+		return application.MigrationBatchDetail{}, err
+	}
+	detail := application.MigrationBatchDetail{ID: batch.ID, Actor: batch.Actor, State: batch.Status, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt}
+	rows, err := r.DB.QueryContext(ctx, `SELECT i.id,i.unmanaged_candidate_id,COALESCE(json_extract(u.approved_plan_json,'$.metadata.album_artist'),''),COALESCE(json_extract(u.approved_plan_json,'$.metadata.album'),''),i.state,COALESCE(i.approved_release_mbid,''),i.state_revision,COALESCE((SELECT error_text FROM migration_item_errors e WHERE e.item_id=i.id ORDER BY occurred_at DESC,id DESC LIMIT 1),'') FROM migration_items i JOIN unmanaged_releases u ON u.candidate_id=i.unmanaged_candidate_id WHERE i.batch_id=? ORDER BY i.unmanaged_candidate_id`, batchID)
+	if err != nil {
+		return detail, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item application.MigrationItemSummary
+		if err := rows.Scan(&item.ID, &item.ReleaseID, &item.AlbumArtist, &item.Album, &item.State, &item.CandidateMBID, &item.Revision, &item.Error); err != nil {
+			return detail, err
+		}
+		detail.Items = append(detail.Items, item)
+	}
+	return detail, rows.Err()
+}
+
 func (r *Repositories) Reviews(ctx context.Context, limit int, cursor string) ([]application.ReviewSummary, string, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50

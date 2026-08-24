@@ -82,6 +82,32 @@ type SessionSummary struct {
 	Current   bool
 }
 
+type UnmanagedSummary struct {
+	CandidateID string
+	AlbumArtist string
+	Album       string
+	Year        string
+	State       string
+	Revision    uint64
+	UpdatedAt   time.Time
+}
+
+type MigrationItemSummary struct {
+	ID, ReleaseID, AlbumArtist, Album, State, CandidateMBID, Error string
+	Revision                                                       uint64
+}
+
+type MigrationBatchDetail struct {
+	ID, Actor, State     string
+	Items                []MigrationItemSummary
+	CreatedAt, UpdatedAt time.Time
+}
+
+type MigrationAdminReader interface {
+	UnmanagedSummaries(context.Context, UnmanagedFilter) ([]UnmanagedSummary, error)
+	MigrationBatchDetail(context.Context, string) (MigrationBatchDetail, error)
+}
+
 type AdminReader interface {
 	Reviews(context.Context, int, string) ([]ReviewSummary, string, error)
 	Review(context.Context, string) (ReviewDetail, error)
