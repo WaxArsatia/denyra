@@ -122,14 +122,18 @@ services:
   slskd:
     image: slskd/slskd:latest
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    entrypoint: ["/usr/bin/tini", "--", "/bin/bash", "/denyra/slskd-secret-entrypoint.sh", "/entrypoint.sh"]
+    entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/denyra/slskd-secret-entrypoint.sh", "/entrypoint.sh"]
     command: ["./slskd"]
     configs:
+      - source: slskd_config
+        target: /app/slskd.yml
       - source: slskd_secret_entrypoint
         target: /denyra/slskd-secret-entrypoint.sh
     secrets:
       - soulseek_username
       - soulseek_password
+      - slskd_api_key
+      - slskd_web_password
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/slskd
@@ -147,8 +151,12 @@ services:
   sftpgo:
     image: drakkan/sftpgo:latest
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
-    environment:
-      SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN: "false"
+    entrypoint: ["/bin/sh", "/denyra/sftpgo-secret-entrypoint.sh"]
+    configs:
+      - source: sftpgo_secret_entrypoint
+        target: /denyra/sftpgo-secret-entrypoint.sh
+    secrets:
+      - sftpgo_admin
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/sftpgo
@@ -243,6 +251,10 @@ configs:
     file: ${DENYRA_CONFIG_DIR:-./config}/navidrome-lyrics.toml
   slskd_secret_entrypoint:
     file: ./scripts/slskd-secret-entrypoint.sh
+  slskd_config:
+    file: ${DENYRA_CONFIG_DIR:-./config}/slskd.yml
+  sftpgo_secret_entrypoint:
+    file: ./scripts/sftpgo-secret-entrypoint.sh
 
 secrets:
   internal_bearer:
@@ -251,6 +263,16 @@ secrets:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/audit_key
   bootstrap_admin:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/bootstrap_admin
+  navidrome_admin:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/navidrome_admin
+  sftpgo_admin:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_admin
+  sftpgo_upload:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/sftpgo_upload
+  slskd_api_key:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/slskd_api_key
+  slskd_web_password:
+    file: ${DENYRA_SECRETS_DIR:-./secrets}/slskd_web_password
   lidarr_api_key:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/lidarr_api_key
   soulseek_username:

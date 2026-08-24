@@ -29,6 +29,18 @@ type composeService struct {
 	Volumes     []composeVolume                  `json:"volumes"`
 	Ports       []composePort                    `json:"ports"`
 	Healthcheck map[string]any                   `json:"healthcheck"`
+	Configs     []composeConfig                  `json:"configs"`
+	Secrets     []composeSecret                  `json:"secrets"`
+}
+
+type composeConfig struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type composeSecret struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
 }
 
 func TestSlskdLoadsSoulseekCredentialsFromSecretFiles(t *testing.T) {
@@ -39,28 +51,67 @@ func TestSlskdLoadsSoulseekCredentialsFromSecretFiles(t *testing.T) {
 	secretDir := t.TempDir()
 	usernamePath := filepath.Join(secretDir, "username")
 	passwordPath := filepath.Join(secretDir, "password")
+	apiKeyPath := filepath.Join(secretDir, "api-key")
+	webPasswordPath := filepath.Join(secretDir, "web-password")
 	if err := os.WriteFile(usernamePath, []byte("test-user\n"), 0o600); err != nil {
 		t.Fatalf("write username secret: %v", err)
 	}
 	if err := os.WriteFile(passwordPath, []byte("test-password\n"), 0o600); err != nil {
 		t.Fatalf("write password secret: %v", err)
 	}
+	if err := os.WriteFile(apiKeyPath, []byte("test-api-key\n"), 0o600); err != nil {
+		t.Fatalf("write API key secret: %v", err)
+	}
+	if err := os.WriteFile(webPasswordPath, []byte("test-web-password\n"), 0o600); err != nil {
+		t.Fatalf("write web password secret: %v", err)
+	}
 
 	scriptPath := filepath.Join(repoRoot, "deploy", "scripts", "slskd-secret-entrypoint.sh")
 	command := exec.Command(
-		"bash",
+		"sh",
 		scriptPath,
 		"sh",
 		"-c",
-		`test "$SLSKD_SLSK_USERNAME" = test-user && test "$SLSKD_SLSK_PASSWORD" = test-password`,
+		`test "$SLSKD_SLSK_USERNAME" = test-user && test "$SLSKD_SLSK_PASSWORD" = test-password && test "$SLSKD_API_KEY" = 'role=ReadWrite;test-api-key' && test "$SLSKD_USERNAME" = admin && test "$SLSKD_PASSWORD" = test-web-password`,
 	)
 	command.Env = append(
 		os.Environ(),
 		"SLSKD_SLSK_USERNAME_FILE="+usernamePath,
 		"SLSKD_SLSK_PASSWORD_FILE="+passwordPath,
+		"SLSKD_API_KEY_FILE="+apiKeyPath,
+		"SLSKD_PASSWORD_FILE="+webPasswordPath,
 	)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("load slskd credentials from secret files: %v\n%s", err, output)
+	}
+}
+
+func TestSFTPGoLoadsBootstrapAdminFromSecretFile(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretDir := t.TempDir()
+	passwordPath := filepath.Join(secretDir, "admin-password")
+	if err := os.WriteFile(passwordPath, []byte("test-sftpgo-password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(secretDir, "entrypoint")
+	childScript := `#!/bin/sh
+test "$SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN" = true
+test "$SFTPGO_DEFAULT_ADMIN_USERNAME" = admin
+test "$SFTPGO_DEFAULT_ADMIN_PASSWORD" = test-sftpgo-password
+`
+	if err := os.WriteFile(child, []byte(childScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("sh", filepath.Join(repoRoot, "deploy", "scripts", "sftpgo-secret-entrypoint.sh"))
+	command.Env = append(os.Environ(),
+		"SFTPGO_DEFAULT_ADMIN_PASSWORD_FILE="+passwordPath,
+		"SFTPGO_ENTRYPOINT="+child,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("load SFTPGo bootstrap secret: %v\n%s", err, output)
 	}
 }
 
@@ -70,7 +121,7 @@ func TestComposeRunsSlskdSecretEntrypoint(t *testing.T) {
 	want := []string{
 		"/usr/bin/tini",
 		"--",
-		"/bin/bash",
+		"/bin/sh",
 		"/denyra/slskd-secret-entrypoint.sh",
 		"/entrypoint.sh",
 	}
@@ -80,6 +131,37 @@ func TestComposeRunsSlskdSecretEntrypoint(t *testing.T) {
 	if got := document.Services["slskd"].Command; !slices.Equal(got, []string{"./slskd"}) {
 		t.Fatalf("slskd command = %v, want [./slskd]", got)
 	}
+}
+
+func TestComposeMountsHeadlessServiceConfiguration(t *testing.T) {
+	document := renderCompose(t)
+	slskd := document.Services["slskd"]
+	if !hasConfigTarget(slskd.Configs, "/app/slskd.yml") {
+		t.Fatalf("slskd configs = %+v", slskd.Configs)
+	}
+	for _, key := range []string{"SLSKD_API_KEY", "SLSKD_PASSWORD", "SLSKD_SLSK_PASSWORD"} {
+		if _, present := slskd.Environment[key]; present {
+			t.Errorf("slskd secret %s leaked into Compose environment", key)
+		}
+	}
+	sftpgo := document.Services["sftpgo"]
+	if !slices.Equal(sftpgo.Entrypoint, []string{"/bin/sh", "/denyra/sftpgo-secret-entrypoint.sh"}) {
+		t.Errorf("SFTPGo entrypoint = %v", sftpgo.Entrypoint)
+	}
+	for _, key := range []string{"SFTPGO_DATA_PROVIDER__CREATE_DEFAULT_ADMIN", "SFTPGO_DEFAULT_ADMIN_PASSWORD"} {
+		if _, present := sftpgo.Environment[key]; present {
+			t.Errorf("SFTPGo bootstrap value %s leaked into Compose environment", key)
+		}
+	}
+}
+
+func hasConfigTarget(configs []composeConfig, target string) bool {
+	for _, config := range configs {
+		if config.Target == target {
+			return true
+		}
+	}
+	return false
 }
 
 type composeServiceNetwork struct {

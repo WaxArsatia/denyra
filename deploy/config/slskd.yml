@@ -1,0 +1,23 @@
+directories:
+  downloads: /data/downloads/slskd
+  incomplete: /data/downloads/slskd/incomplete
+
+permissions:
+  file:
+    mode: 777
+  directory:
+    mode: 777
+
+integrations:
+  webhooks:
+    denyra_completion:
+      on:
+        - DownloadFileComplete
+      call:
+        url: http://acquisition-gateway:8082/events/slskd
+        headers:
+          - name: User-Agent
+            value: slskd
+      timeout: 5000
+      retry:
+        attempts: 3
