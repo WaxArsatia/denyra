@@ -3,12 +3,14 @@ package persistence
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
+	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 )
 
 func (r *Repositories) PutUnmanagedRelease(ctx context.Context, release domain.UnmanagedRelease, at time.Time) error {
@@ -114,6 +116,30 @@ func (r *Repositories) UnmanagedImportIntent(ctx context.Context, candidateID st
 		return result, err
 	}
 	return result, nil
+}
+
+func (r *Repositories) UpdateUnmanagedImport(ctx context.Context, intent domain.UnmanagedImportIntent, release domain.UnmanagedRelease, at time.Time) error {
+	_, _, manifest, err := unmanagedJSON(intent.Plan, intent.Evidence, intent.Manifest)
+	if err != nil {
+		return err
+	}
+	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE unmanaged_import_intents SET final_path=NULLIF(?,''),manifest_json=?,fingerprint=NULLIF(?,''),status=?,updated_at=? WHERE id=? AND candidate_id=?`, intent.FinalPath, manifest, intent.Fingerprint, intent.Status, formatTime(at), intent.ID, intent.CandidateID)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return fmt.Errorf("unmanaged import intent %s not found", intent.ID)
+		}
+		result, err = tx.ExecContext(ctx, `UPDATE unmanaged_releases SET state=?,state_revision=?,final_path=NULLIF(?,''),manifest_json=?,fingerprint=NULLIF(?,''),status=?,updated_at=? WHERE candidate_id=?`, release.State, release.StateRevision, release.FinalPath, manifest, release.Fingerprint, release.Status, formatTime(at), release.CandidateID)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return fmt.Errorf("unmanaged release %s not found", release.CandidateID)
+		}
+		return nil
+	})
 }
 
 func unmanagedJSON(plan domain.UnmanagedPlan, evidence domain.TechnicalReleaseResult, manifest []domain.PlannedFile) ([]byte, []byte, []byte, error) {

@@ -25,6 +25,18 @@ func (r *Repositories) Submission(ctx context.Context, id string) (application.S
 	return record, err
 }
 
+func (r *Repositories) SubmissionDecision(ctx context.Context, id string) (domain.SubmissionDecision, error) {
+	var payload []byte
+	if err := r.DB.QueryRowContext(ctx, `SELECT decision_json FROM submissions WHERE id=? AND status='SEALED' AND decision_json IS NOT NULL`, id).Scan(&payload); err != nil {
+		return domain.SubmissionDecision{}, err
+	}
+	var decision domain.SubmissionDecision
+	if err := json.Unmarshal(payload, &decision); err != nil {
+		return domain.SubmissionDecision{}, err
+	}
+	return decision, nil
+}
+
 func (r *Repositories) SealSubmission(ctx context.Context, id string, expected uint64, fingerprint, actor string, decision domain.SubmissionDecision, at time.Time) error {
 	decisionJSON, err := json.Marshal(decision)
 	if err != nil {

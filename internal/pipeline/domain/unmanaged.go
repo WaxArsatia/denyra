@@ -78,6 +78,7 @@ type PlannedFile struct {
 	SourceRelative string `json:"source_relative"`
 	TargetRelative string `json:"target_relative"`
 	Kind           string `json:"kind"`
+	SHA256         string `json:"sha256,omitempty"`
 }
 
 type UnmanagedPlan struct {

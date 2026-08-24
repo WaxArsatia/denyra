@@ -39,6 +39,7 @@ type WorkflowStore interface {
 	TransitionCandidate(context.Context, string, uint64, domain.State, string, string, string, time.Time) (domain.TransitionEvent, error)
 	Completion(context.Context, string) (WorkflowCompletion, error)
 	ManualCompletion(context.Context, string) (WorkflowCompletion, error)
+	SubmissionDecision(context.Context, string) (domain.SubmissionDecision, error)
 	SetWaitingResubmit(context.Context, string, uint64, string, time.Time) error
 	SetWorkLocation(context.Context, string, string, uint64, time.Time) error
 	TargetRelease(context.Context, string) (string, error)
@@ -65,6 +66,7 @@ type ControlledWorkflow struct {
 	Mutation             MutationService
 	Quality              QualityReporter
 	Import               ImportService
+	Unmanaged            UnmanagedImportService
 	SourceRoots          map[domain.Source]string
 	MaxInlineTransitions int
 	Now                  func() time.Time
@@ -118,6 +120,10 @@ func (workflow ControlledWorkflow) processOne(ctx context.Context, candidate dom
 		return workflow.transition(ctx, candidate, domain.StateImportReconciling, "Lidarr manual import submitted", "")
 	case domain.StateImportReconciling:
 		return workflow.reconcileImport(ctx, candidate)
+	case domain.StateUnmanagedReady:
+		return workflow.transition(ctx, candidate, domain.StateUnmanagedImporting, "approved unmanaged plan ready for atomic import", "")
+	case domain.StateUnmanagedImporting:
+		return workflow.importUnmanaged(ctx, candidate)
 	default:
 		return nil
 	}
@@ -165,6 +171,22 @@ func (workflow ControlledWorkflow) validate(ctx context.Context, candidate domai
 }
 
 func (workflow ControlledWorkflow) match(ctx context.Context, candidate domain.Candidate) error {
+	if candidate.Source == domain.SourceManual {
+		approved, decisionErr := workflow.Store.SubmissionDecision(ctx, candidate.ID)
+		if decisionErr != nil {
+			return decisionErr
+		}
+		if approved.Destination == domain.DestinationUnmanaged {
+			state, stateErr := workflow.Store.Workflow(ctx, candidate.ID)
+			if stateErr != nil {
+				return stateErr
+			}
+			if _, buildErr := workflow.Unmanaged.Metadata.Build(candidate.ID, approved, state.Technical); buildErr != nil {
+				return workflow.transition(ctx, candidate, domain.StateUnmanagedReview, buildErr.Error(), "")
+			}
+			return workflow.transition(ctx, candidate, domain.StateUnmanagedReady, "approved unmanaged metadata and layout passed preflight", "")
+		}
+	}
 	target, err := workflow.Store.TargetRelease(ctx, candidate.ID)
 	if err != nil {
 		return err
@@ -202,6 +224,24 @@ func (workflow ControlledWorkflow) match(ctx context.Context, candidate domain.C
 		return err
 	}
 	return workflow.transition(ctx, candidate, decision.State, defaultReason(decision.Reason, "release-atomic MusicBrainz match passed"), target)
+}
+
+func (workflow ControlledWorkflow) importUnmanaged(ctx context.Context, candidate domain.Candidate) error {
+	approved, err := workflow.Store.SubmissionDecision(ctx, candidate.ID)
+	if err != nil {
+		return err
+	}
+	release, err := workflow.Unmanaged.Import(ctx, candidate.ID, approved)
+	if errors.Is(err, ErrUnmanagedReview) {
+		return workflow.transition(ctx, candidate, domain.StateUnmanagedReview, err.Error(), "")
+	}
+	if err != nil {
+		return err
+	}
+	if release.Status != "IMPORTED" {
+		return fmt.Errorf("unmanaged import did not reach verified completion")
+	}
+	return workflow.transition(ctx, candidate, domain.StateUnmanagedImported, "unmanaged release published and visible in Navidrome", "")
 }
 
 func (workflow ControlledWorkflow) enrichAndMutate(ctx context.Context, candidate domain.Candidate) error {

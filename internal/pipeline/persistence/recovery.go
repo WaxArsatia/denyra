@@ -9,7 +9,7 @@ import (
 )
 
 func (r *Repositories) RecoveryCandidates(ctx context.Context) ([]application.RecoveryCandidate, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,state,release_directory FROM candidates WHERE state NOT IN ('IMPORTED','REJECTED','SUPERSEDED','CANCELLED')`)
+	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,state,state_revision,release_directory FROM candidates WHERE state NOT IN ('IMPORTED','UNMANAGED_IMPORTED','REJECTED','SUPERSEDED','CANCELLED')`)
 	if err != nil {
 		return nil, err
 	}
@@ -18,7 +18,7 @@ func (r *Repositories) RecoveryCandidates(ctx context.Context) ([]application.Re
 	for rows.Next() {
 		var item application.RecoveryCandidate
 		var state string
-		if err := rows.Scan(&item.ID, &state, &item.Path); err != nil {
+		if err := rows.Scan(&item.ID, &state, &item.Revision, &item.Path); err != nil {
 			return nil, err
 		}
 		item.State, err = domain.ParseState(state)
@@ -60,7 +60,7 @@ func (r *Repositories) AppendRecoveryFinding(ctx context.Context, finding applic
 }
 
 func (r *Repositories) UnresolvedEffects(ctx context.Context) ([]application.UnresolvedEffect, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT 'IDEMPOTENCY_PENDING',key FROM idempotency_records WHERE response_status IS NULL UNION ALL SELECT 'IMPORT_PENDING',id FROM import_intents WHERE status NOT IN ('VERIFIED','FAILED') UNION ALL SELECT 'MUTATION_INCOMPLETE',id FROM mutations WHERE completed_at IS NULL ORDER BY 1,2`)
+	rows, err := r.DB.QueryContext(ctx, `SELECT 'IDEMPOTENCY_PENDING',key FROM idempotency_records WHERE response_status IS NULL UNION ALL SELECT 'IMPORT_PENDING',id FROM import_intents WHERE status NOT IN ('VERIFIED','FAILED') UNION ALL SELECT 'UNMANAGED_IMPORT_PENDING',id FROM unmanaged_import_intents WHERE status NOT IN ('COMPLETED','REVIEW_REQUIRED') UNION ALL SELECT 'MUTATION_INCOMPLETE',id FROM mutations WHERE completed_at IS NULL ORDER BY 1,2`)
 	if err != nil {
 		return nil, err
 	}

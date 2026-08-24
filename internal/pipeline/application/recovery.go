@@ -12,9 +12,10 @@ import (
 )
 
 type RecoveryCandidate struct {
-	ID    string
-	State domain.State
-	Path  string
+	ID       string
+	State    domain.State
+	Revision uint64
+	Path     string
 }
 type ExpiredLease struct {
 	ResourceType, ResourceID string
@@ -33,9 +34,16 @@ type RecoveryStore interface {
 	AppendRecoveryFinding(context.Context, RecoveryFinding) error
 	UnresolvedEffects(context.Context) ([]UnresolvedEffect, error)
 }
+type UnmanagedReconciler interface {
+	Reconcile(context.Context, string) (bool, error)
+}
+type recoveryTransitioner interface {
+	TransitionCandidate(context.Context, string, uint64, domain.State, string, string, string, time.Time) (domain.TransitionEvent, error)
+}
 type RecoveryService struct {
 	Store                                  RecoveryStore
 	WorkRoot, ApprovedRoot, QuarantineRoot string
+	Unmanaged                              UnmanagedReconciler
 	Now                                    func() time.Time
 }
 type RecoveryReport struct {
@@ -43,6 +51,7 @@ type RecoveryReport struct {
 	OrphanDirectories  int
 	MissingDirectories int
 	UnresolvedEffects  int
+	UnmanagedImports   int
 }
 
 func (s RecoveryService) Reconcile(ctx context.Context) (RecoveryReport, error) {
@@ -74,6 +83,23 @@ func (s RecoveryService) Reconcile(ctx context.Context) (RecoveryReport, error) 
 	known := map[string]RecoveryCandidate{}
 	for _, candidate := range candidates {
 		known[candidate.ID] = candidate
+		if candidate.State == domain.StateUnmanagedImporting && s.Unmanaged != nil {
+			complete, reconcileErr := s.Unmanaged.Reconcile(ctx, candidate.ID)
+			if reconcileErr != nil {
+				return report, reconcileErr
+			}
+			if complete {
+				transitioner, ok := s.Store.(recoveryTransitioner)
+				if !ok {
+					return report, fmt.Errorf("recovery store cannot complete unmanaged transition")
+				}
+				if _, err := transitioner.TransitionCandidate(ctx, candidate.ID, candidate.Revision, domain.StateUnmanagedImported, "pipeline-recovery", "recovered verified unmanaged import", "", now); err != nil {
+					return report, err
+				}
+				report.UnmanagedImports++
+				continue
+			}
+		}
 		if candidate.Path != "" {
 			if info, err := os.Lstat(candidate.Path); err != nil || !info.IsDir() {
 				_ = s.Store.AppendRecoveryFinding(ctx, RecoveryFinding{Kind: "MISSING_DIRECTORY", ResourceID: candidate.ID, Path: candidate.Path, Classification: "NEEDS_OPERATOR", Details: []byte(`{}`), ObservedAt: now})

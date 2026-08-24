@@ -19,6 +19,7 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lrclib"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/media"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/musicbrainz"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/navidrome"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/spotify"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
@@ -94,6 +95,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			flac := media.FLAC{Binary: "flac", Version: "deployment-pinned", Timeout: time.Duration(prepared.Config.Validation.FLACTestTimeout), Runner: commandRunner}
 			metaflac := media.MetaFLAC{Binary: "metaflac", Version: "deployment-pinned", Timeout: time.Duration(prepared.Config.Validation.MetaFLACTimeout), Runner: commandRunner}
 			musicBrainz := &musicbrainz.Client{BaseURL: prepared.Config.Services.MusicBrainzURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit, RateInterval: time.Duration(prepared.Config.Validation.MusicBrainzRateInterval)}
+			navidromeClient := &navidrome.Client{BaseURL: prepared.Config.Services.NavidromeURL, Username: "admin", Password: prepared.Config.Secrets.NavidromeAdmin.Value, HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
 			lidarrClient := lidarr.Client{BaseURL: prepared.Config.Services.LidarrURL, APIKey: prepared.Config.Secrets.LidarrAPIKey.Value, HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
 			pause := func(ctx context.Context, duration time.Duration) error {
 				timer := time.NewTimer(duration)
@@ -105,6 +107,8 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 					return nil
 				}
 			}
+			mutationService := application.MutationService{WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine, Tags: metaflac, Integrity: flac, Checksum: media.SHA256}
+			unmanagedImport := application.UnmanagedImportService{Store: repositories, Metadata: application.UnmanagedMetadataService{}, Mutation: mutationService, Navidrome: navidromeClient, WorkRoot: prepared.Config.Filesystem.Work, LibraryRoot: prepared.Config.Filesystem.LibraryUnmanaged, ScanPoll: time.Duration(prepared.Config.Scanners.NavidromeWatcher)}
 			workflow := application.ControlledWorkflow{
 				Store:                repositories,
 				Claim:                application.ClaimService{WorkRoot: prepared.Config.Filesystem.Work, LockRoot: prepared.Config.Filesystem.Work + "/.locks", StabilityInterval: time.Duration(prepared.Config.Scanners.StabilityInterval), Pause: pause},
@@ -112,9 +116,10 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				Lookup:               musicBrainz,
 				Matching:             application.MatchingService{DurationPolicy: domain.DurationPolicy{TrackAutoFloorMS: prepared.Config.Validation.TrackAutoFloorMS, TrackAutoPercentBasisPoints: prepared.Config.Validation.TrackAutoPercentBasisPoints, TrackManualFloorMS: prepared.Config.Validation.TrackManualFloorMS, TrackManualPercentBasisPoints: prepared.Config.Validation.TrackManualPercentBasisPoints, ReleaseAutoFloorMS: prepared.Config.Validation.ReleaseAutoFloorMS, ReleaseAutoPercentBasisPoints: prepared.Config.Validation.ReleaseAutoPercentBasisPoints, ReleaseManualFloorMS: prepared.Config.Validation.ReleaseManualFloorMS, ReleaseManualPercentBasisPoints: prepared.Config.Validation.ReleaseManualPercentBasisPoints}, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
 				Enrichment:           application.EnrichmentService{WorkRoot: prepared.Config.Filesystem.Work, EvidenceRoot: prepared.Config.Filesystem.Quarantine + "/.evidence", Lyrics: lrclib.Client{BaseURL: prepared.Config.Services.LRCLIBURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}},
-				Mutation:             application.MutationService{WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine, Tags: metaflac, Integrity: flac, Checksum: media.SHA256},
+				Mutation:             mutationService,
 				Quality:              application.QualityReporter{Store: repositories, Callback: internalapi.QualityClient{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: httpClient, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}},
 				Import:               application.ImportService{WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, Configuration: lidarr.ConfigVerifier{Client: lidarrClient}, Importer: lidarr.ManualImporter{Client: lidarrClient}, Verifier: lidarr.LibraryVerifier{Client: lidarrClient, LibraryRoot: prepared.Config.Filesystem.Library}, Store: repositories},
+				Unmanaged:            unmanagedImport,
 				SourceRoots:          map[domain.Source]string{domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC, domain.SourceOther: prepared.Config.Filesystem.DownloadsOther, domain.SourceManual: prepared.Config.Filesystem.IncomingManual},
 				MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions,
 			}
@@ -127,7 +132,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			worker := &application.Worker{Store: repositories, Processor: workflow, Admission: admission, Concurrency: prepared.Config.Concurrency.Validation, LeaseDuration: time.Duration(prepared.Config.Acquisition.LeaseDuration), OwnerID: "media-pipeline", Queue: make(chan string, prepared.Config.Concurrency.Validation*4), OnError: func(candidateID string, err error) {
 				logger.Error("pipeline candidate failed", "candidate_id", candidateID, "error", err)
 			}}
-			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine}, Worker: worker}
+			runtime = &application.Runtime{RecoveryInterval: time.Duration(prepared.Config.Scanners.RecoveryInterval), Discovery: application.DiscoveryService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}, Recovery: application.RecoveryService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, ApprovedRoot: prepared.Config.Filesystem.Approved, QuarantineRoot: prepared.Config.Filesystem.Quarantine, Unmanaged: unmanagedImport}, Worker: worker}
 			if _, err := runtime.Recovery.Reconcile(ctx); err != nil {
 				return err
 			}

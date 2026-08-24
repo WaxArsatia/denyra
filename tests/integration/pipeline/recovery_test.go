@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	denyrafs "github.com/waxarsatia/denyra/internal/pipeline/adapters/filesystem"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/media"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
@@ -108,6 +110,60 @@ func TestSubmissionRejectsTreeChangedAfterPreview(t *testing.T) {
 	err = service.Submit(context.Background(), "submission-changed", 0, "admin-1", validUnmanagedDecision(tree.Fingerprint))
 	if !errors.Is(err, application.ErrPreviewChanged) {
 		t.Fatalf("changed preview error=%v", err)
+	}
+}
+
+func TestRecoveryCompletesVisibleUnmanagedImportBeforeMissingWorkCheck(t *testing.T) {
+	for _, tool := range []string{"ffprobe", "flac", "metaflac"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("deployment tool %s unavailable locally", tool)
+		}
+	}
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	candidate := createPersistedCandidate(t, repository, now)
+	for _, state := range []domain.State{domain.StateClaimed, domain.StateStabilizing, domain.StateWorking, domain.StateTechnicalValidation, domain.StateReleaseMatching, domain.StateUnmanagedReady, domain.StateUnmanagedImporting} {
+		now = now.Add(time.Millisecond)
+		event, err := repository.UpdateState(context.Background(), persistence.TransitionCommand{CandidateID: candidate.ID, ExpectedRevision: candidate.StateRevision, To: state, Actor: "test", Reason: "prepare recovery", OccurredAt: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate.State, candidate.StateRevision = event.NewState, event.Revision
+	}
+	root := t.TempDir()
+	work, library, approved, quarantine := filepath.Join(root, "work"), filepath.Join(root, "unmanaged"), filepath.Join(root, "approved"), filepath.Join(root, "quarantine")
+	for _, path := range []string{approved, quarantine} {
+		if err := os.MkdirAll(path, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, decision, technical := seedRealUnmanagedCandidate(t, work, candidate.ID)
+	if err := repository.SaveWorkflow(context.Background(), candidate.ID, "", domain.CanonicalRelease{}, domain.ReleaseMatch{}, technical, nil, "", now); err != nil {
+		t.Fatal(err)
+	}
+	runner := media.Runner{MaxOutput: 1 << 20}
+	mutation := application.MutationService{WorkRoot: work, QuarantineRoot: quarantine, Tags: media.MetaFLAC{Binary: "metaflac", Version: "test", Timeout: 10 * time.Second, Runner: runner}, Integrity: media.FLAC{Binary: "flac", Version: "test", Timeout: 10 * time.Second, Runner: runner}, Checksum: media.SHA256}
+	nav := &integrationUnmanagedNav{visible: true}
+	injected := false
+	importer := application.UnmanagedImportService{Store: repository, Metadata: application.UnmanagedMetadataService{}, Mutation: mutation, Navidrome: nav, WorkRoot: work, LibraryRoot: library, ScanPoll: time.Millisecond, Now: func() time.Time { now = now.Add(time.Millisecond); return now }, Fault: func(point string) error {
+		if point == "after_visibility" && !injected {
+			injected = true
+			return errors.New("crash before candidate state update")
+		}
+		return nil
+	}}
+	if _, err := importer.Import(context.Background(), candidate.ID, decision); err == nil {
+		t.Fatal("visibility fault missing")
+	}
+	importer.Fault = nil
+	recovery := application.RecoveryService{Store: repository, WorkRoot: work, ApprovedRoot: approved, QuarantineRoot: quarantine, Unmanaged: importer, Now: func() time.Time { now = now.Add(time.Millisecond); return now }}
+	report, err := recovery.Reconcile(context.Background())
+	if err != nil || report.UnmanagedImports != 1 || report.MissingDirectories != 0 {
+		t.Fatalf("recovery report=%+v err=%v", report, err)
+	}
+	stored, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil || stored.State != domain.StateUnmanagedImported {
+		t.Fatalf("candidate=%+v err=%v", stored, err)
 	}
 }
 
