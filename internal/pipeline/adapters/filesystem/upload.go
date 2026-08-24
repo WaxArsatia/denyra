@@ -71,7 +71,7 @@ func (w UploadWriter) PutFile(ctx context.Context, sessionID string, spec domain
 			return 0, compareErr
 		}
 		if !matching {
-			return 0, fmt.Errorf("completed upload entry %q differs from retry", spec.RelativePath)
+			return 0, fmt.Errorf("%w: completed entry %q differs from retry", domain.ErrUploadSizeMismatch, spec.RelativePath)
 		}
 		return spec.SizeBytes, nil
 	} else if !errors.Is(openErr, unix.ENOENT) {
@@ -96,7 +96,7 @@ func (w UploadWriter) PutFile(ctx context.Context, sessionID string, spec domain
 		return written, fmt.Errorf("close partial upload: %w", closeErr)
 	}
 	if written != spec.SizeBytes {
-		return written, fmt.Errorf("upload entry %q wrote %d bytes, expected %d", spec.RelativePath, written, spec.SizeBytes)
+		return written, fmt.Errorf("%w: entry %q wrote %d bytes, expected %d", domain.ErrUploadSizeMismatch, spec.RelativePath, written, spec.SizeBytes)
 	}
 	if err := unix.Renameat2(directoryFD, partialName, directoryFD, name, unix.RENAME_NOREPLACE); err != nil {
 		if !errors.Is(err, unix.EEXIST) {
@@ -297,7 +297,7 @@ func hashExact(reader io.Reader, expected int64) ([sha256.Size]byte, int64, erro
 		return [sha256.Size]byte{}, written, err
 	}
 	if written != expected {
-		return [sha256.Size]byte{}, written, fmt.Errorf("upload retry has %d bytes, expected %d", written, expected)
+		return [sha256.Size]byte{}, written, fmt.Errorf("%w: retry has %d bytes, expected %d", domain.ErrUploadSizeMismatch, written, expected)
 	}
 	var result [sha256.Size]byte
 	copy(result[:], hash.Sum(nil))

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/config"
+	denyrafs "github.com/waxarsatia/denyra/internal/pipeline/adapters/filesystem"
 	gatewayadapter "github.com/waxarsatia/denyra/internal/pipeline/adapters/gateway"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lidarr"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lrclib"
@@ -151,10 +152,16 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			}
 			auth := application.AuthService{Repository: repositories, AbsoluteExpiry: time.Duration(prepared.Config.Sessions.AbsoluteExpiry), PasswordMinLen: prepared.Config.Sessions.PasswordMinLen}
 			gatewayClient := gatewayadapter.Client{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
+			uploads := &application.UploadService{
+				Store: repositories, Writer: denyrafs.UploadWriter{Root: prepared.Config.Filesystem.IncomingUploading},
+				UploadingRoot: prepared.Config.Filesystem.IncomingUploading, IncomingRoot: prepared.Config.Filesystem.IncomingManual,
+				Policy: prepared.Config.Uploads,
+			}
 			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
 				Acquisition: gatewayClient,
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},
-				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual}})
+				Submissions: application.SubmissionService{Store: repositories, IncomingRoot: prepared.Config.Filesystem.IncomingManual},
+				Uploads:     uploads})
 		},
 		BuildInternalHandler: func(prepared *servicehost.Prepared) (http.Handler, error) {
 			repositories := persistence.New(prepared.DB, time.Now)

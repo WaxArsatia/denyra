@@ -8,6 +8,29 @@ templ Incoming(page IncomingPage) {
 
 templ IncomingContent(page IncomingPage) {
 	<section id="incoming-fragment" aria-live="polite"><h1>Manual incoming</h1><p class="muted">Upload discovery never starts processing. Submit seals the current tree.</p>
+		<section class="upload-panel" data-upload-root data-upload-csrf={ page.Shell.CSRFToken } data-upload-concurrency={ fmt.Sprint(page.UploadConcurrency) }>
+			<h2>Upload album folder</h2>
+			<p class="muted">Drop one album folder here, or select it from this machine. Files stream directly to disk.</p>
+			<div class="upload-drop" data-upload-drop tabindex="0" role="button" aria-label="Drop or select an album folder">
+				<input class="visually-hidden" data-upload-picker id="album-folder" type="file" webkitdirectory multiple/>
+				<button type="button" data-upload-select>Select folder</button>
+				<span>or drop folder</span>
+			</div>
+			<p class="upload-status muted" data-upload-status aria-live="polite"></p>
+			<div data-upload-progress></div>
+			if len(page.UploadSessions) > 0 {
+				<div class="table-wrap"><table><caption>Browser upload sessions</caption><thead><tr><th>Session</th><th>Files</th><th>Status</th><th>Action</th></tr></thead><tbody>
+					for _, session := range page.UploadSessions {
+						<tr data-upload-session={ session.ID }><td class="mono">{ session.ID }</td><td class="mono">{ fmt.Sprint(len(session.Files)) }</td><td><span class="status">{ session.Status }</span></td><td class="actions">
+							if session.Status == "OPEN" {
+								<button type="button" data-upload-resume={ session.ID }>Resume</button>
+								<button type="button" class="danger" data-upload-delete={ session.ID }>Delete</button>
+							}
+						</td></tr>
+					}
+				</tbody></table></div>
+			}
+		</section>
 		if page.Error != "" {
 			<p class="notice error" role="alert">{ page.Error }</p>
 		} else if len(page.Items) == 0 {

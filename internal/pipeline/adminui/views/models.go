@@ -7,6 +7,7 @@ import (
 
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
 type Shell struct {
@@ -32,10 +33,12 @@ type ReviewPage struct {
 	Confirm string
 }
 type IncomingPage struct {
-	Shell Shell
-	Items []application.SubmissionSummary
-	Next  string
-	Error string
+	Shell             Shell
+	Items             []application.SubmissionSummary
+	UploadSessions    []domain.UploadSession
+	UploadConcurrency int
+	Next              string
+	Error             string
 }
 type AuditPage struct {
 	Shell Shell

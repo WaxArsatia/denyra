@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
+
+var ErrUploadSizeMismatch = errors.New("upload entry size mismatch")
 
 type UploadFileSpec struct {
 	ID           string `json:"id"`

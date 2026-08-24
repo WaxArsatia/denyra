@@ -11,12 +11,13 @@ import (
 	"strings"
 )
 
-//go:embed css/app.css vendor/htmx.min.js vendor/fonts/*.woff2 vendor/icons.svg
+//go:embed css/app.css upload.js vendor/htmx.min.js vendor/fonts/*.woff2 vendor/icons.svg
 var files embed.FS
 
 type Paths struct {
 	CSS              string
 	HTMX             string
+	Upload           string
 	Icons            string
 	GeistRegular     string
 	GeistMedium      string
@@ -55,7 +56,7 @@ func New() (*Bundle, error) {
 	}
 	var err error
 	for target, name := range map[*string]string{
-		&bundle.Paths.CSS: "css/app.css", &bundle.Paths.HTMX: "vendor/htmx.min.js", &bundle.Paths.Icons: "vendor/icons.svg",
+		&bundle.Paths.CSS: "css/app.css", &bundle.Paths.HTMX: "vendor/htmx.min.js", &bundle.Paths.Upload: "upload.js", &bundle.Paths.Icons: "vendor/icons.svg",
 		&bundle.Paths.GeistRegular: "vendor/fonts/geist-regular.woff2", &bundle.Paths.GeistMedium: "vendor/fonts/geist-medium.woff2",
 		&bundle.Paths.GeistSemibold: "vendor/fonts/geist-semibold.woff2", &bundle.Paths.GeistMonoRegular: "vendor/fonts/geist-mono-regular.woff2",
 	} {

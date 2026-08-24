@@ -1,8 +1,11 @@
 package pipeline_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,12 +15,111 @@ import (
 	"testing"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/config"
+	denyrafs "github.com/waxarsatia/denyra/internal/pipeline/adapters/filesystem"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/middleware"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
+
+func TestAdminUIStreamsFolderUploadWithCSRFAndDeclaredSizeLimit(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := assets.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	uploading, incoming := filepath.Join(root, "uploading"), filepath.Join(root, "manual")
+	uploads := &application.UploadService{
+		Store: repository, Writer: denyrafs.UploadWriter{Root: uploading}, UploadingRoot: uploading, IncomingRoot: incoming,
+		Policy: config.UploadConfig{MaxFileBytes: 1 << 20, MaxSessionBytes: 2 << 20, MaxEntries: 10, BrowserConcurrency: 3, ImageMaxBytes: 1, ImageMaxPixels: 1},
+		Now:    func() time.Time { return now },
+	}
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, Assets: bundle, Uploads: uploads})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionCookie, csrfCookie := loginAdmin(t, handler)
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/incoming", nil)
+	pageRequest.AddCookie(sessionCookie)
+	pageRequest.AddCookie(csrfCookie)
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, pageRequest)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "webkitdirectory") || !strings.Contains(page.Body.String(), `data-upload-concurrency="3"`) {
+		t.Fatalf("incoming upload page=%d %s", page.Code, page.Body.String())
+	}
+
+	payload := bytes.Repeat([]byte("f"), 300<<10)
+	manifest, _ := json.Marshal(map[string]any{"files": []map[string]any{{"relative_path": "OFF GUARD/01.flac", "size_bytes": len(payload), "media_type": "audio/flac"}}})
+	create := authenticatedMutation(http.MethodPost, "/upload-sessions", bytes.NewReader(manifest), sessionCookie, csrfCookie)
+	create.Header.Set("Content-Type", "application/json")
+	created := httptest.NewRecorder()
+	handler.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create=%d %s", created.Code, created.Body.String())
+	}
+	var upload domain.UploadSession
+	if err := json.NewDecoder(created.Body).Decode(&upload); err != nil {
+		t.Fatal(err)
+	}
+
+	missingCSRF := httptest.NewRequest(http.MethodPut, "/upload-sessions/"+upload.ID+"/files/"+upload.Files[0].ID, bytes.NewReader(payload))
+	missingCSRF.AddCookie(sessionCookie)
+	missingCSRF.AddCookie(csrfCookie)
+	denied := httptest.NewRecorder()
+	handler.ServeHTTP(denied, missingCSRF)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("missing CSRF status=%d", denied.Code)
+	}
+
+	tooLarge := authenticatedMutation(http.MethodPut, "/upload-sessions/"+upload.ID+"/files/"+upload.Files[0].ID, bytes.NewReader(append(payload, 'x')), sessionCookie, csrfCookie)
+	tooLargeResponse := httptest.NewRecorder()
+	handler.ServeHTTP(tooLargeResponse, tooLarge)
+	if tooLargeResponse.Code != http.StatusRequestEntityTooLarge || !strings.Contains(tooLargeResponse.Body.String(), "ENTRY_MISMATCH") || strings.Contains(tooLargeResponse.Body.String(), root) {
+		t.Fatalf("oversize=%d %s", tooLargeResponse.Code, tooLargeResponse.Body.String())
+	}
+
+	put := authenticatedMutation(http.MethodPut, "/upload-sessions/"+upload.ID+"/files/"+upload.Files[0].ID, bytes.NewReader(payload), sessionCookie, csrfCookie)
+	putResponse := httptest.NewRecorder()
+	handler.ServeHTTP(putResponse, put)
+	if putResponse.Code != http.StatusOK {
+		t.Fatalf("put=%d %s", putResponse.Code, putResponse.Body.String())
+	}
+	finalize := authenticatedMutation(http.MethodPost, "/upload-sessions/"+upload.ID+"/finalize", nil, sessionCookie, csrfCookie)
+	finalized := httptest.NewRecorder()
+	handler.ServeHTTP(finalized, finalize)
+	if finalized.Code != http.StatusOK {
+		t.Fatalf("finalize=%d %s", finalized.Code, finalized.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(incoming, upload.SubmissionID, "OFF GUARD", "01.flac")); err != nil {
+		t.Fatalf("final file: %v", err)
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/upload-sessions/"+upload.ID, nil)
+	get.AddCookie(sessionCookie)
+	get.AddCookie(csrfCookie)
+	got := httptest.NewRecorder()
+	handler.ServeHTTP(got, get)
+	if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), domain.UploadSessionFinalized) {
+		t.Fatalf("get=%d %s", got.Code, got.Body.String())
+	}
+}
+
+func authenticatedMutation(method, target string, body io.Reader, session, csrf *http.Cookie) *http.Request {
+	request := httptest.NewRequest(method, target, body)
+	request.Header.Set("X-CSRF-Token", csrf.Value)
+	request.AddCookie(session)
+	request.AddCookie(csrf)
+	return request
+}
 
 func TestAdminUIUsesAuthenticatedRealDataSecurityHeadersAndImmutableAssets(t *testing.T) {
 	db, repository, now := pipelineRepositories(t)

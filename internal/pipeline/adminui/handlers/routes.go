@@ -21,6 +21,7 @@ type Dependencies struct {
 	Acquisition    application.AcquisitionEvidenceReader
 	Reviews        application.ReviewDecisionService
 	Submissions    application.SubmissionService
+	Uploads        *application.UploadService
 	Assets         *assets.Bundle
 	ConfigSnapshot string
 }
@@ -45,6 +46,11 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("POST /reviews/{candidateID}/{action}", console.reviewAction)
 	private.HandleFunc("GET /incoming", console.incoming)
 	private.HandleFunc("POST /incoming/{submissionID}/submit", console.submit)
+	private.HandleFunc("POST /upload-sessions", console.createUploadSession)
+	private.HandleFunc("GET /upload-sessions/{sessionID}", console.getUploadSession)
+	private.HandleFunc("PUT /upload-sessions/{sessionID}/files/{entryID}", console.putUploadFile)
+	private.HandleFunc("POST /upload-sessions/{sessionID}/finalize", console.finalizeUploadSession)
+	private.HandleFunc("DELETE /upload-sessions/{sessionID}", console.deleteUploadSession)
 	private.HandleFunc("GET /acquisitions/{jobID}", console.acquisition)
 	private.HandleFunc("GET /audit", console.audit)
 	private.HandleFunc("GET /account/password", console.account)
@@ -87,6 +93,15 @@ func (c Console) review(w http.ResponseWriter, r *http.Request) {
 func (c Console) incoming(w http.ResponseWriter, r *http.Request) {
 	items, next, err := c.dependencies.Reader.Submissions(r.Context(), 50, r.URL.Query().Get("cursor"))
 	page := views.IncomingPage{Shell: c.shell(r), Items: items, Next: next}
+	if c.dependencies.Uploads != nil {
+		principal, _ := middleware.Principal(r)
+		uploadSessions, uploadErr := c.dependencies.Uploads.Sessions(r.Context(), principal.UserID)
+		page.UploadSessions = uploadSessions
+		page.UploadConcurrency = c.dependencies.Uploads.Policy.BrowserConcurrency
+		if uploadErr != nil && err == nil {
+			err = uploadErr
+		}
+	}
 	if err != nil {
 		page.Error = "Unable to load incoming submissions."
 	}
