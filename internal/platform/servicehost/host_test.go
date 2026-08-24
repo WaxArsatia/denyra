@@ -2,8 +2,6 @@ package servicehost_test
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,7 +17,7 @@ import (
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 )
 
-func TestPreparePersistsImmutableConfigAndBuildProvenance(t *testing.T) {
+func TestPreparePersistsImmutableConfigWithoutDeploymentIdentity(t *testing.T) {
 	options := makeOptions(t)
 	prepared, err := servicehost.Prepare(context.Background(), slog.Default(), options)
 	if err != nil {
@@ -27,15 +25,17 @@ func TestPreparePersistsImmutableConfigAndBuildProvenance(t *testing.T) {
 	}
 	defer prepared.Close()
 
-	var configCount, provenanceCount int
+	var configCount int
 	if err := prepared.DB.QueryRow("SELECT COUNT(*) FROM config_snapshots").Scan(&configCount); err != nil {
 		t.Fatalf("count config snapshots: %v", err)
 	}
-	if err := prepared.DB.QueryRow("SELECT COUNT(*) FROM build_provenance").Scan(&provenanceCount); err != nil {
-		t.Fatalf("count build provenance: %v", err)
+	if configCount != 1 || !prepared.Health.Snapshot().Ready {
+		t.Fatalf("prepared runtime: config=%d health=%+v", configCount, prepared.Health.Snapshot())
 	}
-	if configCount != 1 || provenanceCount != 1 || !prepared.Health.Snapshot().Ready {
-		t.Fatalf("incomplete prepared runtime: config=%d provenance=%d health=%+v", configCount, provenanceCount, prepared.Health.Snapshot())
+	for _, dependency := range prepared.Health.Snapshot().Dependencies {
+		if dependency.Name == "dependency-lock" {
+			t.Fatal("dependency-lock remained in runtime health")
+		}
 	}
 
 	second, err := servicehost.Prepare(context.Background(), slog.Default(), options)
@@ -72,16 +72,6 @@ func TestPrepareRejectsBadDeviceIdentity(t *testing.T) {
 	options.CheckFilesystem = func(config.Config) error { return errors.New("device identity differs") }
 	if _, err := servicehost.Prepare(context.Background(), slog.Default(), options); err == nil || !strings.Contains(err.Error(), "device identity differs") {
 		t.Fatalf("filesystem error = %v", err)
-	}
-}
-
-func TestPrepareRejectsInvalidPin(t *testing.T) {
-	options := makeOptions(t)
-	if err := os.WriteFile(options.ProvenancePath, []byte(`{"lock_sha256":"`+strings.Repeat("0", 64)+`"}`), 0o600); err != nil {
-		t.Fatalf("write bad provenance: %v", err)
-	}
-	if _, err := servicehost.Prepare(context.Background(), slog.Default(), options); err == nil || !strings.Contains(err.Error(), "lock identity") {
-		t.Fatalf("pin error = %v", err)
 	}
 }
 
@@ -161,26 +151,9 @@ name = %q
 	if err := os.WriteFile(configPath, []byte(configText), 0o600); err != nil {
 		t.Fatalf("write config fixture: %v", err)
 	}
-	lockBytes := []byte(`{"schema":1,"images":[],"artifacts":[],"registries":[],"components":[]}`)
-	lockPath := filepath.Join(root, "dependencies.lock.json")
-	if err := os.WriteFile(lockPath, lockBytes, 0o600); err != nil {
-		t.Fatalf("write lock fixture: %v", err)
-	}
-	lockHash := fmt.Sprintf("%x", sha256.Sum256(lockBytes))
-	provenance, err := json.Marshal(map[string]any{"service": "test", "lock_sha256": lockHash})
-	if err != nil {
-		t.Fatalf("marshal provenance fixture: %v", err)
-	}
-	provenancePath := filepath.Join(root, "build-provenance.json")
-	if err := os.WriteFile(provenancePath, provenance, 0o600); err != nil {
-		t.Fatalf("write provenance fixture: %v", err)
-	}
-
 	return servicehost.Options{
 		Name:                 "test-service",
 		ConfigPath:           configPath,
-		LockPath:             lockPath,
-		ProvenancePath:       provenancePath,
 		DatabasePath:         func(cfg config.Config) string { return cfg.Database.PipelinePath },
 		Migrations:           []denysqlite.Migration{{Sequence: 1, Name: "foundation", SQL: foundationSQL}},
 		CheckFilesystem:      func(config.Config) error { return nil },
@@ -195,11 +168,5 @@ CREATE TABLE config_snapshots (
     canonical_json BLOB NOT NULL,
     sha256 TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL
-);
-CREATE TABLE build_provenance (
-    id TEXT PRIMARY KEY,
-    canonical_json BLOB NOT NULL,
-    sha256 TEXT NOT NULL UNIQUE,
-    recorded_at TEXT NOT NULL
 );
 `

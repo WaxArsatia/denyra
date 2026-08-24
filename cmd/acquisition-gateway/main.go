@@ -21,7 +21,6 @@ import (
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 	"github.com/waxarsatia/denyra/internal/gateway/transport"
-	"github.com/waxarsatia/denyra/internal/platform/deplock"
 	"github.com/waxarsatia/denyra/internal/platform/fscheck"
 	"github.com/waxarsatia/denyra/internal/platform/servicehost"
 	"github.com/waxarsatia/denyra/migrations"
@@ -55,8 +54,6 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	}
 	flags := flag.NewFlagSet("acquisition-gateway", flag.ContinueOnError)
 	configPath := flags.String("config", "/etc/denyra/config.toml", "configuration file")
-	lockPath := flags.String("lock", "/app/dependencies.lock.json", "dependency lock")
-	provenancePath := flags.String("provenance", "/app/build-provenance.json", "build provenance")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -68,8 +65,6 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	return servicehost.Run(ctx, logger, servicehost.Options{
 		Name:             "acquisition-gateway",
 		ConfigPath:       *configPath,
-		LockPath:         *lockPath,
-		ProvenancePath:   *provenancePath,
 		DatabasePath:     func(cfg config.Config) string { return cfg.Database.GatewayPath },
 		Migrations:       serviceMigrations,
 		RequiredBinaries: []string{"node", "/opt/spotiflac/spotiflac"},
@@ -103,7 +98,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			installation, err := (spotiflac.Installation{
 				EnginePath: "/opt/spotiflac/spotiflac", NodePath: "/opt/node/bin/node",
 				ArtifactDirectory: "/opt/spotiflac/artifacts", InstalledExtensionDirectory: "/opt/spotiflac/runtime-home/.spotiflac/extensions",
-				BuildProvenancePath: *provenancePath, Manifest: manifest,
+				BuildProvenancePath: "/app/build-provenance.json", Manifest: manifest,
 			}).Verify(ctx, time.Duration(prepared.Config.HTTP.ExternalRequestTimeout), time.Now().UTC())
 			if err != nil {
 				return err
@@ -129,19 +124,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				}
 			}
 			handoff := application.CandidateHandoffService{Pipeline: pipelineClient, Store: repositories, ReplayAttempts: prepared.Config.HTTP.InternalReplayAttempts}
-			lockBytes, err := os.ReadFile(*lockPath)
-			if err != nil {
-				return err
-			}
-			dependencyLock, err := deplock.Decode(lockBytes)
-			if err != nil {
-				return err
-			}
-			slskdImage, err := dependencyLock.Image("slskd")
-			if err != nil {
-				return err
-			}
-			completion := application.PrimaryCompletionService{Queue: lidarrClient, Store: repositories, Handoff: handoff, DownloadsRoot: prepared.Config.Filesystem.DownloadsSlskd, PageSize: prepared.Config.Acquisition.LidarrPageSize, EngineVersion: slskdImage.Version, StabilityInterval: time.Duration(prepared.Config.Scanners.StabilityInterval)}
+			completion := application.PrimaryCompletionService{Queue: lidarrClient, Store: repositories, Handoff: handoff, DownloadsRoot: prepared.Config.Filesystem.DownloadsSlskd, PageSize: prepared.Config.Acquisition.LidarrPageSize, EngineVersion: "slskd", StabilityInterval: time.Duration(prepared.Config.Scanners.StabilityInterval)}
 			completionMonitor := &application.PrimaryCompletionMonitor{Service: completion, Safety: time.Duration(prepared.Config.Acquisition.ReconciliationSafety), OnError: func(err error) { logger.Error("primary completion reconciliation failed", "error", err) }}
 			primary := application.PrimarySearch{Lidarr: lidarrClient, Store: repositories, Policy: policy, CommandTimeout: time.Duration(prepared.Config.Acquisition.AlbumSearchTimeout), PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), GraceWindow: time.Duration(prepared.Config.Acquisition.PrimaryGraceWindow), Pause: pause}
 			reconciler := application.PrimaryReconciler{Lidarr: lidarrClient, Store: repositories, Policy: policy, PageSize: prepared.Config.Acquisition.LidarrPageSize, PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), Pause: pause, Handoff: handoff}

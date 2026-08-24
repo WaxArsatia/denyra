@@ -4,10 +4,8 @@ package servicehost
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -19,7 +17,6 @@ import (
 
 	"github.com/waxarsatia/denyra/internal/config"
 	"github.com/waxarsatia/denyra/internal/contracts"
-	"github.com/waxarsatia/denyra/internal/platform/deplock"
 	"github.com/waxarsatia/denyra/internal/platform/health"
 	"github.com/waxarsatia/denyra/internal/platform/ids"
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
@@ -28,8 +25,6 @@ import (
 type Options struct {
 	Name                    string
 	ConfigPath              string
-	LockPath                string
-	ProvenancePath          string
 	DatabasePath            func(config.Config) string
 	Migrations              []denysqlite.Migration
 	RequiredBinaries        []string
@@ -64,10 +59,6 @@ func Prepare(ctx context.Context, logger *slog.Logger, options Options) (_ *Prep
 	if err := resolveSnapshotSecrets(&cfg); err != nil {
 		return nil, err
 	}
-	provenance, err := verifyLockIdentity(options.LockPath, options.ProvenancePath)
-	if err != nil {
-		return nil, err
-	}
 	for _, binary := range options.RequiredBinaries {
 		if _, err := exec.LookPath(binary); err != nil {
 			return nil, fmt.Errorf("required binary %q: %w", binary, err)
@@ -98,11 +89,11 @@ func Prepare(ctx context.Context, logger *slog.Logger, options Options) (_ *Prep
 	if err != nil {
 		return nil, fmt.Errorf("create config snapshot: %w", err)
 	}
-	if err := recordStartup(ctx, db, snapshot, provenance, now()); err != nil {
+	if err := recordStartup(ctx, db, snapshot, now()); err != nil {
 		return nil, err
 	}
 	healthService := health.New()
-	for _, dependency := range []string{"configuration", "dependency-lock", "required-binaries", "filesystem", "database", "migrations"} {
+	for _, dependency := range []string{"configuration", "required-binaries", "filesystem", "database", "migrations"} {
 		healthService.Set(contracts.DependencyHealth{Name: dependency, State: contracts.DependencyOK, Local: true})
 	}
 	for _, dependency := range options.ExternalDependencies {
@@ -117,6 +108,7 @@ func Prepare(ctx context.Context, logger *slog.Logger, options Options) (_ *Prep
 	}
 	logger.Info("service foundation ready",
 		"service", options.Name,
+		"git_commit", envOrDefault("DENYRA_GIT_COMMIT", "unknown"),
 		"config_snapshot_sha256", hex.EncodeToString(snapshot.Hash[:]),
 		"database", databasePath,
 	)
@@ -217,7 +209,7 @@ func Run(ctx context.Context, logger *slog.Logger, options Options) error {
 }
 
 func validateOptions(options Options) error {
-	if options.Name == "" || options.ConfigPath == "" || options.LockPath == "" || options.ProvenancePath == "" {
+	if options.Name == "" || options.ConfigPath == "" {
 		return fmt.Errorf("service host paths and name are required")
 	}
 	if options.DatabasePath == nil || len(options.Migrations) == 0 {
@@ -244,51 +236,24 @@ func resolveSnapshotSecrets(cfg *config.Config) error {
 	return nil
 }
 
-func verifyLockIdentity(lockPath, provenancePath string) ([]byte, error) {
-	lockBytes, err := os.ReadFile(lockPath)
-	if err != nil {
-		return nil, fmt.Errorf("read dependency lock: %w", err)
-	}
-	if _, err := deplock.Decode(lockBytes); err != nil {
-		return nil, fmt.Errorf("invalid dependency pin: %w", err)
-	}
-	provenanceBytes, err := os.ReadFile(provenancePath)
-	if err != nil {
-		return nil, fmt.Errorf("read build provenance: %w", err)
-	}
-	var provenance struct {
-		LockSHA256 string `json:"lock_sha256"`
-	}
-	if err := json.Unmarshal(provenanceBytes, &provenance); err != nil {
-		return nil, fmt.Errorf("decode build provenance: %w", err)
-	}
-	want := fmt.Sprintf("%x", sha256.Sum256(lockBytes))
-	if provenance.LockSHA256 != want {
-		return nil, fmt.Errorf("lock identity mismatch: provenance=%q actual=%q", provenance.LockSHA256, want)
-	}
-	return provenanceBytes, nil
-}
-
-func recordStartup(ctx context.Context, db *sql.DB, snapshot config.Snapshot, provenance []byte, now time.Time) error {
+func recordStartup(ctx context.Context, db *sql.DB, snapshot config.Snapshot, now time.Time) error {
 	snapshotID, err := ids.NewToken(16)
 	if err != nil {
 		return err
 	}
 	snapshotHash := hex.EncodeToString(snapshot.Hash[:])
-	provenanceHash := fmt.Sprintf("%x", sha256.Sum256(provenance))
 	return denysqlite.WithinTx(ctx, db, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO config_snapshots(id, canonical_json, sha256, created_at)
 			VALUES (?, ?, ?, ?) ON CONFLICT(sha256) DO NOTHING`, snapshotID, snapshot.CanonicalJSON, snapshotHash, now.UTC().Format(time.RFC3339Nano)); err != nil {
 			return fmt.Errorf("record config snapshot: %w", err)
 		}
-		provenanceID, err := ids.NewToken(16)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO build_provenance(id, canonical_json, sha256, recorded_at)
-			VALUES (?, ?, ?, ?) ON CONFLICT(sha256) DO NOTHING`, provenanceID, provenance, provenanceHash, now.UTC().Format(time.RFC3339Nano)); err != nil {
-			return fmt.Errorf("record build provenance: %w", err)
-		}
 		return nil
 	})
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := os.Getenv(name); value != "" {
+		return value
+	}
+	return fallback
 }

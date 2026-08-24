@@ -51,8 +51,6 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	}
 	flags := flag.NewFlagSet("media-pipeline", flag.ContinueOnError)
 	configPath := flags.String("config", "/etc/denyra/config.toml", "configuration file")
-	lockPath := flags.String("lock", "/app/dependencies.lock.json", "dependency lock")
-	provenancePath := flags.String("provenance", "/app/build-provenance.json", "build provenance")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -64,8 +62,6 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 	return servicehost.Run(ctx, logger, servicehost.Options{
 		Name:             "media-pipeline",
 		ConfigPath:       *configPath,
-		LockPath:         *lockPath,
-		ProvenancePath:   *provenancePath,
 		DatabasePath:     func(cfg config.Config) string { return cfg.Database.PipelinePath },
 		Migrations:       serviceMigrations,
 		RequiredBinaries: []string{"ffprobe", "flac", "metaflac", "beet"},
