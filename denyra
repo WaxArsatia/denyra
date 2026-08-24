@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+. "$repo_root/scripts/manage/common.sh"
+denyra_context
+
+command=${1:-}
+[ "$#" -eq 0 ] || shift
+
+case "$command" in
+  setup)
+    [ -f "$repo_root/scripts/manage/setup.sh" ] || denyra_unavailable
+    . "$repo_root/scripts/manage/setup.sh"
+    denyra_setup "$@"
+    ;;
+  update|rollback|backup)
+    [ -f "$repo_root/scripts/manage/$command.sh" ] || denyra_unavailable
+    denyra_lock
+    . "$repo_root/scripts/manage/$command.sh"
+    "denyra_$command" "$@"
+    ;;
+  start) denyra_compose up -d --remove-orphans --wait ;;
+  stop) denyra_compose stop ;;
+  restart)
+    denyra_compose restart
+    denyra_compose up -d --wait
+    ;;
+  status) denyra_compose ps ;;
+  logs) denyra_compose logs --tail 200 "$@" ;;
+  credentials)
+    [ -f "$repo_root/scripts/manage/credentials.sh" ] || denyra_unavailable
+    . "$repo_root/scripts/manage/credentials.sh"
+    denyra_credentials
+    ;;
+  ""|-h|--help|help) denyra_usage ;;
+  *) denyra_usage >&2; exit 2 ;;
+esac
