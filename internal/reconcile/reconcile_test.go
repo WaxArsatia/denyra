@@ -27,6 +27,18 @@ func TestRunUsesDeclaredOrder(t *testing.T) {
 	}
 }
 
+func TestServicesUseSafeDependencyOrder(t *testing.T) {
+	services := Services(Options{})
+	names := make([]string, 0, len(services))
+	for _, service := range services {
+		names = append(names, service.Name)
+	}
+	want := []string{"lidarr", "sftpgo", "navidrome"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("services=%v want=%v", names, want)
+	}
+}
+
 func TestRunStopsAndWrapsFirstError(t *testing.T) {
 	var calls []string
 	services := []Service{

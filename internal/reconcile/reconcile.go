@@ -49,5 +49,14 @@ func Services(options Options) []Service {
 		BaseURL: options.LidarrURL, APIKey: options.LidarrAPIKey,
 		SlskdURL: options.SlskdURL, SlskdAPIKey: options.SlskdAPIKey, HTTP: options.HTTP,
 	}
-	return []Service{{Name: "lidarr", Apply: lidarr.Apply}}
+	sftpgo := SFTPGo{
+		BaseURL: options.SFTPGoURL, AdminPassword: options.SFTPGoAdminPassword,
+		UploadPassword: options.SFTPGoUploadPassword, HTTP: options.HTTP,
+	}
+	navidrome := Navidrome{BaseURL: options.NavidromeURL, AdminPassword: options.NavidromeAdminPassword, HTTP: options.HTTP}
+	return []Service{
+		{Name: "lidarr", Apply: lidarr.Apply},
+		{Name: "sftpgo", Apply: sftpgo.Apply},
+		{Name: "navidrome", Apply: navidrome.Apply},
+	}
 }
