@@ -89,10 +89,11 @@ func create(arguments []string) error {
 	source := flags.String("source", "", "absolute backup source root")
 	workspace := flags.String("workspace", "", "absolute backup workspace")
 	backupID := flags.String("backup-id", "", "backup identity")
+	gitCommit := flags.String("git-commit", "", "40-character Denyra Git commit")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: *backupID, SourceRoot: *source, WorkspaceRoot: *workspace, CreatedAt: time.Now().UTC()})
+	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: *backupID, GitCommit: *gitCommit, SourceRoot: *source, WorkspaceRoot: *workspace, CreatedAt: time.Now().UTC()})
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,6 @@ func create(arguments []string) error {
 func verify(ctx context.Context, arguments []string) error {
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	root := flags.String("root", "", "absolute restored tree root")
-	expectedLock := flags.String("expected-lock", "/app/dependencies.lock.json", "current dependency lock")
 	snapshot := flags.String("snapshot", "", "Restic snapshot identity")
 	reportPath := flags.String("report", "", "JSON verification report path")
 	cutoverPath := flags.String("cutover-report", "", "Markdown cutover report path")
@@ -111,7 +111,7 @@ func verify(ctx context.Context, arguments []string) error {
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
-	options := denyrarestore.VerifyOptions{RestoreRoot: *root, ExpectedLock: *expectedLock, SnapshotID: *snapshot}
+	options := denyrarestore.VerifyOptions{RestoreRoot: *root, SnapshotID: *snapshot}
 	if *uid >= 0 {
 		value := uint32(*uid)
 		options.ExpectedUID = &value

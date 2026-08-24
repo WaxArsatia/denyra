@@ -35,7 +35,7 @@ func TestRestoreScriptsNeverCutOverOrOverwriteLiveTree(t *testing.T) {
 func TestRestoreFixtureVerifiesChecksumsDatabasesAndLayout(t *testing.T) {
 	root, source, workspace := restoreFixture(t)
 	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{
-		BackupID: "fixture-backup", SourceRoot: source, WorkspaceRoot: workspace,
+		BackupID: "fixture-backup", GitCommit: strings.Repeat("a", 40), SourceRoot: source, WorkspaceRoot: workspace,
 		CreatedAt: time.Date(2026, 8, 24, 8, 0, 0, 0, time.UTC),
 	})
 	if err != nil {
@@ -46,21 +46,18 @@ func TestRestoreFixtureVerifiesChecksumsDatabasesAndLayout(t *testing.T) {
 	}
 	installRestoredDatabases(t, source, workspace)
 
-	report, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{
-		RestoreRoot:  root,
-		ExpectedLock: filepath.Join(workspace, "dependencies.lock.json"),
-	})
+	report, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.ChecksumFailures != 0 || report.FileCount == 0 || report.DatabaseVersions["gateway"] == 0 || report.DatabaseVersions["pipeline"] == 0 {
+	if report.GitCommit != strings.Repeat("a", 40) || report.ChecksumFailures != 0 || report.FileCount == 0 || report.DatabaseVersions["gateway"] == 0 || report.DatabaseVersions["pipeline"] == 0 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 }
 
 func TestRestoreFixtureRejectsChangedLibraryFile(t *testing.T) {
 	root, source, workspace := restoreFixture(t)
-	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: "fixture-backup", SourceRoot: source, WorkspaceRoot: workspace, CreatedAt: time.Now().UTC()})
+	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: "fixture-backup", GitCommit: strings.Repeat("a", 40), SourceRoot: source, WorkspaceRoot: workspace, CreatedAt: time.Now().UTC()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +68,26 @@ func TestRestoreFixtureRejectsChangedLibraryFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "library/Artist/Album/01.flac"), []byte("changed"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root, ExpectedLock: filepath.Join(workspace, "dependencies.lock.json")}); err == nil {
+	if _, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root}); err == nil {
 		t.Fatal("changed library file passed restore verification")
+	}
+}
+
+func TestRestoreFixtureRejectsChangedConfigFile(t *testing.T) {
+	root, source, workspace := restoreFixture(t)
+	manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: "fixture-backup", GitCommit: strings.Repeat("a", 40), SourceRoot: source, WorkspaceRoot: workspace, CreatedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := denyrarestore.WriteManifest(filepath.Join(workspace, "manifest.json"), manifest); err != nil {
+		t.Fatal(err)
+	}
+	installRestoredDatabases(t, source, workspace)
+	if err := os.WriteFile(filepath.Join(workspace, "config", "gateway.toml"), []byte("changed"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root}); err == nil {
+		t.Fatal("changed config file passed restore verification")
 	}
 }
 
@@ -84,7 +99,7 @@ func restoreFixture(t *testing.T) (string, string, string) {
 	for _, directory := range []string{
 		filepath.Join(source, "library/Artist/Album"), filepath.Join(source, "state/gateway"),
 		filepath.Join(source, "state/pipeline"), filepath.Join(source, "incoming"),
-		filepath.Join(source, "processing"), filepath.Join(source, "quarantine"), workspace,
+		filepath.Join(source, "processing"), filepath.Join(source, "quarantine"), filepath.Join(workspace, "config"),
 	} {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			t.Fatal(err)
@@ -93,11 +108,10 @@ func restoreFixture(t *testing.T) (string, string, string) {
 	if err := os.WriteFile(filepath.Join(source, "library/Artist/Album/01.flac"), []byte("fixture-flac"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "dependencies.lock.json"), []byte(`{"schema":1}`), 0o440); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(workspace, "images.lock.json"), []byte(`{"schema":1}`), 0o440); err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"gateway.toml", "pipeline.toml", "navidrome.toml", "navidrome-lyrics.toml", "slskd.yml"} {
+		if err := os.WriteFile(filepath.Join(workspace, "config", name), []byte("fixture "+name+"\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
 	}
 	for _, service := range []string{"gateway", "pipeline"} {
 		createRestoreDatabase(t, service, filepath.Join(workspace, service+".db"))

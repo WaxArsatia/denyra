@@ -32,41 +32,41 @@ type FileRecord struct {
 }
 
 type Manifest struct {
-	SchemaVersion  int               `json:"schema_version"`
-	BackupID       string            `json:"backup_id"`
-	CreatedAt      time.Time         `json:"created_at"`
-	Identities     map[string]string `json:"identities"`
-	SourceFiles    []FileRecord      `json:"source_files"`
-	WorkspaceFiles []FileRecord      `json:"workspace_files"`
+	SchemaVersion  int          `json:"schema_version"`
+	BackupID       string       `json:"backup_id"`
+	CreatedAt      time.Time    `json:"created_at"`
+	GitCommit      string       `json:"git_commit"`
+	SourceFiles    []FileRecord `json:"source_files"`
+	WorkspaceFiles []FileRecord `json:"workspace_files"`
 }
 
 type CreateOptions struct {
 	BackupID      string
+	GitCommit     string
 	SourceRoot    string
 	WorkspaceRoot string
 	CreatedAt     time.Time
 }
 
 type VerifyOptions struct {
-	RestoreRoot  string
-	ExpectedLock string
-	SnapshotID   string
-	ExpectedUID  *uint32
-	ExpectedGID  *uint32
+	RestoreRoot string
+	SnapshotID  string
+	ExpectedUID *uint32
+	ExpectedGID *uint32
 }
 
 type Report struct {
-	SnapshotID           string            `json:"snapshot_id"`
-	BackupID             string            `json:"backup_id"`
-	CreatedAt            time.Time         `json:"created_at"`
-	Identities           map[string]string `json:"identities"`
-	DatabaseVersions     map[string]int    `json:"database_versions"`
-	FileCount            int               `json:"file_count"`
-	Bytes                int64             `json:"bytes"`
-	ChecksumFailures     int               `json:"checksum_failures"`
-	RequiredOwnerChanges int               `json:"required_owner_changes"`
-	SameDevice           bool              `json:"same_device"`
-	VerifiedAt           time.Time         `json:"verified_at"`
+	SnapshotID           string         `json:"snapshot_id"`
+	BackupID             string         `json:"backup_id"`
+	CreatedAt            time.Time      `json:"created_at"`
+	GitCommit            string         `json:"git_commit"`
+	DatabaseVersions     map[string]int `json:"database_versions"`
+	FileCount            int            `json:"file_count"`
+	Bytes                int64          `json:"bytes"`
+	ChecksumFailures     int            `json:"checksum_failures"`
+	RequiredOwnerChanges int            `json:"required_owner_changes"`
+	SameDevice           bool           `json:"same_device"`
+	VerifiedAt           time.Time      `json:"verified_at"`
 }
 
 var sourceDirectories = []string{"library", "state", "incoming", "processing", "quarantine"}
@@ -74,6 +74,9 @@ var sourceDirectories = []string{"library", "state", "incoming", "processing", "
 func Create(options CreateOptions) (Manifest, error) {
 	if options.BackupID == "" || options.SourceRoot == "" || options.WorkspaceRoot == "" || options.CreatedAt.IsZero() {
 		return Manifest{}, errors.New("backup ID, source, workspace, and creation time are required")
+	}
+	if !validGitCommit(options.GitCommit) {
+		return Manifest{}, errors.New("Git commit must be 40 lowercase hexadecimal characters")
 	}
 	sourceFiles, err := scanFiles(options.SourceRoot, sourceDirectories, excludeLiveDatabase)
 	if err != nil {
@@ -86,18 +89,7 @@ func Create(options CreateOptions) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, fmt.Errorf("scan workspace: %w", err)
 	}
-	identities := make(map[string]string)
-	for _, name := range []string{"dependencies.lock.json", "images.lock.json", "gateway-build-provenance.json", "pipeline-build-provenance.json", "gateway.toml", "pipeline.toml"} {
-		for _, record := range workspaceFiles {
-			if record.Path == name {
-				identities[name] = record.SHA256
-			}
-		}
-	}
-	if identities["dependencies.lock.json"] == "" {
-		return Manifest{}, errors.New("workspace lacks dependencies.lock.json")
-	}
-	return Manifest{SchemaVersion: 1, BackupID: options.BackupID, CreatedAt: options.CreatedAt.UTC(), Identities: identities, SourceFiles: sourceFiles, WorkspaceFiles: workspaceFiles}, nil
+	return Manifest{SchemaVersion: 1, BackupID: options.BackupID, CreatedAt: options.CreatedAt.UTC(), GitCommit: options.GitCommit, SourceFiles: sourceFiles, WorkspaceFiles: workspaceFiles}, nil
 }
 
 func WriteManifest(path string, manifest Manifest) error {
@@ -124,7 +116,7 @@ func ReadManifest(path string) (Manifest, error) {
 	if err := decoder.Decode(&manifest); err != nil {
 		return Manifest{}, err
 	}
-	if manifest.SchemaVersion != 1 || manifest.BackupID == "" || manifest.CreatedAt.IsZero() {
+	if manifest.SchemaVersion != 1 || manifest.BackupID == "" || manifest.CreatedAt.IsZero() || !validGitCommit(manifest.GitCommit) {
 		return Manifest{}, errors.New("invalid restore manifest identity")
 	}
 	return manifest, nil
@@ -149,7 +141,7 @@ func Verify(ctx context.Context, options VerifyOptions) (Report, error) {
 		return Report{}, fmt.Errorf("source tree: %w", err)
 	}
 
-	report := Report{SnapshotID: options.SnapshotID, BackupID: manifest.BackupID, CreatedAt: manifest.CreatedAt, Identities: manifest.Identities, DatabaseVersions: make(map[string]int), SameDevice: true, VerifiedAt: time.Now().UTC()}
+	report := Report{SnapshotID: options.SnapshotID, BackupID: manifest.BackupID, CreatedAt: manifest.CreatedAt, GitCommit: manifest.GitCommit, DatabaseVersions: make(map[string]int), SameDevice: true, VerifiedAt: time.Now().UTC()}
 	for _, group := range []struct {
 		root    string
 		records []FileRecord
@@ -162,17 +154,6 @@ func Verify(ctx context.Context, options VerifyOptions) (Report, error) {
 			}
 		}
 	}
-	if options.ExpectedLock == "" {
-		return report, errors.New("expected dependency lock is required")
-	}
-	lockHash, _, err := hashFile(options.ExpectedLock)
-	if err != nil {
-		return report, fmt.Errorf("hash expected dependency lock: %w", err)
-	}
-	if lockHash != manifest.Identities["dependencies.lock.json"] {
-		report.ChecksumFailures++
-	}
-
 	for _, service := range []string{"gateway", "pipeline"} {
 		databasePath := filepath.Join(source, "state", service, "denyra.db")
 		backupPath := filepath.Join(workspace, service+".db")
@@ -222,25 +203,27 @@ func WriteCutoverReport(path string, report Report) error {
 	}
 	defer file.Close()
 	writer := bufio.NewWriter(file)
-	_, err = fmt.Fprintf(writer, "# Denyra restore cutover report\n\nSnapshot: `%s`\n\nBackup: `%s`\n\nCreated: `%s`\n\nVerified: `%s`\n\nFiles: %d\n\nBytes: %d\n\nChecksum failures: %d\n\nRequired owner changes: %d\n\nSame-device layout: %t\n\nDatabase migrations: gateway=%d, pipeline=%d\n\n## Build and configuration identities\n\n", report.SnapshotID, report.BackupID, report.CreatedAt.Format(time.RFC3339), report.VerifiedAt.Format(time.RFC3339), report.FileCount, report.Bytes, report.ChecksumFailures, report.RequiredOwnerChanges, report.SameDevice, report.DatabaseVersions["gateway"], report.DatabaseVersions["pipeline"])
+	_, err = fmt.Fprintf(writer, "# Denyra restore cutover report\n\nSnapshot: `%s`\n\nBackup: `%s`\n\nGit commit: `%s`\n\nCreated: `%s`\n\nVerified: `%s`\n\nFiles: %d\n\nBytes: %d\n\nChecksum failures: %d\n\nRequired owner changes: %d\n\nSame-device layout: %t\n\nDatabase migrations: gateway=%d, pipeline=%d\n", report.SnapshotID, report.BackupID, report.GitCommit, report.CreatedAt.Format(time.RFC3339), report.VerifiedAt.Format(time.RFC3339), report.FileCount, report.Bytes, report.ChecksumFailures, report.RequiredOwnerChanges, report.SameDevice, report.DatabaseVersions["gateway"], report.DatabaseVersions["pipeline"])
 	if err != nil {
 		return err
-	}
-	keys := make([]string, 0, len(report.Identities))
-	for key := range report.Identities {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if _, err := fmt.Fprintf(writer, "- `%s`: `%s`\n", key, report.Identities[key]); err != nil {
-			return err
-		}
 	}
 	_, err = fmt.Fprint(writer, "\n## Manual cutover\n\nKeep the live tree untouched. Stop the stateful services, change their bind mounts to this verified tree, and start them. Roll back by restoring the previous bind mounts.\n")
 	if err != nil {
 		return err
 	}
 	return writer.Flush()
+}
+
+func validGitCommit(commit string) bool {
+	if len(commit) != 40 {
+		return false
+	}
+	for _, character := range commit {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func scanFiles(root string, directories []string, excluded func(string) bool) ([]FileRecord, error) {
