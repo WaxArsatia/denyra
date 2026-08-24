@@ -46,11 +46,11 @@ func CheckDirectories(dataRoot string, directories []Directory, expectedUID, exp
 	if err != nil {
 		return Report{}, fmt.Errorf("data root: %w", err)
 	}
-	rootDevice, _, _, _, err := statIdentity(root)
-	if err != nil {
-		return Report{}, err
+	if len(directories) == 0 {
+		return Report{}, fmt.Errorf("at least one mounted directory is required")
 	}
 	report := Report{Paths: make([]PathReport, 0, len(directories))}
+	var mountedDevice uint64
 	for _, directory := range directories {
 		canonical, err := canonicalNoFollow(directory.Path)
 		if err != nil {
@@ -63,8 +63,10 @@ func CheckDirectories(dataRoot string, directories []Directory, expectedUID, exp
 		if err != nil {
 			return Report{}, fmt.Errorf("%s: %w", directory.Name, err)
 		}
-		if device != rootDevice {
-			return Report{}, fmt.Errorf("%s is on device %d, data root is on %d", directory.Name, device, rootDevice)
+		if mountedDevice == 0 {
+			mountedDevice = device
+		} else if device != mountedDevice {
+			return Report{}, fmt.Errorf("%s is on device %d, mounted data paths are on %d", directory.Name, device, mountedDevice)
 		}
 		if int(uid) != expectedUID || int(gid) != expectedGID {
 			return Report{}, fmt.Errorf("%s owner is %d:%d, expected %d:%d", directory.Name, uid, gid, expectedUID, expectedGID)
@@ -82,10 +84,6 @@ func Check(layout Layout) (Report, error) {
 	if err != nil {
 		return Report{}, fmt.Errorf("data root: %w", err)
 	}
-	rootDevice, _, _, _, err := statIdentity(root)
-	if err != nil {
-		return Report{}, err
-	}
 	paths := []struct {
 		name, path string
 		readOnly   bool
@@ -100,6 +98,7 @@ func Check(layout Layout) (Report, error) {
 		{"library", layout.Library, layout.RequireLibraryReadOnly},
 	}
 	report := Report{Paths: make([]PathReport, 0, len(paths))}
+	var mountedDevice uint64
 	for _, item := range paths {
 		canonical, err := canonicalNoFollow(item.path)
 		if err != nil {
@@ -112,8 +111,10 @@ func Check(layout Layout) (Report, error) {
 		if err != nil {
 			return Report{}, fmt.Errorf("%s: %w", item.name, err)
 		}
-		if device != rootDevice {
-			return Report{}, fmt.Errorf("%s is on device %d, data root is on %d", item.name, device, rootDevice)
+		if mountedDevice == 0 {
+			mountedDevice = device
+		} else if device != mountedDevice {
+			return Report{}, fmt.Errorf("%s is on device %d, mounted data paths are on %d", item.name, device, mountedDevice)
 		}
 		if int(uid) != layout.ExpectedUID || int(gid) != layout.ExpectedGID {
 			return Report{}, fmt.Errorf("%s owner is %d:%d, expected %d:%d", item.name, uid, gid, layout.ExpectedUID, layout.ExpectedGID)

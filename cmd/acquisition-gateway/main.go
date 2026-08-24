@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -36,6 +37,12 @@ func main() {
 }
 
 func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
+	if len(arguments) > 0 && arguments[0] == "live-provider-acceptance" {
+		if os.Getenv("DENYRA_LIVE_PROVIDER_ACCEPTANCE") != "I_ACCEPT_EXTERNAL_PROVIDER_SIDE_EFFECTS" {
+			return errors.New("live provider acceptance requires the explicit side-effect gate")
+		}
+		arguments = arguments[1:]
+	}
 	if len(arguments) > 0 && arguments[0] == "healthcheck" {
 		flags := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
 		address := flags.String("address", "172.30.0.2:8081", "internal health address")
@@ -126,7 +133,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			canceller := application.TransferCancellationService{Lidarr: lidarrClient, SpotiFLAC: processes}
 			arbitration := application.ArbitrationService{Store: repositories, Pipeline: pipelineClient, Canceller: canceller, Window: time.Duration(prepared.Config.Arbitration.Window), ReplayAttempts: prepared.Config.HTTP.InternalReplayAttempts}
 			fallback := application.FallbackService{Runner: runner, Store: repositories, Policy: policy, Providers: manifest.Providers(), OutputRoot: prepared.Config.Filesystem.DownloadsSpotiFLAC, OverallTimeout: time.Duration(prepared.Config.Acquisition.OverallTimeout), Handoff: handoff}
-			admission := application.AdmissionController{Store: repositories, DataRoot: prepared.Config.Filesystem.DataRoot, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}
+			admission := application.AdmissionController{Store: repositories, DataRoot: prepared.Config.Filesystem.DownloadsSpotiFLAC, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}
 			worker := &application.AcquisitionWorker{Store: repositories, Admission: admission, Primary: primary, Reconciler: reconciler, Fallback: fallback, Arbitration: arbitration, Concurrency: prepared.Config.Concurrency.Acquisition, Lease: time.Duration(prepared.Config.Acquisition.LeaseDuration), SafetyScan: time.Duration(prepared.Config.Acquisition.ReconciliationSafety), MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions, OnError: func(jobID string, err error) { logger.Error("acquisition job failed", "job_id", jobID, "error", err) }}
 			lateHandler := application.LatePrimaryService{Store: repositories, Canceller: processes, Handoff: handoff}
 			recovery := application.GatewayRecovery{Store: repositories, Arbitration: arbitration, Handoff: handoff, Primary: primary, Reconciler: reconciler, RetryPolicy: policy, SpotiFLACRoot: prepared.Config.Filesystem.DownloadsSpotiFLAC, ActiveProcess: processes.Active, CancelProcess: processes.CancelSuperseded}

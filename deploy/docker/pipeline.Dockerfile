@@ -14,7 +14,8 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     go build -trimpath -ldflags='-s -w' -o /out/media-pipeline ./cmd/media-pipeline \
-    && go build -trimpath -ldflags='-s -w' -o /out/denyra-restore-check ./cmd/denyra-restore-check
+    && go build -trimpath -ldflags='-s -w' -o /out/denyra-restore-check ./cmd/denyra-restore-check \
+    && go build -trimpath -ldflags='-s -w' -o /out/denyra-acceptance-fixture ./cmd/denyra-acceptance-fixture
 
 FROM docker.io/library/debian:13.6-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258 AS python-builder
 COPY deploy/docker/debian.sources /etc/apt/sources.list.d/debian.sources
@@ -44,6 +45,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && groupadd --gid 1000 denyra && useradd --uid 1000 --gid 1000 --home-dir /nonexistent --shell /usr/sbin/nologin denyra
 COPY --from=go-builder /out/media-pipeline /app/media-pipeline
 COPY --from=go-builder /out/denyra-restore-check /app/denyra-restore-check
+COPY --from=go-builder /out/denyra-acceptance-fixture /app/denyra-acceptance-fixture
 COPY --from=python-builder /opt/python /opt/python
 COPY --chmod=0444 deploy/docker/generated/pipeline-build-provenance.json /app/build-provenance.json
 COPY --chmod=0444 dependencies.lock.json /app/dependencies.lock.json

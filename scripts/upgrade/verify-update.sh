@@ -60,7 +60,7 @@ go test -race ./...
 grep -q "default = \"$current_hash\"" deploy/docker/docker-bake.hcl || { echo "docker-bake lock label was not updated" >&2; exit 1; }
 scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service gateway --output deploy/docker/generated/gateway-build-provenance.json
 scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service pipeline --output deploy/docker/generated/pipeline-build-provenance.json
-docker buildx bake -f deploy/docker/docker-bake.hcl gateway pipeline lidarr navidrome --load
+BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx bake -f deploy/docker/docker-bake.hcl gateway pipeline lidarr navidrome --load
 
 gateway_id=$(docker image inspect denyra/acquisition-gateway:local --format '{{.Id}}')
 pipeline_id=$(docker image inspect denyra/media-pipeline:local --format '{{.Id}}')

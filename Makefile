@@ -1,7 +1,7 @@
 .PHONY: fmt vet test race verify-lock compose-config check-clean generate-provenance verify
 
 fmt:
-	gofmt -w cmd internal migrations tests scripts
+	gofmt -w $$(find cmd internal migrations tests scripts -type f -name '*.go')
 
 vet:
 	go vet ./...

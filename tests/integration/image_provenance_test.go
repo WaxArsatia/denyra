@@ -79,6 +79,24 @@ func TestBakeTargetsUseRepositoryBuildContext(t *testing.T) {
 	}
 }
 
+func TestImageBuildEntryPointsDisableNondeterministicDefaultAttestations(t *testing.T) {
+	t.Parallel()
+	repoRoot := filepath.Clean(filepath.Join("..", ".."))
+	for _, relative := range []string{
+		".github/workflows/ci.yml",
+		"docs/runbooks/install.md",
+		"scripts/upgrade/verify-update.sh",
+	} {
+		content, err := os.ReadFile(filepath.Join(repoRoot, relative))
+		if err != nil {
+			t.Fatalf("read %s: %v", relative, err)
+		}
+		if strings.Contains(string(content), "docker buildx bake") && !strings.Contains(string(content), "BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx bake") {
+			t.Errorf("%s can emit nondeterministic default provenance attestations", relative)
+		}
+	}
+}
+
 func TestRuntimeImageProvenanceMatchesLock(t *testing.T) {
 	if os.Getenv("TEST_DOCKER_IMAGES") != "1" {
 		t.Skip("set TEST_DOCKER_IMAGES=1 after building the runtime images")

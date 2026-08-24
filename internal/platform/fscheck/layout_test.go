@@ -86,6 +86,13 @@ func TestCheckDirectoriesValidatesGatewaySubset(t *testing.T) {
 	}
 }
 
+func TestCheckDirectoriesRequiresMountedReferencePath(t *testing.T) {
+	root := t.TempDir()
+	if _, err := fscheck.CheckDirectories(root, nil, os.Getuid(), os.Getgid(), 0o700); err == nil {
+		t.Fatal("CheckDirectories accepted an empty mounted path set")
+	}
+}
+
 func makeLayout(t *testing.T, libraryReadOnly bool) fscheck.Layout {
 	t.Helper()
 	root := t.TempDir()

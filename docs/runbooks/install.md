@@ -42,11 +42,11 @@ go run github.com/a-h/templ/cmd/templ@v0.3.1020 generate
 gofmt -w $(find cmd internal migrations tests scripts -name '*.go' -type f)
 go vet ./...
 go test -race ./...
-docker buildx bake -f deploy/docker/docker-bake.hcl --load
+BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx bake -f deploy/docker/docker-bake.hcl --load
 docker compose -f deploy/compose.yaml config --quiet
 ```
 
-Compose uses full `repository:tag@sha256:digest` references on `linux/amd64`. Never replace one with a floating tag. When a custom image is rebuilt, update `deploy/images.lock.json` and the matching Compose reference before deployment.
+Compose uses full `repository:tag@sha256:digest` references on `linux/amd64`. Never replace one with a floating tag. Default BuildKit attestations are disabled because their generated metadata changes the manifest-list digest across otherwise identical builds; Denyra embeds its verified immutable provenance document in each custom image instead. When a custom image is rebuilt, update `deploy/images.lock.json` and the matching Compose reference before deployment.
 
 ## Start and configure
 

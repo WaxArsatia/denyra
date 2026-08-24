@@ -17,7 +17,7 @@ jobs:
           go-version: 1.27.0
           cache: true
       - name: Format
-        run: test -z "$(gofmt -l cmd internal migrations tests scripts)"
+        run: test -z "$(gofmt -l $(find cmd internal migrations tests scripts -type f -name '*.go'))"
       - name: Vet
         run: go vet ./...
       - name: Regenerate templ views
@@ -53,4 +53,4 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Build reproducible application images
-        run: docker buildx bake gateway pipeline --allow=fs.read=. --file deploy/docker/docker-bake.hcl --set '*.platform=linux/amd64'
+        run: BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx bake gateway pipeline --allow=fs.read=. --file deploy/docker/docker-bake.hcl --set '*.platform=linux/amd64'

@@ -119,7 +119,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				SourceRoots:          map[domain.Source]string{domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC, domain.SourceOther: prepared.Config.Filesystem.DownloadsOther, domain.SourceManual: prepared.Config.Filesystem.IncomingManual},
 				MaxInlineTransitions: prepared.Config.Acquisition.MaxInlineTransitions,
 			}
-			admission := &application.AdmissionGate{DataRoot: prepared.Config.Filesystem.DataRoot, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}
+			admission := &application.AdmissionGate{DataRoot: prepared.Config.Filesystem.Work, MinimumFreeBytes: prepared.Config.Storage.MinimumFreeBytes, MinimumFreePercent: prepared.Config.Storage.MinimumFreePercent}
 			var maintenanceEnabled int
 			if err := prepared.DB.QueryRowContext(ctx, `SELECT enabled FROM runtime_flags WHERE key='maintenance'`).Scan(&maintenanceEnabled); err != nil {
 				return err
