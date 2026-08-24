@@ -23,11 +23,19 @@ Stop stateful services if they still respond. Preserve the database and WAL file
 
 ## External provider outage
 
-MusicBrainz, LRCLIB, Soulseek, and fallback provider failures appear as degraded dependencies. They do not make local readiness fail. Leave queued work in place and retry after the provider recovers.
+MusicBrainz, LRCLIB, Soulseek, and fallback provider failures appear as degraded dependencies. They do not make local readiness fail. Leave queued work in place. For a failed manual catalog item, use its Retry button after the provider recovers.
+
+## Interrupted browser upload
+
+Open Incoming and use Retry for the failed file. Denyra resumes the durable session and keeps completed files. If finalization fails, check free space and the incoming/uploading path before retrying. Do not rename `.partial` files by hand.
+
+## Missing artwork or Navidrome release
+
+Check the submitted preview and the final release directory first. For an Unmanaged release, confirm that Navidrome scanned its Unmanaged folder. For a Managed release, check the Lidarr Manual Import result and then rescan Navidrome. A destination collision stays blocked for review and must not be overwritten.
 
 ## Stuck media work
 
-Restart the owning Denyra service once, then inspect its logs and durable state. Do not move an orphan processing directory until it has been matched to a candidate. Keep ambiguous or partially mutated releases in quarantine.
+Restart the owning Denyra service once, then inspect its logs and durable state. Startup resumes unfinished upload finalization, unmanaged imports, explicit catalog checks, and confirmed migrations. It does not start a new catalog check. Do not move an orphan processing directory until it has been matched to a candidate. Keep ambiguous or partially mutated releases in quarantine.
 
 ## Account or secret exposure
 

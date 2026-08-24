@@ -1,6 +1,6 @@
 # Denyra
 
-Denyra mengelola akuisisi, validasi, import, dan streaming koleksi FLAC pribadi. Lidarr memiliki library akhir. Navidrome menyediakan playback melalui OpenSubsonic, termasuk artwork dan sidecar lyrics yang sudah masuk ke library.
+Denyra mengelola akuisisi, validasi, import, dan streaming koleksi FLAC pribadi. Album yang terdaftar di Lidarr masuk ke library Managed. Album lain tetap dapat diunggah ke library Unmanaged, diputar melalui Navidrome, lalu dipindahkan ke Managed setelah ada kecocokan katalog yang dikonfirmasi.
 
 Stack ini ditujukan untuk mesin lokal atau server privat. Otomasi DNS, TLS, reverse proxy, firewall, dan VPN tidak termasuk.
 
@@ -21,10 +21,10 @@ Host Linux memerlukan:
 - Git
 - Docker Engine
 - Docker Compose v2
-- ruang untuk library, download sementara, processing, dan quarantine
+- ruang untuk library Managed dan Unmanaged, upload, download sementara, processing, dan quarantine
 - akun Soulseek
 
-Host tidak perlu memasang Go, Node.js, Python, atau compiler lain untuk deployment. Build container memakai image runtime resmi dan mengambil release binary upstream yang sesuai.
+Host tidak perlu memasang Go, Node.js, Python, templ, ffmpeg, flac, atau compiler lain. Semua tool runtime berada di dalam container.
 
 ## Instalasi
 
@@ -47,6 +47,16 @@ Lihat akun yang dibuat:
 ```sh
 ./denyra credentials
 ```
+
+## Upload album yang belum ada di Lidarr
+
+1. Buka `http://localhost:8090/incoming`.
+2. Drop atau pilih satu folder album. Upload SFTP ke `localhost:2022` juga masuk ke alur review yang sama.
+3. Periksa metadata dan cover, lalu pilih Unmanaged dan tekan Submit.
+4. Buka Unmanaged, pilih album, lalu tekan Check selected.
+5. Tinjau hasilnya. Hanya hasil Exact candidate yang dapat dipilih pada form Confirm selected migrations.
+
+Check selected hanya membaca katalog. File baru dipindahkan ke Lidarr setelah konfirmasi terpisah.
 
 ## URL lokal
 
@@ -84,7 +94,7 @@ Snapshot update hanya untuk rollback cepat dan tidak menyimpan library. Untuk di
 DENYRA_RESTIC_REPOSITORY_PATH=/mnt/denyra-restic ./denyra backup
 ```
 
-Backup Restic terenkripsi mencakup config, secrets, library, state, incoming, processing, quarantine, dan salinan SQLite yang konsisten. Download mentah, cache, update snapshot, dan workspace backup dikecualikan.
+Backup Restic terenkripsi mencakup config, secrets, kedua library, state, upload yang belum selesai, processing, quarantine, dan salinan SQLite yang konsisten. Download mentah, cache, update snapshot, dan workspace backup dikecualikan.
 
 ## Pengembangan
 

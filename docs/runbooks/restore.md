@@ -16,6 +16,7 @@ The target must be empty and separate from the live deployment. Restore uses con
 
 - every recorded file checksum
 - Gateway and Pipeline database integrity and migration ledgers
+- Managed and Unmanaged FLAC files plus incomplete uploads and processing state
 - the recorded Git commit
 - ownership and mode expectations
 - canonical paths, no symlinks, and the single-filesystem media layout
@@ -28,6 +29,6 @@ scripts/restore/cutover-check.sh
 
 ## Manual cutover
 
-Stop the stateful services, point the deployment data root at the verified `source` tree, then start the stack and check status, playback, uploads, and recent logs. Keep the old tree untouched until the restored deployment has passed its observation period.
+Stop the stateful services, point the deployment data root at the verified `source` tree, then start the stack. Check both Navidrome libraries, one upload, unfinished upload sessions, catalog check batches, confirmed migrations, and recent logs. Startup resumes durable nonterminal work but does not create a new catalog check batch. Keep the old tree untouched until the restored deployment has passed its observation period.
 
 To reverse the cutover, stop the stack and point it back to the old tree. Do not copy one tree over the other.

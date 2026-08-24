@@ -69,7 +69,7 @@ type Report struct {
 	VerifiedAt           time.Time      `json:"verified_at"`
 }
 
-var sourceDirectories = []string{"library", "state", "incoming", "processing", "quarantine"}
+var sourceDirectories = []string{"library", "library-unmanaged", "state", "incoming", "processing", "quarantine"}
 
 func Create(options CreateOptions) (Manifest, error) {
 	if options.BackupID == "" || options.SourceRoot == "" || options.WorkspaceRoot == "" || options.CreatedAt.IsZero() {

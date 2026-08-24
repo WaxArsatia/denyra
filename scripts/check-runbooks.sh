@@ -3,7 +3,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runbook_root="$repo_root/docs/runbooks"
 
-required="install.md backup.md restore.md upgrade.md incidents.md clients.md security-boundary.md"
+required="install.md backup.md restore.md upgrade.md incidents.md clients.md security-boundary.md acceptance-evidence.md"
 for name in $required; do
   [ -s "$runbook_root/$name" ] || { echo "missing runbook: $name" >&2; exit 1; }
 done
@@ -57,5 +57,10 @@ grep -q 'http://localhost:8090' "$runbook_root/clients.md"
 grep -q 'opus-256' "$runbook_root/clients.md"
 grep -q 'opus-160' "$runbook_root/clients.md"
 grep -q 'restore drill' "$runbook_root/backup.md"
+grep -q 'library-unmanaged' "$repo_root/scripts/backup/backup.sh"
+grep -qi 'Check selected' "$repo_root/README.md" "$runbook_root/install.md"
+grep -qi 'Confirm selected migrations' "$repo_root/README.md" "$runbook_root/install.md"
+grep -qi 'incomplete.*upload' "$runbook_root/backup.md" "$runbook_root/restore.md"
+grep -qi 'Managed.*Unmanaged' "$runbook_root/clients.md"
 
 echo "runbooks verified"

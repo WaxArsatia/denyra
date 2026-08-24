@@ -103,6 +103,15 @@ denyra_setup_start_all() {
   done
 }
 
+denyra_setup_verify_layout() {
+  for denyra_setup_path in \
+    library library-unmanaged incoming/manual incoming/uploading \
+    processing/work processing/approved quarantine state/gateway state/pipeline
+  do
+    [ -d "$DENYRA_DATA_ROOT/$denyra_setup_path" ] || denyra_die "data layout is incomplete: $denyra_setup_path"
+  done
+}
+
 denyra_setup() {
   git --version >/dev/null 2>&1 || denyra_die "Git is required"
   docker version >/dev/null 2>&1 || denyra_die "Docker Engine is required"
@@ -147,6 +156,7 @@ denyra_setup() {
   fi
 
   "$repo_root/scripts/bootstrap-data-layout.sh" --target "$DENYRA_DATA_ROOT" --uid "$denyra_setup_uid" --gid "$denyra_setup_gid"
+  denyra_setup_verify_layout
 
   for denyra_setup_config in gateway.toml pipeline.toml navidrome.toml navidrome-lyrics.toml slskd.yml
   do

@@ -10,6 +10,7 @@ denyra_smoke() {
   denyra_smoke_compose ps
   denyra_smoke_compose exec -T acquisition-gateway /app/acquisition-gateway healthcheck --address 127.0.0.1:8081 >/dev/null
   denyra_smoke_compose exec -T media-pipeline /app/media-pipeline healthcheck --address 127.0.0.1:8081 >/dev/null
+  denyra_smoke_compose exec -T media-pipeline /bin/sh -ec 'for path in /data/library /data/library-unmanaged /data/incoming /data/processing /data/quarantine; do test -d "$path"; done'
   denyra_smoke_compose exec -T lidarr curl -fsS http://127.0.0.1:8686/ping >/dev/null
   denyra_smoke_compose exec -T slskd wget -q -O /dev/null http://127.0.0.1:5030/health
   denyra_smoke_compose exec -T sftpgo sftpgo ping >/dev/null

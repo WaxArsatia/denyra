@@ -11,7 +11,7 @@ Use these addresses:
 - SFTPGo WebAdmin: `http://localhost:8080`
 - SFTP upload: `localhost:2022`
 
-In Feishin, add a Navidrome or OpenSubsonic server with `http://localhost:4533`, then sign in with the Navidrome account shown by `./denyra credentials`.
+In Feishin, add a Navidrome or OpenSubsonic server with `http://localhost:4533`, then sign in with the Navidrome account shown by `./denyra credentials`. Use Feishin's music-folder or library filter to show Managed, Unmanaged, or both.
 
 ## Private server
 
@@ -19,4 +19,6 @@ Replace `localhost` with the server's LAN address, for example `http://server-la
 
 Use original quality on a fast LAN when you want the FLAC master. Lower bitrate or server transcoding remains a client preference and does not modify the master. Synchronized lyrics use the `.lrc` sidecar associated with each imported track. Album and artist artwork come from the files and metadata visible in the Navidrome library.
 
-If artwork or lyrics are missing after import, check that Lidarr imported the sidecar files and image files into the final library, then run a Navidrome rescan.
+For remote playback, `opus-256` is the higher-quality preset and `opus-160` uses less bandwidth. Both leave the source FLAC unchanged.
+
+If artwork or lyrics are missing, check the final release directory first. Lidarr owns Managed files. Denyra owns Unmanaged files. Run a Navidrome rescan after confirming the relevant cover and lyric sidecars exist.

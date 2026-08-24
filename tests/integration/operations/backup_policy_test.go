@@ -40,7 +40,7 @@ func TestBackupProfileAndRunbookScriptAreDeterministic(t *testing.T) {
 		}
 	}
 	for _, included := range []string{
-		"/source/config", "/source/secrets", "/source/data/library", "/source/data/state",
+		"/source/config", "/source/secrets", "/source/data/library", "/source/data/library-unmanaged", "/source/data/state",
 		"/source/data/incoming", "/source/data/processing", "/source/data/quarantine", "/workspace/$DENYRA_BACKUP_ID",
 	} {
 		if !strings.Contains(script, included) {

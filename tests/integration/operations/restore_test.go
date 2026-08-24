@@ -53,6 +53,23 @@ func TestRestoreFixtureVerifiesChecksumsDatabasesAndLayout(t *testing.T) {
 	if report.GitCommit != strings.Repeat("a", 40) || report.ChecksumFailures != 0 || report.FileCount == 0 || report.DatabaseVersions["gateway"] == 0 || report.DatabaseVersions["pipeline"] == 0 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
+	for _, path := range []string{
+		"library-unmanaged/Kaleb J/OFF GUARD (2024)/01 - Untukmu.flac",
+		"incoming/uploading/session-1/01.flac.partial",
+	} {
+		if !manifestHasSourcePath(manifest, path) {
+			t.Errorf("restore manifest missing %q", path)
+		}
+	}
+	for _, service := range []string{"gateway", "pipeline"} {
+		steps, err := migrations.For(service)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := report.DatabaseVersions[service], steps[len(steps)-1].Sequence; got != want {
+			t.Errorf("%s migration version=%d want=%d", service, got, want)
+		}
+	}
 }
 
 func TestRestoreFixtureRejectsChangedLibraryFile(t *testing.T) {
@@ -70,6 +87,31 @@ func TestRestoreFixtureRejectsChangedLibraryFile(t *testing.T) {
 	}
 	if _, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root}); err == nil {
 		t.Fatal("changed library file passed restore verification")
+	}
+}
+
+func TestRestoreFixtureRejectsChangedUnmanagedOrIncompleteUpload(t *testing.T) {
+	for _, relative := range []string{
+		"library-unmanaged/Kaleb J/OFF GUARD (2024)/01 - Untukmu.flac",
+		"incoming/uploading/session-1/01.flac.partial",
+	} {
+		t.Run(relative, func(t *testing.T) {
+			root, source, workspace := restoreFixture(t)
+			manifest, err := denyrarestore.Create(denyrarestore.CreateOptions{BackupID: "fixture-backup", GitCommit: strings.Repeat("a", 40), SourceRoot: source, WorkspaceRoot: workspace, CreatedAt: time.Now().UTC()})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := denyrarestore.WriteManifest(filepath.Join(workspace, "manifest.json"), manifest); err != nil {
+				t.Fatal(err)
+			}
+			installRestoredDatabases(t, source, workspace)
+			if err := os.WriteFile(filepath.Join(source, filepath.FromSlash(relative)), []byte("changed"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := denyrarestore.Verify(context.Background(), denyrarestore.VerifyOptions{RestoreRoot: root}); err == nil {
+				t.Fatalf("changed %s passed restore verification", relative)
+			}
+		})
 	}
 }
 
@@ -97,15 +139,21 @@ func restoreFixture(t *testing.T) (string, string, string) {
 	source := filepath.Join(root, "source")
 	workspace := filepath.Join(root, "workspace", "fixture-backup")
 	for _, directory := range []string{
-		filepath.Join(source, "library/Artist/Album"), filepath.Join(source, "state/gateway"),
+		filepath.Join(source, "library/Artist/Album"), filepath.Join(source, "library-unmanaged/Kaleb J/OFF GUARD (2024)"), filepath.Join(source, "state/gateway"),
 		filepath.Join(source, "state/pipeline"), filepath.Join(source, "incoming"),
-		filepath.Join(source, "processing"), filepath.Join(source, "quarantine"), filepath.Join(workspace, "config"),
+		filepath.Join(source, "incoming/uploading/session-1"), filepath.Join(source, "processing"), filepath.Join(source, "quarantine"), filepath.Join(workspace, "config"),
 	} {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if err := os.WriteFile(filepath.Join(source, "library/Artist/Album/01.flac"), []byte("fixture-flac"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "library-unmanaged/Kaleb J/OFF GUARD (2024)/01 - Untukmu.flac"), []byte("fixture-unmanaged-flac"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "incoming/uploading/session-1/01.flac.partial"), []byte("partial-upload"), 0o640); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"gateway.toml", "pipeline.toml", "navidrome.toml", "navidrome-lyrics.toml", "slskd.yml"} {
@@ -117,6 +165,15 @@ func restoreFixture(t *testing.T) (string, string, string) {
 		createRestoreDatabase(t, service, filepath.Join(workspace, service+".db"))
 	}
 	return root, source, workspace
+}
+
+func manifestHasSourcePath(manifest denyrarestore.Manifest, path string) bool {
+	for _, record := range manifest.SourceFiles {
+		if record.Path == path {
+			return true
+		}
+	}
+	return false
 }
 
 func createRestoreDatabase(t *testing.T, service, path string) {

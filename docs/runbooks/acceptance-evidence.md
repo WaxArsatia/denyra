@@ -9,8 +9,8 @@ The deployment workflow is checked through automated integration tests and dispo
 - update pulls and builds before stopping the active stack
 - an unhealthy candidate restores the prior config, state, and six running image IDs
 - update snapshots exclude the library and retain failed candidate state
-- backup includes the external recovery set and excludes downloads, cache, and temporary data
-- restore verifies file checksums, both Denyra databases, migration ledgers, ownership, and filesystem layout
+- backup includes both libraries, incomplete uploads, processing data, and durable migration state while excluding downloads, cache, and temporary backup data
+- restore verifies Managed and Unmanaged checksums, incomplete uploads, both Denyra databases, migration ledgers, ownership, and filesystem layout
 
 The forced-update acceptance test uses a local temporary Git remote and an acceptance-only Compose health failure. It does not add a production switch that can disable healthchecks.
 

@@ -242,6 +242,15 @@ func TestSetupCreatesExternalDeploymentState(t *testing.T) {
 	assertMode(t, filepath.Join(f.home, "config"), 0o750)
 	assertMode(t, filepath.Join(f.home, "data"), 0o750)
 	assertMode(t, filepath.Join(f.home, "credentials.txt"), 0o600)
+	for _, relative := range []string{
+		"library", "library-unmanaged", "incoming/manual", "incoming/uploading",
+		"processing/work", "processing/approved", "quarantine", "state/pipeline",
+	} {
+		info, err := os.Stat(filepath.Join(f.home, "data", filepath.FromSlash(relative)))
+		if err != nil || !info.IsDir() {
+			t.Errorf("setup root %s missing: %v", relative, err)
+		}
+	}
 	for _, name := range setupSecretNames {
 		path := filepath.Join(f.home, "secrets", name)
 		content, err := os.ReadFile(path)
@@ -274,6 +283,16 @@ func TestSetupCreatesExternalDeploymentState(t *testing.T) {
 		t.Fatalf("locator=%q err=%v", locator, err)
 	}
 	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+}
+
+func TestSetupUsesContainersWithoutHostCompilerSteps(t *testing.T) {
+	root := repositoryRoot(t)
+	scripts := readText(t, filepath.Join(root, "scripts/manage/setup.sh")) + readText(t, filepath.Join(root, "scripts/manage/smoke.sh"))
+	for _, forbidden := range []string{"go build", "go run", "python ", "pip ", "npm ", "templ ", "ffmpeg ", "flac "} {
+		if strings.Contains(scripts, forbidden) {
+			t.Errorf("setup requires host build/media command %q", forbidden)
+		}
+	}
 }
 
 func TestSetupIsIdempotent(t *testing.T) {

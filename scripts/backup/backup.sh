@@ -45,7 +45,7 @@ denyra_restore_tool \
   media-pipeline create --source /data-source --workspace /workspace \
   --backup-id "$DENYRA_BACKUP_ID" --git-commit "$git_commit"
 
-denyra_restic backup /source/config /source/secrets /source/data/library /source/data/state \
+denyra_restic backup /source/config /source/secrets /source/data/library /source/data/library-unmanaged /source/data/state \
   /source/data/incoming /source/data/processing /source/data/quarantine /workspace/$DENYRA_BACKUP_ID \
   --exclude /source/credentials.txt --exclude /source/data/downloads --exclude /source/data/cache \
   --exclude /source/updates --exclude /source/data/backups \
