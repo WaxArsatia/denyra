@@ -234,13 +234,13 @@ services:
 
 configs:
   gateway_config:
-    file: ./config/gateway.toml
+    file: ${DENYRA_CONFIG_DIR:-./config}/gateway.toml
   pipeline_config:
-    file: ./config/pipeline.toml
+    file: ${DENYRA_CONFIG_DIR:-./config}/pipeline.toml
   navidrome_config:
-    file: ./config/navidrome.toml
+    file: ${DENYRA_CONFIG_DIR:-./config}/navidrome.toml
   navidrome_lyrics_config:
-    file: ./config/navidrome-lyrics.toml
+    file: ${DENYRA_CONFIG_DIR:-./config}/navidrome-lyrics.toml
   slskd_secret_entrypoint:
     file: ./scripts/slskd-secret-entrypoint.sh
 

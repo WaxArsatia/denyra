@@ -65,23 +65,23 @@ denyra_unlock() {
 }
 
 denyra_atomic_file() {
-  target=$1
-  mode=$2
-  temporary=$target.tmp.$$
+  denyra_atomic_target=$1
+  denyra_atomic_mode=$2
+  denyra_atomic_temporary=$denyra_atomic_target.tmp.$$
   umask 077
-  trap 'rm -f "$temporary"' HUP INT TERM
-  cat > "$temporary"
-  chmod "$mode" "$temporary"
-  mv "$temporary" "$target"
+  trap 'rm -f "$denyra_atomic_temporary"' HUP INT TERM
+  cat > "$denyra_atomic_temporary"
+  chmod "$denyra_atomic_mode" "$denyra_atomic_temporary"
+  mv "$denyra_atomic_temporary" "$denyra_atomic_target"
   trap - HUP INT TERM
 }
 
 denyra_secret() {
-  name=$1
-  bytes=${2:-32}
-  target=$DENYRA_SECRETS_DIR/$name
-  [ -s "$target" ] && return 0
-  od -An -N"$bytes" -tx1 /dev/urandom | tr -d ' \n' | denyra_atomic_file "$target" 0600
+  denyra_secret_name=$1
+  denyra_secret_bytes=${2:-32}
+  denyra_secret_target=$DENYRA_SECRETS_DIR/$denyra_secret_name
+  [ -s "$denyra_secret_target" ] && return 0
+  od -An -N"$denyra_secret_bytes" -tx1 /dev/urandom | tr -d ' \n' | denyra_atomic_file "$denyra_secret_target" 0600
 }
 
 denyra_compose() {

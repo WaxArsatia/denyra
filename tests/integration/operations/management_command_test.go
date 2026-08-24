@@ -2,6 +2,7 @@ package operations_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,12 +146,13 @@ func TestDeploymentRootValidation(t *testing.T) {
 
 func TestDeploymentRootNeedNotExistBeforeSetup(t *testing.T) {
 	f := newManagementFixture(t)
-	out, err := f.command("setup").CombinedOutput()
-	if err == nil || !strings.Contains(string(out), "command unavailable in this checkout") {
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	out, err := f.setupCommand().CombinedOutput()
+	if err != nil {
 		t.Fatalf("err=%v output=%q", err, out)
 	}
-	if _, err := os.Stat(f.home); !os.IsNotExist(err) {
-		t.Fatalf("dispatcher unexpectedly created deployment root: %v", err)
+	if info, err := os.Stat(f.home); err != nil || !info.IsDir() {
+		t.Fatalf("setup did not create deployment root: %v", err)
 	}
 }
 
@@ -165,5 +167,146 @@ func TestOperationLockRejectsConcurrentOperation(t *testing.T) {
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "another Denyra operation is running") {
 		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
+var setupSecretNames = []string{
+	"internal_bearer",
+	"audit_key",
+	"bootstrap_admin",
+	"navidrome_admin",
+	"sftpgo_admin",
+	"sftpgo_upload",
+	"slskd_api_key",
+	"slskd_web_password",
+	"restic_password",
+	"soulseek_username",
+	"soulseek_password",
+}
+
+func (f *managementFixture) setupCommand() *exec.Cmd {
+	f.t.Helper()
+	f.writeExecutable("git", `#!/bin/sh
+case "$*" in
+  "--version") echo "git version test" ;;
+  "rev-parse --short=12 HEAD") echo "123456789abc" ;;
+  "rev-parse HEAD") echo "123456789abcdef0123456789abcdef012345678" ;;
+  *) exit 2 ;;
+esac
+`)
+	cmd := f.command("setup")
+	cmd.Env = append(cmd.Env,
+		"DENYRA_SOULSEEK_USERNAME=test-listener",
+		"DENYRA_SOULSEEK_PASSWORD=test-password",
+	)
+	return cmd
+}
+
+func (f *managementFixture) runSetup() {
+	f.t.Helper()
+	out, err := f.setupCommand().CombinedOutput()
+	if err != nil {
+		f.t.Fatalf("setup: %v\n%s", err, out)
+	}
+}
+
+func TestSetupCreatesExternalDeploymentState(t *testing.T) {
+	f := newManagementFixture(t)
+	f.runSetup()
+
+	assertMode(t, filepath.Join(f.home, "secrets"), 0o700)
+	assertMode(t, filepath.Join(f.home, "config"), 0o750)
+	assertMode(t, filepath.Join(f.home, "data"), 0o750)
+	assertMode(t, filepath.Join(f.home, "credentials.txt"), 0o600)
+	for _, name := range setupSecretNames {
+		path := filepath.Join(f.home, "secrets", name)
+		content, err := os.ReadFile(path)
+		if err != nil || len(bytes.TrimSpace(content)) == 0 {
+			t.Fatalf("secret %s missing/empty: %v", name, err)
+		}
+		assertMode(t, path, 0o600)
+	}
+
+	env, err := os.ReadFile(filepath.Join(f.home, "config", "denyra.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"DENYRA_HOME=" + f.home,
+		"DENYRA_CONFIG_DIR=" + filepath.Join(f.home, "config"),
+		"DENYRA_SECRETS_DIR=" + filepath.Join(f.home, "secrets"),
+		"DENYRA_DATA_ROOT=" + filepath.Join(f.home, "data"),
+		fmt.Sprintf("DENYRA_MEDIA_UID=%d", os.Getuid()),
+		fmt.Sprintf("DENYRA_MEDIA_GID=%d", os.Getgid()),
+		"DENYRA_IMAGE_TAG=123456789abc",
+		"DENYRA_GIT_COMMIT=123456789abcdef0123456789abcdef012345678",
+	} {
+		if !strings.Contains(string(env), want+"\n") {
+			t.Errorf("denyra.env missing %q:\n%s", want, env)
+		}
+	}
+	locator, err := os.ReadFile(filepath.Join(f.repo, ".denyra-home"))
+	if err != nil || strings.TrimSpace(string(locator)) != f.home {
+		t.Fatalf("locator=%q err=%v", locator, err)
+	}
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+}
+
+func TestSetupIsIdempotent(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	f.runSetup()
+	before := readSetupSecrets(t, f.home)
+	f.runSetup()
+	after := readSetupSecrets(t, f.home)
+	for name, content := range before {
+		if !bytes.Equal(content, after[name]) {
+			t.Errorf("secret %s changed on rerun", name)
+		}
+	}
+}
+
+func TestSetupResumesMissingGeneratedConfig(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	f.runSetup()
+	before := readSetupSecrets(t, f.home)
+	missing := filepath.Join(f.home, "config", "navidrome.toml")
+	if err := os.Remove(missing); err != nil {
+		t.Fatal(err)
+	}
+	f.runSetup()
+	if info, err := os.Stat(missing); err != nil || info.Size() == 0 {
+		t.Fatalf("missing config was not restored: %v", err)
+	}
+	after := readSetupSecrets(t, f.home)
+	for name, content := range before {
+		if !bytes.Equal(content, after[name]) {
+			t.Errorf("secret %s changed while resuming", name)
+		}
+	}
+}
+
+func readSetupSecrets(t *testing.T, home string) map[string][]byte {
+	t.Helper()
+	result := make(map[string][]byte, len(setupSecretNames))
+	for _, name := range setupSecretNames {
+		content, err := os.ReadFile(filepath.Join(home, "secrets", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[name] = content
+	}
+	return result
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("%s mode=%#o want=%#o", path, got, want)
 	}
 }

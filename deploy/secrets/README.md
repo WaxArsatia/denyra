@@ -1,23 +1,26 @@
 # Denyra deployment secrets
 
-Create these files before starting Compose:
+`./denyra setup` creates these files under `$DENYRA_HOME/secrets`:
 
 ```text
 internal_bearer
 audit_key
 bootstrap_admin
-lidarr_api_key
+navidrome_admin
+sftpgo_admin
+sftpgo_upload
+slskd_api_key
+slskd_web_password
 soulseek_username
 soulseek_password
 restic_password
 ```
 
-Secret values never belong in Git, TOML, environment variables, logs, or audit
-rows. Generate bearer, audit, API, and password material with a CSPRNG. The
-`bootstrap_admin` file is consumed only on first run and is not a permanent
-authentication path.
+The setup command generates values with the host CSPRNG and adopts existing,
+nonempty legacy files when present. Lidarr's API key is copied from its
+persistent `config.xml` after first startup. Secret values never belong in Git,
+TOML, images, command arguments, logs, or audit rows.
 
-Set every file to mode `0400` when owned by the consuming service UID. Use mode
-`0440` only when sharing through the consuming service GID. Plain Docker Compose
-file-backed secrets preserve the host file permissions; Compose `uid`, `gid`,
-and `mode` fields are not enforced for file sources.
+The external secret directory uses mode `0700`; files use `0600`. Plain Docker
+Compose file-backed secrets preserve host permissions. Never commit generated
+deployment state or copy it back into this directory.

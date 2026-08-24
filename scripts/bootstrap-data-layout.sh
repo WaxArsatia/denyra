@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-	echo "usage: $0 --target /data --uid NUMERIC_UID --gid NUMERIC_GID" >&2
+	echo "usage: $0 --target ABSOLUTE_PATH --uid NUMERIC_UID --gid NUMERIC_GID" >&2
 	exit 2
 }
 
@@ -18,30 +18,38 @@ while [ "$#" -gt 0 ]; do
 	esac
 done
 
-[ "$target" = "/data" ] || { echo "target must be exactly /data" >&2; exit 1; }
+case "$target" in
+	/*) ;;
+	*) echo "target must be an absolute path" >&2; exit 1 ;;
+esac
+[ "$target" != "/" ] || { echo "target must not be /" >&2; exit 1; }
+case "$target" in
+	*//*|*/./*|*/../*|*/.|*/..|*/) echo "target must already be canonical" >&2; exit 1 ;;
+esac
 case "$owner_uid:$owner_gid" in
 	*[!0-9:]*|:*|*:) echo "uid and gid must be explicit numeric values" >&2; exit 1 ;;
 esac
-[ ! -L "$target" ] || { echo "/data must not be a symlink" >&2; exit 1; }
+[ ! -L "$target" ] || { echo "target must not be a symlink" >&2; exit 1; }
 
 for path in \
-	/data/downloads/slskd \
-	/data/downloads/spotiflac \
-	/data/downloads/other \
-	/data/incoming/manual \
-	/data/processing/work \
-	/data/processing/approved \
-	/data/quarantine \
-	/data/library \
-	/data/state/gateway \
-	/data/state/pipeline \
-	/data/state/lidarr \
-	/data/state/slskd \
-	/data/state/sftpgo \
-	/data/state/navidrome \
-	/data/cache/navidrome \
-	/data/backups
+	downloads/slskd \
+	downloads/spotiflac \
+	downloads/other \
+	incoming/manual \
+	processing/work \
+	processing/approved \
+	quarantine \
+	library \
+	state/gateway \
+	state/pipeline \
+	state/lidarr \
+	state/slskd \
+	state/sftpgo \
+	state/navidrome \
+	cache/navidrome \
+	backups
 do
+	path=$target/$path
 	mkdir -p -- "$path"
 	chown "$owner_uid:$owner_gid" -- "$path"
 	chmod 0750 -- "$path"
