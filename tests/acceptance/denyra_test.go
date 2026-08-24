@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +81,171 @@ func TestSetupReconcilesEmptyDeploymentAndRerunsCleanly(t *testing.T) {
 	if err != nil || string(content) != "keep-library-content\n" {
 		t.Fatalf("library fixture changed: %q err=%v", content, err)
 	}
+}
+
+func TestFailedUpdateRestoresPriorStateAndImages(t *testing.T) {
+	if os.Getenv("DENYRA_ACCEPTANCE_COMPOSE") != "1" {
+		t.Skip("set DENYRA_ACCEPTANCE_COMPOSE=1 to run update acceptance")
+	}
+	if err := exec.Command("docker", "info").Run(); err != nil {
+		t.Skipf("Docker is unavailable: %v", err)
+	}
+	repository, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporary := t.TempDir()
+	remote := filepath.Join(temporary, "remote.git")
+	working := filepath.Join(temporary, "working")
+	candidate := filepath.Join(temporary, "candidate")
+	runAcceptanceGit(t, "init", "--bare", remote)
+	runAcceptanceGit(t, "-C", remote, "symbolic-ref", "HEAD", "refs/heads/main")
+	runAcceptanceGit(t, "clone", repository, working)
+	runAcceptanceGit(t, "-C", working, "remote", "set-url", "origin", remote)
+	runAcceptanceGit(t, "-C", working, "push", "-u", "origin", "HEAD:main")
+
+	home := filepath.Join(temporary, "home")
+	if err := os.MkdirAll(filepath.Join(home, "data", "library", "fixture-artist", "fixture-album"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	libraryPath := filepath.Join(home, "data", "library", "fixture-artist", "fixture-album", "keep.txt")
+	libraryBytes := []byte("update-rollback-library\n")
+	if err := os.WriteFile(libraryPath, libraryBytes, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	project := fmt.Sprintf("denyra-update-acceptance-%d", os.Getpid())
+	override := filepath.Join(working, "deploy", "compose.acceptance.yaml")
+	environment := append(os.Environ(),
+		"DENYRA_HOME="+home,
+		"DENYRA_PROJECT_NAME="+project,
+		"DENYRA_COMPOSE_OVERRIDE="+override,
+		"DENYRA_SOULSEEK_USERNAME=acceptance-disabled",
+		"DENYRA_SOULSEEK_PASSWORD=acceptance-disabled",
+		"DENYRA_WAIT_SECONDS=240",
+	)
+	t.Cleanup(func() {
+		envFile := filepath.Join(home, "config", "denyra.env")
+		if _, err := os.Stat(envFile); err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			command := exec.CommandContext(ctx, "docker", "compose", "--project-name", project, "--env-file", envFile, "-f", filepath.Join(working, "deploy", "compose.yaml"), "-f", override, "down", "--volumes", "--remove-orphans")
+			command.Env = environment
+			_ = command.Run()
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		cleanup := exec.CommandContext(ctx, "docker", "run", "--rm", "-v", home+":/cleanup", "debian:stable-slim", "sh", "-c", fmt.Sprintf("chown -R %d:%d /cleanup && chmod -R u+rwX /cleanup", os.Getuid(), os.Getgid()))
+		_ = cleanup.Run()
+	})
+
+	runSetupAcceptance(t, working, home, project, override, environment)
+	statePaths := map[string]string{
+		"acquisition-gateway": "gateway", "media-pipeline": "pipeline", "lidarr": "lidarr",
+		"slskd": "slskd", "sftpgo": "sftpgo", "navidrome": "navidrome",
+	}
+	for service, directory := range statePaths {
+		path := filepath.Join(home, "data", "state", directory, "update-sentinel")
+		if err := os.WriteFile(path, []byte("prior-"+service+"\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	priorImages := acceptanceImageIDs(t, working, home, project, override, environment, statePaths)
+
+	runAcceptanceGit(t, "clone", remote, candidate)
+	runAcceptanceGit(t, "-C", candidate, "config", "user.name", "Denyra Acceptance")
+	runAcceptanceGit(t, "-C", candidate, "config", "user.email", "acceptance@denyra.invalid")
+	if err := harness.InjectUpdateHealthFailure(filepath.Join(candidate, "deploy", "compose.acceptance.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	runAcceptanceGit(t, "-C", candidate, "add", "deploy/compose.acceptance.yaml")
+	runAcceptanceGit(t, "-C", candidate, "commit", "-m", "test: inject candidate health failure")
+	runAcceptanceGit(t, "-C", candidate, "push", "origin", "main")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	defer cancel()
+	update := exec.CommandContext(ctx, filepath.Join(working, "denyra"), "update")
+	update.Dir = working
+	update.Env = append(environment, "DENYRA_ACCEPTANCE_FAIL_HEALTH=1", "DENYRA_WAIT_SECONDS=30")
+	output, err := update.CombinedOutput()
+	if err == nil {
+		t.Fatalf("faulted update succeeded:\n%s", output)
+	}
+
+	for service, directory := range statePaths {
+		path := filepath.Join(home, "data", "state", directory, "update-sentinel")
+		content, readErr := os.ReadFile(path)
+		if readErr != nil || string(content) != "prior-"+service+"\n" {
+			t.Errorf("state %s=%q err=%v", service, content, readErr)
+		}
+	}
+	afterImages := acceptanceImageIDs(t, working, home, project, override, environment, statePaths)
+	for service, prior := range priorImages {
+		if afterImages[service] != prior {
+			t.Errorf("image %s=%s want %s", service, afterImages[service], prior)
+		}
+	}
+	if content, readErr := os.ReadFile(libraryPath); readErr != nil || string(content) != string(libraryBytes) {
+		t.Fatalf("library changed: %q err=%v", content, readErr)
+	}
+	snapshot := onlyUpdateSnapshot(t, filepath.Join(home, "updates"))
+	metadata, err := os.ReadFile(filepath.Join(snapshot, "metadata.env"))
+	if err != nil || !strings.Contains(string(metadata), "status=rolled_back\n") {
+		t.Fatalf("snapshot metadata=%q err=%v", metadata, err)
+	}
+	if _, err := os.Stat(filepath.Join(snapshot, "failed-state")); err != nil {
+		t.Fatalf("failed candidate state not retained: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(snapshot, "library")); !os.IsNotExist(err) {
+		t.Fatalf("library appeared in update snapshot: %v", err)
+	}
+}
+
+func runAcceptanceGit(t *testing.T, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", arguments...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
+}
+
+func acceptanceImageIDs(t *testing.T, repository, home, project, override string, environment []string, services map[string]string) map[string]string {
+	t.Helper()
+	result := make(map[string]string, len(services))
+	for service := range services {
+		container := acceptanceDockerOutput(t, repository, environment, "compose", "--project-name", project, "--env-file", filepath.Join(home, "config", "denyra.env"), "-f", filepath.Join(repository, "deploy", "compose.yaml"), "-f", override, "ps", "-q", service)
+		result[service] = acceptanceDockerOutput(t, repository, environment, "inspect", "--format", "{{.Image}}", container)
+	}
+	return result
+}
+
+func acceptanceDockerOutput(t *testing.T, repository string, environment []string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("docker", arguments...)
+	command.Dir = repository
+	command.Env = environment
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker %v: %v\n%s", arguments, err, output)
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func onlyUpdateSnapshot(t *testing.T, updates string) string {
+	t.Helper()
+	entries, err := os.ReadDir(updates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshots []string
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".pending-") {
+			snapshots = append(snapshots, filepath.Join(updates, entry.Name()))
+		}
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("update snapshots=%v", snapshots)
+	}
+	return snapshots[0]
 }
 
 type setupEvidence struct {
