@@ -140,6 +140,11 @@ services:
     image: ghcr.io/slskd/slskd:0.26.0@sha256:161e214a05b51404f6bb6ddd7e60b66ff674a2d8ad28a88dae5b3c1caf9c8c48
     platform: linux/amd64
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
+    entrypoint: ["/usr/bin/tini", "--", "/bin/bash", "/denyra/slskd-secret-entrypoint.sh", "/entrypoint.sh"]
+    command: ["./slskd"]
+    configs:
+      - source: slskd_secret_entrypoint
+        target: /denyra/slskd-secret-entrypoint.sh
     secrets:
       - soulseek_username
       - soulseek_password
@@ -255,6 +260,8 @@ configs:
     file: ./config/navidrome.toml
   navidrome_lyrics_config:
     file: ./config/navidrome-lyrics.toml
+  slskd_secret_entrypoint:
+    file: ./scripts/slskd-secret-entrypoint.sh
 
 secrets:
   internal_bearer:

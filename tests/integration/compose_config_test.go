@@ -23,11 +23,64 @@ type composeService struct {
 	Image       string                           `json:"image"`
 	Platform    string                           `json:"platform"`
 	User        string                           `json:"user"`
+	Entrypoint  []string                         `json:"entrypoint"`
+	Command     []string                         `json:"command"`
 	Environment map[string]string                `json:"environment"`
 	Networks    map[string]composeServiceNetwork `json:"networks"`
 	Volumes     []composeVolume                  `json:"volumes"`
 	Ports       []composePort                    `json:"ports"`
 	Healthcheck map[string]any                   `json:"healthcheck"`
+}
+
+func TestSlskdLoadsSoulseekCredentialsFromSecretFiles(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repository root: %v", err)
+	}
+	secretDir := t.TempDir()
+	usernamePath := filepath.Join(secretDir, "username")
+	passwordPath := filepath.Join(secretDir, "password")
+	if err := os.WriteFile(usernamePath, []byte("test-user\n"), 0o600); err != nil {
+		t.Fatalf("write username secret: %v", err)
+	}
+	if err := os.WriteFile(passwordPath, []byte("test-password\n"), 0o600); err != nil {
+		t.Fatalf("write password secret: %v", err)
+	}
+
+	scriptPath := filepath.Join(repoRoot, "deploy", "scripts", "slskd-secret-entrypoint.sh")
+	command := exec.Command(
+		"bash",
+		scriptPath,
+		"sh",
+		"-c",
+		`test "$SLSKD_SLSK_USERNAME" = test-user && test "$SLSKD_SLSK_PASSWORD" = test-password`,
+	)
+	command.Env = append(
+		os.Environ(),
+		"SLSKD_SLSK_USERNAME_FILE="+usernamePath,
+		"SLSKD_SLSK_PASSWORD_FILE="+passwordPath,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("load slskd credentials from secret files: %v\n%s", err, output)
+	}
+}
+
+func TestComposeRunsSlskdSecretEntrypoint(t *testing.T) {
+	document := renderCompose(t)
+	got := document.Services["slskd"].Entrypoint
+	want := []string{
+		"/usr/bin/tini",
+		"--",
+		"/bin/bash",
+		"/denyra/slskd-secret-entrypoint.sh",
+		"/entrypoint.sh",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("slskd entrypoint = %v, want %v", got, want)
+	}
+	if got := document.Services["slskd"].Command; !slices.Equal(got, []string{"./slskd"}) {
+		t.Fatalf("slskd command = %v, want [./slskd]", got)
+	}
 }
 
 type composeServiceNetwork struct {
