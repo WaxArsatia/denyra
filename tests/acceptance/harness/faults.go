@@ -9,23 +9,37 @@ import (
 )
 
 type FaultBoundary struct {
-	mu       sync.Mutex
-	Failures map[string]error
-	Calls    map[string]int
+	mu        sync.Mutex
+	Failures  map[string]error
+	Calls     map[string]int
+	Remaining map[string]int
 }
 
 func NewFaultBoundary() *FaultBoundary {
-	return &FaultBoundary{Failures: make(map[string]error), Calls: make(map[string]int)}
+	return &FaultBoundary{Failures: make(map[string]error), Calls: make(map[string]int), Remaining: make(map[string]int)}
 }
 
 func (boundary *FaultBoundary) Invoke(name string) error {
 	boundary.mu.Lock()
 	defer boundary.mu.Unlock()
 	boundary.Calls[name]++
+	if remaining := boundary.Remaining[name]; remaining > 0 {
+		boundary.Remaining[name] = remaining - 1
+		return errors.New("injected acceptance fault")
+	}
 	if err := boundary.Failures[name]; err != nil {
 		return err
 	}
 	return nil
+}
+
+func (boundary *FaultBoundary) FailNext(name string, count int) {
+	boundary.mu.Lock()
+	defer boundary.mu.Unlock()
+	if count < 0 {
+		count = 0
+	}
+	boundary.Remaining[name] = count
 }
 
 func (boundary *FaultBoundary) Fail(name string) {

@@ -8,8 +8,16 @@ services:
       DENYRA_ACCEPTANCE_EVIDENCE_FILE: /acceptance/state.json
     volumes:
       - type: bind
-        source: ${DENYRA_HOME}/acceptance
+        source: ${DENYRA_HOME:-/srv/denyra}/acceptance
         target: /acceptance
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/srv/denyra/data}/library
+        target: /acceptance-library-managed
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/srv/denyra/data}/library-unmanaged
+        target: /acceptance-library-unmanaged
+        read_only: true
     networks:
       denyra-control: {}
       denyra-acquisition: {}

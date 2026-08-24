@@ -18,9 +18,13 @@ The forced-update acceptance test uses a local temporary Git remote and an accep
 
 ```sh
 make verify
-go test ./tests/integration/operations -count=1
-DENYRA_ACCEPTANCE_COMPOSE=1 go test ./tests/acceptance -run 'Setup|FailedUpdateRestoresPriorStateAndImages' -count=1
+go test ./tests/acceptance -count=1
+make acceptance
 scripts/check-runbooks.sh
 ```
 
-External acquisition providers remain outside deterministic acceptance because they create third-party side effects. Local fixtures cover their orchestration boundaries.
+The default test uses local fixtures and never contacts MusicBrainz, Spotify, or another public provider. `make acceptance` adds the disposable Compose stack.
+
+`make live-compatibility` is an optional read-only schema smoke. Set `DENYRA_LIVE_MUSICBRAINZ_RELEASE_MBID`, `DENYRA_LIVE_LIDARR_URL`, `DENYRA_LIVE_LIDARR_API_KEY_FILE`, and `DENYRA_LIVE_NAVIDROME_PASSWORD_FILE` first. Optional URL and username overrides use the `DENYRA_LIVE_` prefix. The smoke logs in to Navidrome, reads libraries and scan status, reads Lidarr roots and profiles, and performs MusicBrainz search and lookup. It does not add, update, import, search Lidarr, or delete anything.
+
+Acceptance evidence includes HTTP request counts, Manual Import command counts, and SHA-256 manifests for both library roots. The lost-ack fixture records one Manual Import even when the same request is observed again.

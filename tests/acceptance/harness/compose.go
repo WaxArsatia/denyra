@@ -32,8 +32,8 @@ func StartCompose(t *testing.T) Compose {
 	}
 	root := t.TempDir()
 	for _, relative := range []string{
-		"downloads/slskd", "downloads/spotiflac", "downloads/other", "incoming/manual",
-		"processing/work", "processing/approved", "quarantine", "library", "backups",
+		"downloads/slskd", "downloads/slskd/incomplete", "downloads/spotiflac", "downloads/other", "incoming/manual", "incoming/uploading",
+		"processing/work", "processing/approved", "quarantine", "library", "library-unmanaged", "backups",
 		"state/gateway", "state/pipeline", "state/lidarr", "state/slskd", "state/sftpgo",
 		"state/navidrome", "cache/navidrome", "secrets", "acceptance",
 	} {
