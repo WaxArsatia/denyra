@@ -20,10 +20,28 @@ templ IncomingDetailContent(page IncomingDetailPage) {
 			}
 			</ul></div>
 		}
+		if page.Preview.Identity != nil {
+			<div class="notice"><strong>MusicBrainz identity: { page.Preview.Identity.Status }</strong><span> — { page.Preview.Identity.Reason }</span></div>
+		}
+		<section class="section"><h2>Album artwork</h2>
+			if page.Preview.Artwork.Source != "" {
+				<img src={ templ.SafeURL("/incoming/" + page.Preview.SubmissionID + "/artwork") } alt="Selected album artwork" width="320" height="320"/>
+				<p class="muted">Source: { string(page.Preview.Artwork.Source) }, { fmt.Sprint(page.Preview.Artwork.Width) }×{ fmt.Sprint(page.Preview.Artwork.Height) }.</p>
+			} else {
+				<p class="muted">No usable artwork found. Submission can still continue.</p>
+			}
+			<form method="post" enctype="multipart/form-data" action={ templ.SafeURL("/incoming/" + page.Preview.SubmissionID + "/artwork") }><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><label>Replace artwork <input type="file" name="artwork" accept="image/jpeg,image/png" required/></label><button type="submit">Replace artwork</button></form>
+		</section>
 		<form class="stack" method="post" action={ templ.SafeURL("/incoming/" + page.Preview.SubmissionID + "/submit") }>
 			<input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(page.Preview.Revision) }/><input type="hidden" name="preview_fingerprint" value={ page.Preview.Fingerprint }/>
 			<div class="grid"><label>Album artist <input name="album_artist" value={ page.Preview.Metadata.AlbumArtist } required/></label><label>Album <input name="album" value={ page.Preview.Metadata.Album } required/></label><label>Date <input name="date" value={ page.Preview.Metadata.Date }/></label><label>Edition <input name="edition" value={ page.Preview.Metadata.Edition }/></label></div>
-			<fieldset><legend>Destination</legend><label><input type="radio" name="destination" value="UNMANAGED" checked/> Unmanaged library</label><label><input type="radio" name="destination" value="MANAGED"/> Managed through Lidarr</label><label>MusicBrainz release ID <input name="release_mbid" pattern="[0-9a-f-]{36}"/></label></fieldset>
+			<fieldset><legend>Destination</legend>
+			if page.Preview.Identity != nil && page.Preview.Identity.SuggestedDestination == "MANAGED" {
+				<label><input type="radio" name="destination" value="UNMANAGED"/> Unmanaged library</label><label><input type="radio" name="destination" value="MANAGED" checked/> Managed through Lidarr</label>
+			} else {
+				<label><input type="radio" name="destination" value="UNMANAGED" checked/> Unmanaged library</label><label><input type="radio" name="destination" value="MANAGED"/> Managed through Lidarr</label>
+			}
+			<label>MusicBrainz release ID <input name="release_mbid" value={ ExactReleaseMBID(page.Preview) } pattern="[0-9a-f-]{36}"/></label></fieldset>
 			<div class="table-wrap"><table><caption>Editable track metadata</caption><thead><tr><th>File</th><th>Title</th><th>Artist</th><th>Disc</th><th>Track</th><th>Duration</th></tr></thead><tbody>
 			for _, track := range page.Preview.Metadata.Tracks {
 				<tr><td><input type="hidden" name="track_path" value={ track.RelativePath }/><span class="mono">{ track.RelativePath }</span></td><td><input name="track_title" value={ track.Title } required/></td><td><input name="track_artist" value={ track.Artist } required/></td><td><input name="disc_number" type="number" min="1" value={ fmt.Sprint(track.Disc) } required/></td><td><input name="track_number" type="number" min="1" value={ fmt.Sprint(track.Track) } required/></td><td class="duration">{ Millis(track.DurationMS) }</td></tr>

@@ -60,7 +60,7 @@ func (s IdentityService) Decide(ctx context.Context, plan domain.MetadataPlan, o
 	}
 	result, err := s.Search.SearchReleases(ctx, searchInput)
 	if err != nil {
-		return IdentityDecision{Status: IdentityError, Reason: err.Error()}, err
+		return IdentityDecision{Status: IdentityError, Evidence: result.Evidence, Reason: err.Error()}, err
 	}
 
 	decision := IdentityDecision{Status: IdentityNoMatch, Evidence: result.Evidence, Reason: "no release satisfies identity and duration checks"}

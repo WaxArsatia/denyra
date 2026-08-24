@@ -91,6 +91,12 @@ func StateClass(value any) string {
 }
 
 func Millis(value int64) string { return fmt.Sprintf("%d ms", value) }
+func ExactReleaseMBID(preview domain.SubmissionPreview) string {
+	if preview.Identity == nil {
+		return ""
+	}
+	return preview.Identity.ExactReleaseMBID
+}
 func OptionalMillis(value *int64) string {
 	if value == nil {
 		return "missing"

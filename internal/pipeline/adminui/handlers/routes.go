@@ -46,6 +46,8 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("GET /reviews/{candidateID}", console.review)
 	private.HandleFunc("POST /reviews/{candidateID}/{action}", console.reviewAction)
 	private.HandleFunc("GET /incoming", console.incoming)
+	private.HandleFunc("GET /incoming/{submissionID}/artwork", console.incomingArtwork)
+	private.HandleFunc("POST /incoming/{submissionID}/artwork", console.replaceIncomingArtwork)
 	private.HandleFunc("GET /incoming/{submissionID}", console.incomingDetail)
 	private.HandleFunc("POST /incoming/{submissionID}/submit", console.submit)
 	private.HandleFunc("POST /upload-sessions", console.createUploadSession)
@@ -121,6 +123,44 @@ func (c Console) incomingDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	page := views.IncomingDetailPage{Shell: c.shell(r), Preview: preview}
 	c.render(w, r, views.IncomingDetail(page), views.IncomingDetailContent(page))
+}
+
+func (c Console) incomingArtwork(w http.ResponseWriter, r *http.Request) {
+	if c.dependencies.Previews == nil {
+		http.NotFound(w, r)
+		return
+	}
+	path, err := c.dependencies.Previews.ArtworkPath(r.PathValue("submissionID"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Disposition", "inline")
+	http.ServeFile(w, r, path)
+}
+
+func (c Console) replaceIncomingArtwork(w http.ResponseWriter, r *http.Request) {
+	if c.dependencies.Previews == nil || c.dependencies.Previews.ArtworkMaxBytes() <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, c.dependencies.Previews.ArtworkMaxBytes()+(1<<20))
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		http.Error(w, "invalid artwork upload", http.StatusRequestEntityTooLarge)
+		return
+	}
+	file, _, err := r.FormFile("artwork")
+	if err != nil {
+		http.Error(w, "artwork file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+	if _, err := c.dependencies.Previews.ReplaceArtwork(r.Context(), r.PathValue("submissionID"), file); err != nil {
+		http.Error(w, "artwork replacement failed", http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/incoming/"+r.PathValue("submissionID"), http.StatusSeeOther)
 }
 func (c Console) audit(w http.ResponseWriter, r *http.Request) {
 	items, next, err := c.dependencies.Reader.Audit(r.Context(), 50, r.URL.Query().Get("cursor"))

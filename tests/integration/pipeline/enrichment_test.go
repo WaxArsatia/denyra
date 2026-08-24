@@ -1,9 +1,12 @@
 package pipeline_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -80,6 +83,22 @@ func TestEnrichmentProviderFailuresAreNonBlockingWarningsOnly(t *testing.T) {
 	}
 }
 
+func TestAdminArtworkReplacementRemainsSelectedWhenProvidersFail(t *testing.T) {
+	var jpegBody bytes.Buffer
+	if err := jpeg.Encode(&jpegBody, image.NewRGBA(image.Rect(0, 0, 2, 2)), nil); err != nil {
+		t.Fatal(err)
+	}
+	service := application.ArtworkService{Root: t.TempDir(), MaxBytes: 1 << 20, MaxPixels: 1_000_000, Local: noLocalArtwork{}, Spotify: failedArtworkLookup{}, CoverArt: failedArtworkLookup{}}
+	replacement, err := service.Replace(context.Background(), "submission-1", bytes.NewReader(jpegBody.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, _, err := service.Select(context.Background(), "submission-1", t.TempDir(), nil, application.IdentityDecision{})
+	if err != nil || selected.Source != domain.ArtworkAdminUpload || selected.SHA256 != replacement.SHA256 {
+		t.Fatalf("admin replacement not retained: selected=%+v replacement=%+v err=%v", selected, replacement, err)
+	}
+}
+
 func TestQualityCallbackPersistsIntentBeforeIdempotentAuthenticatedEffect(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -106,6 +125,24 @@ func TestQualityCallbackPersistsIntentBeforeIdempotentAuthenticatedEffect(t *tes
 type staticArtwork struct {
 	bytes []byte
 	err   error
+}
+
+type noLocalArtwork struct{}
+
+func (noLocalArtwork) Embedded(context.Context, string) ([]byte, string, error) {
+	return nil, "", application.ErrArtworkNotFound
+}
+func (noLocalArtwork) Sidecar(string) ([]byte, string, error) {
+	return nil, "", application.ErrArtworkNotFound
+}
+
+type failedArtworkLookup struct{}
+
+func (failedArtworkLookup) FetchURL(context.Context, string) ([]byte, domain.ProviderEvidence, error) {
+	return nil, domain.ProviderEvidence{Provider: "spotify"}, errors.New("offline")
+}
+func (failedArtworkLookup) FetchRelease(context.Context, string) ([]byte, domain.ProviderEvidence, error) {
+	return nil, domain.ProviderEvidence{Provider: "coverart"}, errors.New("offline")
 }
 
 func (a staticArtwork) Fetch(context.Context, string) ([]byte, domain.ProviderEvidence, error) {

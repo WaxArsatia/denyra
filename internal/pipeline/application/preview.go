@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -28,6 +29,7 @@ type SubmissionPreviewService struct {
 	Store     SubmissionPreviewStore
 	Inspector PreviewInspector
 	Identity  *IdentityService
+	Artwork   *ArtworkService
 	Scan      func(string) (denyrafs.Tree, error)
 	Now       func() time.Time
 }
@@ -96,16 +98,51 @@ func (s SubmissionPreviewService) Preview(ctx context.Context, submissionID stri
 	if preview.Metadata.DiscTotal == 0 {
 		preview.Metadata.DiscTotal = 1
 	}
+	identity := IdentityDecision{}
 	if s.Identity != nil {
 		if validationErr := domain.ValidateMetadataPlan(preview.Metadata); validationErr == nil {
-			decision, _ := s.Identity.Decide(ctx, preview.Metadata, observed)
-			preview.Identity = identityPreview(decision)
+			identity, _ = s.Identity.Decide(ctx, preview.Metadata, observed)
+			preview.Identity = identityPreview(identity)
+		}
+	}
+	if s.Artwork != nil {
+		selection, evidence, artworkErr := s.Artwork.Select(ctx, submissionID, record.SourcePath, preview.Metadata.Preserved, identity)
+		if artworkErr == nil {
+			preview.Artwork = selection
+			for _, item := range evidence {
+				item.ResponseBody = nil
+				preview.ArtworkEvidence = append(preview.ArtworkEvidence, item)
+			}
 		}
 	}
 	if err := s.Store.PutSubmissionPreview(ctx, preview, s.now()); err != nil {
 		return domain.SubmissionPreview{}, err
 	}
 	return preview, nil
+}
+
+func (s SubmissionPreviewService) ReplaceArtwork(ctx context.Context, submissionID string, body io.Reader) (domain.SubmissionPreview, error) {
+	if s.Artwork == nil {
+		return domain.SubmissionPreview{}, fmt.Errorf("artwork service is not configured")
+	}
+	if _, err := s.Artwork.Replace(ctx, submissionID, body); err != nil {
+		return domain.SubmissionPreview{}, err
+	}
+	return s.Preview(ctx, submissionID, true)
+}
+
+func (s SubmissionPreviewService) ArtworkPath(submissionID string) (string, error) {
+	if s.Artwork == nil {
+		return "", fmt.Errorf("artwork service is not configured")
+	}
+	return s.Artwork.Path(submissionID)
+}
+
+func (s SubmissionPreviewService) ArtworkMaxBytes() int64 {
+	if s.Artwork == nil {
+		return 0
+	}
+	return s.Artwork.MaxBytes
 }
 
 func identityPreview(decision IdentityDecision) *domain.IdentityPreview {

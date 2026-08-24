@@ -40,12 +40,24 @@ type MetadataConflict struct {
 	Values       []string `json:"values,omitempty"`
 }
 
+type ArtworkSource string
+
+const (
+	ArtworkEmbedded        ArtworkSource = "EMBEDDED"
+	ArtworkSidecar         ArtworkSource = "SIDECAR"
+	ArtworkSpotifyExplicit ArtworkSource = "SPOTIFY_EXPLICIT"
+	ArtworkIdentifierExact ArtworkSource = "IDENTIFIER_EXACT"
+	ArtworkAdminUpload     ArtworkSource = "ADMIN_UPLOAD"
+)
+
 type ArtworkSelection struct {
-	Source    string `json:"source,omitempty"`
-	Path      string `json:"path,omitempty"`
-	URL       string `json:"url,omitempty"`
-	SHA256    string `json:"sha256,omitempty"`
-	MediaType string `json:"media_type,omitempty"`
+	Source    ArtworkSource `json:"source,omitempty"`
+	Path      string        `json:"path,omitempty"`
+	MIME      string        `json:"mime,omitempty"`
+	SHA256    string        `json:"sha256,omitempty"`
+	SourceURL string        `json:"source_url,omitempty"`
+	Width     int           `json:"width,omitempty"`
+	Height    int           `json:"height,omitempty"`
 }
 
 type SubmissionDecision struct {
@@ -57,14 +69,16 @@ type SubmissionDecision struct {
 }
 
 type SubmissionPreview struct {
-	SubmissionID string              `json:"submission_id"`
-	Ingress      string              `json:"ingress"`
-	Revision     uint64              `json:"revision"`
-	Fingerprint  string              `json:"fingerprint"`
-	Metadata     MetadataPlan        `json:"metadata"`
-	Conflicts    []MetadataConflict  `json:"conflicts,omitempty"`
-	Identity     *IdentityPreview    `json:"identity,omitempty"`
-	Draft        *SubmissionDecision `json:"draft,omitempty"`
+	SubmissionID    string              `json:"submission_id"`
+	Ingress         string              `json:"ingress"`
+	Revision        uint64              `json:"revision"`
+	Fingerprint     string              `json:"fingerprint"`
+	Metadata        MetadataPlan        `json:"metadata"`
+	Conflicts       []MetadataConflict  `json:"conflicts,omitempty"`
+	Identity        *IdentityPreview    `json:"identity,omitempty"`
+	Artwork         ArtworkSelection    `json:"artwork,omitempty"`
+	ArtworkEvidence []ProviderEvidence  `json:"artwork_evidence,omitempty"`
+	Draft           *SubmissionDecision `json:"draft,omitempty"`
 }
 
 type IdentityPreview struct {

@@ -19,6 +19,7 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/lrclib"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/media"
 	"github.com/waxarsatia/denyra/internal/pipeline/adapters/musicbrainz"
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/spotify"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
@@ -155,6 +156,12 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			previewInspector := media.FFProbe{Binary: "ffprobe", Version: "deployment-release", Timeout: time.Duration(prepared.Config.Validation.FFProbeTimeout), Runner: media.Runner{MaxOutput: int(prepared.Config.Acquisition.ProcessOutputLimit)}}
 			previewHTTP := &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}
 			previewMusicBrainz := &musicbrainz.Client{BaseURL: prepared.Config.Services.MusicBrainzURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: previewHTTP, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit, RateInterval: time.Duration(prepared.Config.Validation.MusicBrainzRateInterval)}
+			previewArtwork := &application.ArtworkService{
+				Local:    media.Artwork{MetaFLAC: media.MetaFLAC{Binary: "metaflac", Version: "deployment-release", Timeout: time.Duration(prepared.Config.Validation.MetaFLACTimeout), Runner: media.Runner{MaxOutput: int(prepared.Config.Uploads.ImageMaxBytes + 1)}}, MaxBytes: prepared.Config.Uploads.ImageMaxBytes},
+				Spotify:  &spotify.OEmbed{BaseURL: prepared.Config.Services.SpotifyOEmbedURL, HTTP: previewHTTP, ResponseLimit: prepared.Config.Uploads.ImageMaxBytes},
+				CoverArt: &musicbrainz.CoverArt{BaseURL: prepared.Config.Services.CoverArtURL, HTTP: previewHTTP, ResponseLimit: prepared.Config.Uploads.ImageMaxBytes},
+				Root:     filepath.Join(prepared.Config.Filesystem.Work, ".artwork"), MaxBytes: prepared.Config.Uploads.ImageMaxBytes, MaxPixels: prepared.Config.Uploads.ImageMaxPixels,
+			}
 			previews := &application.SubmissionPreviewService{Store: repositories, Inspector: previewInspector, Identity: &application.IdentityService{
 				Search: previewMusicBrainz,
 				DurationPolicy: domain.DurationPolicy{
@@ -163,7 +170,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 					ReleaseAutoFloorMS: prepared.Config.Validation.ReleaseAutoFloorMS, ReleaseAutoPercentBasisPoints: prepared.Config.Validation.ReleaseAutoPercentBasisPoints,
 					ReleaseManualFloorMS: prepared.Config.Validation.ReleaseManualFloorMS, ReleaseManualPercentBasisPoints: prepared.Config.Validation.ReleaseManualPercentBasisPoints,
 				},
-			}}
+			}, Artwork: previewArtwork}
 			uploads := &application.UploadService{
 				Store: repositories, Writer: denyrafs.UploadWriter{Root: prepared.Config.Filesystem.IncomingUploading},
 				UploadingRoot: prepared.Config.Filesystem.IncomingUploading, IncomingRoot: prepared.Config.Filesystem.IncomingManual,

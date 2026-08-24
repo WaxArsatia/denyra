@@ -91,11 +91,13 @@ func TestSubmissionPreviewCachesIdentityEvidenceAndSuggestedDestination(t *testi
 	}
 	store := &previewMemoryStore{record: application.SubmissionRecord{ID: "submission-1", SourcePath: root, Status: "DISCOVERED", Ingress: "browser"}}
 	searcher := &countingIdentitySearcher{result: musicbrainz.SearchResult{Releases: []domain.CanonicalRelease{release}, Evidence: []musicbrainz.Evidence{{Endpoint: "https://musicbrainz.invalid/release", StatusCode: 200, ResponseSHA256: "abc"}}}}
+	artworkRoot := t.TempDir()
 	service := application.SubmissionPreviewService{
 		Store: store, Inspector: &previewInspector{tags: map[string]map[string][]string{"01.flac": {
 			"ALBUMARTIST": {"Kaleb J"}, "ALBUM": {"OFF GUARD"}, "DATE": {"2024"}, "TITLE": {"First"}, "ARTIST": {"Kaleb J"}, "TRACKNUMBER": {"1"}, "DISCNUMBER": {"1"}, "ISRC": {"IDABC2600001"},
 		}}},
 		Identity: &application.IdentityService{Search: searcher, DurationPolicy: identityDurationPolicy()},
+		Artwork:  &application.ArtworkService{Local: artworkLocal{embedded: artworkJPEG(t, 8, 8)}, Root: artworkRoot, MaxBytes: 1 << 20, MaxPixels: 1_000_000},
 	}
 	preview, err := service.Preview(context.Background(), "submission-1", false)
 	if err != nil {
@@ -106,6 +108,9 @@ func TestSubmissionPreviewCachesIdentityEvidenceAndSuggestedDestination(t *testi
 	}
 	if len(preview.Identity.Evidence) != 1 || preview.Identity.Evidence[0].ResponseSHA256 != "abc" || preview.Identity.Evidence[0].ResponseBody != nil {
 		t.Fatalf("persisted evidence=%+v", preview.Identity.Evidence)
+	}
+	if preview.Artwork.Source != domain.ArtworkEmbedded || preview.Artwork.Path == "" {
+		t.Fatalf("preview artwork=%+v", preview.Artwork)
 	}
 	if _, err := service.Preview(context.Background(), "submission-1", false); err != nil || searcher.calls != 1 {
 		t.Fatalf("cached identity search calls=%d err=%v", searcher.calls, err)
