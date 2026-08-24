@@ -1,0 +1,34 @@
+services:
+  media-pipeline:
+    ports:
+      - name: admin-http
+        target: 8090
+        published: "${DENYRA_ADMIN_HOST_PORT:-8090}"
+        protocol: tcp
+
+  lidarr:
+    ports:
+      - name: web-ui
+        target: 8686
+        published: "${DENYRA_LIDARR_HOST_PORT:-8686}"
+        protocol: tcp
+
+  slskd:
+    environment:
+      SLSKD_REMOTE_CONFIGURATION: "true"
+    ports:
+      - name: web-ui
+        target: 5030
+        published: "${DENYRA_SLSKD_WEB_HOST_PORT:-5030}"
+        protocol: tcp
+      - name: soulseek-listen
+        target: 50300
+        published: "${DENYRA_SLSKD_LISTEN_HOST_PORT:-50300}"
+        protocol: tcp
+
+  navidrome:
+    ports:
+      - name: open-subsonic
+        target: 4533
+        published: "${DENYRA_NAVIDROME_HOST_PORT:-4533}"
+        protocol: tcp
