@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -118,6 +119,98 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 	}
 	if _, err := os.Stat(submission.ApprovedPath); !os.IsNotExist(err) {
 		t.Fatalf("verified staging source retained: %v", err)
+	}
+}
+
+func TestCatalogPreparationIsIdempotentThroughApplicationService(t *testing.T) {
+	artistAdded, refreshed, monitored := false, false, false
+	artistPosts, refreshPosts, albumPuts := 0, 0, 0
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		requests = append(requests, request.Method+" "+request.URL.String()+" "+string(body))
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/rootfolder":
+			_, _ = writer.Write([]byte(validRootFolderConfig))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/qualityprofile":
+			_, _ = writer.Write([]byte(validQualityProfiles))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/metadataprofile":
+			_, _ = writer.Write([]byte(validMetadataProfiles))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/artist/lookup":
+			if request.URL.Query().Get("term") != "lidarr:11111111-1111-1111-1111-111111111111" {
+				t.Errorf("artist lookup query = %q", request.URL.RawQuery)
+			}
+			_, _ = writer.Write([]byte(`[{"foreignArtistId":"11111111-1111-1111-1111-111111111111","artistName":"Kaleb J"}]`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/artist":
+			if artistAdded {
+				_, _ = writer.Write([]byte(`[{"id":70,"foreignArtistId":"11111111-1111-1111-1111-111111111111"}]`))
+			} else {
+				_, _ = writer.Write([]byte(`[]`))
+			}
+		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/artist":
+			artistAdded = true
+			artistPosts++
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = writer.Write([]byte(`{"id":70,"foreignArtistId":"11111111-1111-1111-1111-111111111111"}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/album":
+			if !refreshed {
+				_, _ = writer.Write([]byte(`[]`))
+			} else {
+				_, _ = fmt.Fprintf(writer, `[{"id":80,"artistId":70,"title":"OFF GUARD","monitored":%t,"releases":[{"id":90,"foreignReleaseId":"22222222-2222-2222-2222-222222222222"}]}]`, monitored)
+			}
+		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/command":
+			refreshed = true
+			refreshPosts++
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = writer.Write([]byte(`{"id":42,"name":"RefreshArtist","status":"queued"}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/command/42":
+			_, _ = writer.Write([]byte(`{"id":42,"status":"completed"}`))
+		case request.Method == http.MethodPut && request.URL.Path == "/api/v1/album/80":
+			monitored = true
+			albumPuts++
+			writer.WriteHeader(http.StatusAccepted)
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/album/80":
+			_, _ = writer.Write([]byte(`{"id":80,"artistId":70,"title":"OFF GUARD","monitored":true,"releases":[{"id":90,"foreignReleaseId":"22222222-2222-2222-2222-222222222222"}]}`))
+		default:
+			http.Error(writer, "unexpected "+request.Method+" "+request.URL.String(), http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	release := domain.CanonicalRelease{
+		ReleaseMBID: "22222222-2222-2222-2222-222222222222",
+		ArtistCredits: []domain.ArtistCredit{{
+			Name: "Kaleb J", ArtistMBID: "11111111-1111-1111-1111-111111111111",
+		}},
+		Tracks: []domain.CanonicalTrack{{
+			ReleaseTrackMBID: "33333333-3333-3333-3333-333333333333",
+			RecordingMBID:    "44444444-4444-4444-4444-444444444444",
+			Disc:             1, Track: 1,
+		}},
+	}
+	client := lidarr.Client{BaseURL: server.URL, APIKey: "lidarr-key", HTTP: server.Client()}
+	service := application.LidarrCatalogService{Catalog: lidarr.Catalog{
+		Client: client, PollAttempts: 2, PollInterval: time.Nanosecond,
+	}}
+	first, err := service.EnsureRelease(context.Background(), release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.EnsureRelease(context.Background(), release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != (application.CatalogResult{ArtistID: 70, AlbumID: 80, AlbumReleaseID: 90}) || second != first {
+		t.Fatalf("catalog results first=%+v second=%+v", first, second)
+	}
+	if artistPosts != 1 || refreshPosts != 1 || albumPuts != 1 {
+		t.Fatalf("non-idempotent catalog effects artist=%d refresh=%d monitor=%d", artistPosts, refreshPosts, albumPuts)
+	}
+	joined := strings.Join(requests, "\n")
+	for _, forbidden := range []string{"ArtistSearch", "AlbumSearch", `"searchForMissingAlbums":true`, "/data/library-unmanaged"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("forbidden catalog behavior %q in requests:\n%s", forbidden, joined)
+		}
 	}
 }
 

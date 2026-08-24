@@ -11,7 +11,10 @@ import (
 )
 
 const (
-	validDownloadConfig = `{
+	validRootFolderConfig = `[{"id":1,"path":"/data/library","defaultQualityProfileId":4,"defaultMetadataProfileId":5}]`
+	validQualityProfiles  = `[{"id":4,"name":"Lossless"}]`
+	validMetadataProfiles = `[{"id":5,"name":"Standard"}]`
+	validDownloadConfig   = `{
 		"downloadClientWorkingFolders":"_UNPACK_|_FAILED_",
 		"enableCompletedDownloadHandling":false,
 		"autoRedownloadFailed":true,

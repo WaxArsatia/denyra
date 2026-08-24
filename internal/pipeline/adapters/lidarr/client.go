@@ -32,6 +32,10 @@ func (c Client) Post(ctx context.Context, path string, body []byte, destination 
 	return c.do(ctx, http.MethodPost, path, nil, body, destination)
 }
 
+func (c Client) Put(ctx context.Context, path string, body []byte, destination any) error {
+	return c.do(ctx, http.MethodPut, path, nil, body, destination)
+}
+
 func (c Client) do(ctx context.Context, method, path string, query url.Values, body []byte, destination any) error {
 	endpoint := strings.TrimRight(c.BaseURL, "/") + path
 	if len(query) > 0 {
