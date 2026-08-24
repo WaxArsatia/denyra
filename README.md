@@ -1,79 +1,77 @@
 # Denyra
 
-Denyra is a self-hosted FLAC acquisition, validation, library, and streaming
-stack. Lidarr owns the final library. Denyra's Go services coordinate
-acquisition and validate release batches before Lidarr imports them. Navidrome
-exposes the library through OpenSubsonic without write access to the master
-files.
+Denyra adalah stack mandiri untuk akuisisi, validasi, pengelolaan, dan streaming
+koleksi FLAC pribadi. Lidarr memiliki library akhir. Layanan Go milik Denyra
+mengatur akuisisi dan memvalidasi satu release penuh sebelum Lidarr melakukan
+import. Navidrome menyediakan library melalui OpenSubsonic tanpa akses tulis ke
+file master.
 
-The project targets a private, Spotify-like experience while keeping FLAC as the
-canonical source format. Public exposure, DNS, TLS, reverse proxy, and firewall
-design are intentionally outside this repository.
+Targetnya adalah pengalaman seperti Spotify pribadi dengan FLAC sebagai format
+master. Public exposure, DNS, TLS, reverse proxy, dan firewall berada di luar
+scope repository ini.
 
-## Contents
+## Daftar isi
 
-- [What Denyra does](#what-denyra-does)
-- [System boundaries](#system-boundaries)
-- [Architecture](#architecture)
-- [Components](#components)
-- [Requirements](#requirements)
-- [Try the local demo](#try-the-local-demo)
-- [Run a production-like local stack](#run-a-production-like-local-stack)
-- [Initial configuration](#initial-configuration)
-- [Daily operation](#daily-operation)
-- [Backup, restore, and upgrades](#backup-restore-and-upgrades)
-- [Security model](#security-model)
-- [Development](#development)
-- [Testing](#testing)
+- [Kemampuan](#kemampuan)
+- [Batas sistem](#batas-sistem)
+- [Arsitektur](#arsitektur)
+- [Komponen](#komponen)
+- [Kebutuhan sistem](#kebutuhan-sistem)
+- [Mencoba demo lokal](#mencoba-demo-lokal)
+- [Menjalankan stack lokal lengkap](#menjalankan-stack-lokal-lengkap)
+- [Konfigurasi awal](#konfigurasi-awal)
+- [Operasi harian](#operasi-harian)
+- [Backup, restore, dan upgrade](#backup-restore-dan-upgrade)
+- [Model keamanan](#model-keamanan)
+- [Pengembangan](#pengembangan)
+- [Pengujian](#pengujian)
 - [Troubleshooting](#troubleshooting)
-- [Project documentation](#project-documentation)
+- [Dokumentasi proyek](#dokumentasi-proyek)
 
-## What Denyra does
+## Kemampuan
 
-Denyra provides three ingestion paths that converge on one controlled media
-pipeline:
+Denyra memiliki tiga jalur ingest yang bertemu di satu media pipeline:
 
-1. Lidarr searches through Lidarr.Plugin.Slskd and slskd as the primary
-   acquisition path.
-2. The Acquisition Gateway invokes a pinned SpotiFLAC subprocess when the
-   primary path returns a legitimate zero-result.
-3. SFTPGo accepts manual uploads for explicit submission and review.
+1. Lidarr mencari melalui Lidarr.Plugin.Slskd dan slskd sebagai jalur utama.
+2. Acquisition Gateway menjalankan subprocess SpotiFLAC yang dipin jika jalur
+   utama memberikan hasil kosong yang sah.
+3. SFTPGo menerima upload manual untuk submission dan review eksplisit.
 
-Every candidate is handled as a complete MusicBrainz release. The pipeline
-checks the media, matches the release, writes approved deterministic tags,
-creates lyrics sidecars, and hands exactly one winner to Lidarr Manual Import.
-Ambiguous or invalid candidates remain in quarantine.
+Setiap candidate diproses sebagai satu MusicBrainz release lengkap. Pipeline
+memeriksa media, mencocokkan release, menulis tag deterministik yang sudah
+disetujui, membuat sidecar lyrics, dan menyerahkan tepat satu pemenang ke Lidarr
+Manual Import. Candidate invalid atau ambigu tetap berada di quarantine.
 
-The main invariants are:
+Invariant utama:
 
-- Lidarr is the only process allowed to rename, move, or organize files in
-  `/data/library`.
-- Navidrome mounts the final library read-only.
-- Downloaders write only to acquisition directories.
-- Validation is release-atomic. One failed or missing track blocks the whole
+- Lidarr adalah satu-satunya proses yang boleh memindahkan, mengubah nama, atau
+  mengatur file di `/data/library`.
+- Navidrome memasang library akhir secara read-only.
+- Downloader hanya menulis ke direktori akuisisi.
+- Validasi bersifat release-atomic. Satu track gagal atau hilang menahan seluruh
   release.
-- FLAC remains the master format. Playback transcoding never changes the master.
-- SpotiFLAC receives no personal streaming-provider credentials.
-- Operational errors never become false `NO_CANDIDATE` results.
+- FLAC tetap menjadi format master. Transcoding playback tidak mengubah master.
+- SpotiFLAC tidak menerima kredensial streaming-provider pribadi.
+- Error operasional tidak pernah diubah menjadi hasil `NO_CANDIDATE` palsu.
 
-## System boundaries
+## Batas sistem
 
-Denyra includes media acquisition orchestration, validation, metadata, lyrics,
-import, streaming, local administration, backup, and recovery.
+Denyra mencakup orkestrasi akuisisi, validasi, metadata, lyrics, import,
+streaming, administrasi lokal, backup, dan recovery.
 
-The following concerns require a separate deployment design:
+Hal berikut memerlukan desain deployment terpisah:
 
-- public Internet exposure
-- DNS and TLS
-- reverse proxies
-- host firewall rules
-- VPN topology
-- detailed legal, copyright, or provider terms assessment
+- akses publik dari Internet
+- DNS dan TLS
+- reverse proxy
+- firewall host
+- topologi VPN
+- penilaian legal, copyright, atau ketentuan provider secara terperinci
 
-Only run acquisition sources you are permitted to use. Keep credentials out of
-Git, logs, config snapshots, and chat messages.
+Gunakan hanya sumber akuisisi yang boleh Anda akses. Jangan menyimpan kredensial
+di Git, log, config snapshot, atau percakapan chat.
 
-## Architecture
+## Arsitektur
 
 ```text
 Lidarr Wanted
@@ -86,18 +84,18 @@ Acquisition Gateway
     |        v
     |    Lidarr.Plugin.Slskd --> slskd --> Soulseek
     |
-    +--> SpotiFLAC fallback, only after legitimate primary zero-result
+    +--> SpotiFLAC fallback setelah primary zero-result yang sah
              |
              v
       /data/downloads/*
              |
              v
-       Media Pipeline <---- SFTPGo manual submission
+       Media Pipeline <---- submission manual SFTPGo
              |
-             +--> validation and MusicBrainz release matching
-             +--> deterministic FLAC tags through metaflac
-             +--> folder.jpg evidence and same-basename .lrc sidecars
-             +--> quarantine or operator review
+             +--> validasi dan pencocokan MusicBrainz release
+             +--> tag FLAC deterministik melalui metaflac
+             +--> evidence folder.jpg dan sidecar .lrc
+             +--> quarantine atau review operator
              |
              v
     /data/processing/approved
@@ -112,72 +110,72 @@ Acquisition Gateway
  Navidrome --> Feishin / Tempus
 ```
 
-Gateway and Pipeline have separate SQLite databases. They exchange immutable
-candidate IDs over an authenticated private HTTP API. They do not share business
-state through a database.
+Gateway dan Pipeline memakai database SQLite terpisah. Keduanya bertukar
+candidate ID immutable melalui private HTTP API yang diautentikasi. State bisnis
+tidak disinkronkan melalui shared database.
 
-## Components
+## Komponen
 
-| Component                | Responsibility                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Acquisition Gateway      | Wanted discovery, primary search orchestration, fallback, retries, correlation, arbitration, and candidate handoff  |
-| Media Pipeline           | Claiming, technical validation, MusicBrainz matching, enrichment, deterministic mutation, review, and Lidarr import |
-| Lidarr nightly           | Wanted state, release policy, final import, naming, and final library ownership                                     |
-| Lidarr.Plugin.Slskd      | Native Lidarr integration with slskd                                                                                |
-| slskd                    | Headless Soulseek client and primary downloader                                                                     |
-| SpotiFLAC Module Version | Credentialless fallback engine run as an isolated subprocess                                                        |
-| SFTPGo CE                | Manual upload endpoint                                                                                              |
-| beets                    | Advisory matching evidence for manual ingest only                                                                   |
-| MusicBrainz              | Canonical release metadata                                                                                          |
-| LRCLIB                   | Persistent synchronized lyrics source                                                                               |
-| Navidrome                | Read-only catalog and OpenSubsonic server                                                                           |
-| Feishin                  | Recommended Linux desktop client                                                                                    |
-| Tempus                   | Recommended Android client                                                                                          |
-| Restic                   | Supported backup repository and retention path                                                                      |
+| Komponen                 | Tanggung jawab                                                                                              |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Acquisition Gateway      | Wanted discovery, primary search, fallback, retry, correlation, arbitration, dan candidate handoff          |
+| Media Pipeline           | Claim, validasi teknis, MusicBrainz matching, enrichment, deterministic mutation, review, dan Lidarr import |
+| Lidarr nightly           | Wanted state, release policy, final import, naming, dan kepemilikan library akhir                           |
+| Lidarr.Plugin.Slskd      | Integrasi native Lidarr dengan slskd                                                                        |
+| slskd                    | Soulseek client headless dan downloader utama                                                               |
+| SpotiFLAC Module Version | Engine fallback credentialless yang berjalan sebagai subprocess terisolasi                                  |
+| SFTPGo CE                | Endpoint upload manual                                                                                      |
+| beets                    | Advisory matching evidence untuk manual ingest saja                                                         |
+| MusicBrainz              | Metadata release canonical                                                                                  |
+| LRCLIB                   | Sumber synchronized lyrics persisten                                                                        |
+| Navidrome                | Catalog read-only dan server OpenSubsonic                                                                   |
+| Feishin                  | Client Linux yang direkomendasikan                                                                          |
+| Tempus                   | Client Android yang direkomendasikan                                                                        |
+| Restic                   | Jalur backup dan retention yang didukung                                                                    |
 
-Exact application, runtime, image, plugin, extension, and asset identities are
-recorded in [`dependencies.lock.json`](dependencies.lock.json) and
-[`deploy/images.lock.json`](deploy/images.lock.json). A dependency pin changes
-only through an explicit update and compatibility test.
+Identitas application, runtime, image, plugin, extension, dan asset tersimpan di
+[`dependencies.lock.json`](dependencies.lock.json) serta
+[`deploy/images.lock.json`](deploy/images.lock.json). Pin dependency hanya boleh
+berubah melalui update eksplisit dan compatibility test.
 
-## Requirements
+## Kebutuhan sistem
 
-Use a Linux amd64 host with:
+Gunakan host Linux amd64 dengan:
 
-- Docker Engine and Docker Compose v2
+- Docker Engine dan Docker Compose v2
 - Docker Buildx
 - Git
-- Go for development and tests
-- enough storage for the FLAC library, download staging, processing, and
+- Go untuk development dan test
+- ruang penyimpanan untuk library FLAC, download staging, processing, dan
   quarantine
-- one numeric UID/GID shared by media containers
+- satu UID/GID numerik yang digunakan bersama oleh media container
 
-All paths below `/data` must be on the same filesystem so the pipeline can use
-atomic rename operations. A supported Restic repository must be on another disk,
-filesystem, or remote repository.
+Semua path di bawah `/data` harus berada pada filesystem yang sama agar pipeline
+dapat memakai atomic rename. Repository Restic harus berada pada disk,
+filesystem, atau remote repository lain.
 
-The locked local ports are:
+Port lokal:
 
-| Port    | Service        | Purpose                            |
-| ------- | -------------- | ---------------------------------- |
-| `8090`  | Media Pipeline | Denyra Admin UI over internal HTTP |
-| `8686`  | Lidarr         | Local setup and library management |
-| `5030`  | slskd          | Local Web UI and configuration     |
-| `50300` | slskd          | Soulseek incoming listen port      |
-| `8080`  | SFTPGo         | Web administration                 |
-| `2022`  | SFTPGo         | SFTP uploads                       |
-| `4533`  | Navidrome      | Web UI and OpenSubsonic API        |
+| Port    | Service        | Fungsi                                |
+| ------- | -------------- | ------------------------------------- |
+| `8090`  | Media Pipeline | Denyra Admin UI melalui internal HTTP |
+| `8686`  | Lidarr         | Setup lokal dan library management    |
+| `5030`  | slskd          | Web UI dan konfigurasi lokal          |
+| `50300` | slskd          | Soulseek incoming listen port         |
+| `8080`  | SFTPGo         | Web administration                    |
+| `2022`  | SFTPGo         | Upload SFTP                           |
+| `4533`  | Navidrome      | Web UI dan OpenSubsonic API           |
 
-Change a host port through the corresponding `DENYRA_*_HOST_PORT` variable when
-it is already occupied.
+Jika port sudah dipakai, ubah host port melalui environment variable
+`DENYRA_*_HOST_PORT` yang sesuai.
 
-## Try the local demo
+## Mencoba demo lokal
 
-The local demo runs the real Gateway, Pipeline, SQLite databases, Admin UI, and
-Navidrome. It replaces Lidarr, MusicBrainz, and LRCLIB with a local no-result
-fixture. It does not contact Soulseek or a live fallback provider.
+Demo lokal menjalankan Gateway, Pipeline, SQLite, Admin UI, dan Navidrome asli.
+Lidarr, MusicBrainz, dan LRCLIB diganti oleh local no-result fixture. Demo tidak
+menghubungi Soulseek atau provider fallback nyata.
 
-Build and verify the locked custom images:
+Build dan verifikasi custom image yang sudah dikunci:
 
 ```sh
 scripts/verify-pins/verify.sh --offline
@@ -186,8 +184,8 @@ BUILDX_NO_DEFAULT_ATTESTATIONS=1 docker buildx bake \
   -f deploy/docker/docker-bake.hcl gateway pipeline navidrome --load
 ```
 
-Choose an absolute directory outside the repository, then create the runtime
-tree and local secrets:
+Pilih direktori absolut di luar repository, lalu buat runtime tree dan local
+secret:
 
 ```sh
 export DENYRA_LOCAL_ROOT=/absolute/path/to/denyra-local
@@ -209,7 +207,7 @@ openssl rand -hex -out "$DENYRA_SECRETS_DIR/bootstrap_admin" 12
 chmod 0400 "$DENYRA_SECRETS_DIR"/*
 ```
 
-Start the persistent demo:
+Jalankan demo persisten:
 
 ```sh
 docker compose -p denyra-local \
@@ -220,21 +218,21 @@ docker compose -p denyra-local \
   acceptance-fixture media-pipeline acquisition-gateway navidrome
 ```
 
-Open:
+Buka:
 
 - Denyra Admin UI: <http://127.0.0.1:8090>
 - Navidrome: <http://127.0.0.1:4533>
 
-The Denyra username is `admin`. Read the one-time password locally:
+Username Denyra adalah `admin`. Baca one-time password secara lokal:
 
 ```sh
 command cat "$DENYRA_SECRETS_DIR/bootstrap_admin"
 ```
 
-Navidrome asks you to create its first administrator. Its account is independent
-from the Denyra administrator.
+Navidrome meminta Anda membuat administrator pertama. Akun Navidrome terpisah
+dari administrator Denyra.
 
-Stop the demo without deleting its state:
+Hentikan demo tanpa menghapus state:
 
 ```sh
 docker compose -p denyra-local \
@@ -244,28 +242,28 @@ docker compose -p denyra-local \
   down
 ```
 
-Do not use `down --volumes` or delete `DENYRA_DATA_ROOT` unless you intend to
-remove the demo state.
+Jangan memakai `down --volumes` atau menghapus `DENYRA_DATA_ROOT` kecuali Anda
+memang ingin menghapus seluruh state demo.
 
-## Run a production-like local stack
+## Menjalankan stack lokal lengkap
 
-A production-like local stack uses real Lidarr, slskd, SFTPGo, MusicBrainz,
-LRCLIB, and the pinned SpotiFLAC engine. It remains local HTTP and should not be
-exposed to an untrusted network.
+Stack lokal lengkap memakai Lidarr, slskd, SFTPGo, MusicBrainz, LRCLIB, dan
+engine SpotiFLAC yang nyata. Stack tetap memakai HTTP lokal dan tidak boleh
+diekspos ke jaringan yang tidak dipercaya.
 
-Prepare:
+Siapkan:
 
-- a Soulseek account
-- an empty or existing FLAC library under the chosen data root
-- distinct passwords for Denyra, SFTPGo, Navidrome, and slskd
-- an optional Restic repository outside the `/data` filesystem
+- akun Soulseek
+- library FLAC kosong atau yang sudah ada di data root pilihan
+- password berbeda untuk Denyra, SFTPGo, Navidrome, dan slskd
+- repository Restic di luar filesystem `/data` jika backup akan diaktifkan
 
-Do not paste credentials into commands that enter shell history. Store them in
-local secret files or enter them through the service's local setup UI.
+Jangan memasukkan kredensial ke command yang tersimpan di shell history. Simpan
+di local secret file atau masukkan melalui setup UI service yang bersangkutan.
 
-Follow [`docs/runbooks/install.md`](docs/runbooks/install.md) for the complete
-directory, ownership, secret, build, and verification procedure. For local
-access, add `deploy/compose.local.yaml`:
+Ikuti [`docs/runbooks/install.md`](docs/runbooks/install.md) untuk prosedur
+directory, ownership, secret, build, dan verifikasi lengkap. Tambahkan
+`deploy/compose.local.yaml` untuk akses lokal:
 
 ```sh
 docker compose -p denyra-local \
@@ -274,9 +272,8 @@ docker compose -p denyra-local \
   up -d lidarr slskd sftpgo navidrome
 ```
 
-Finish the Lidarr, slskd, SFTPGo, and Navidrome setup described below. Put the
-Lidarr API key in the local `lidarr_api_key` secret file, then start Denyra's Go
-services:
+Selesaikan setup Lidarr, slskd, SFTPGo, dan Navidrome. Masukkan API key Lidarr
+ke local secret file `lidarr_api_key`, lalu jalankan service Go milik Denyra:
 
 ```sh
 docker compose -p denyra-local \
@@ -285,7 +282,7 @@ docker compose -p denyra-local \
   up -d --wait media-pipeline acquisition-gateway
 ```
 
-Check service state:
+Periksa service:
 
 ```sh
 docker compose -p denyra-local \
@@ -294,74 +291,88 @@ docker compose -p denyra-local \
   ps
 ```
 
-## Initial configuration
+## Konfigurasi awal
 
 ### Lidarr
 
-Open <http://127.0.0.1:8686> and complete its authentication setup.
+Buka <http://127.0.0.1:8686> dan selesaikan setup autentikasi.
 
-Required settings:
+Pengaturan wajib:
 
-- disable automatic Completed Download Handling
-- set `/data/library` as the final root folder
-- allow import only from `/data/processing/approved`
-- enable Import Extra Files for lyrics sidecars such as `.lrc`, `.elrc`, and
-  `.ttml`
-- retain `folder.jpg` as Lidarr's album artwork filename
-- configure the baked Lidarr.Plugin.Slskd integration against `slskd`
+- nonaktifkan automatic Completed Download Handling
+- gunakan `/data/library` sebagai final root folder
+- izinkan import hanya dari `/data/processing/approved`
+- aktifkan Import Extra Files untuk `.lrc`, `.elrc`, dan `.ttml`
+- pertahankan `folder.jpg` sebagai nama artwork album
+- arahkan Lidarr.Plugin.Slskd yang sudah dibake ke service `slskd`
 
-Copy Lidarr's API key into `DENYRA_SECRETS_DIR/lidarr_api_key` using a local
-editor, set mode `0400`, and restart Gateway and Pipeline. Never commit the key.
+Salin API key Lidarr ke `DENYRA_SECRETS_DIR/lidarr_api_key` menggunakan editor
+lokal, atur mode `0400`, lalu restart Gateway dan Pipeline. Jangan pernah commit
+API key.
+
+### Soulseek dan Nicotine+
+
+Soulseek tidak memiliki formulir registrasi akun terpisah. Masukkan username dan
+password yang Anda inginkan di Nicotine+, lalu connect. Server membuat akun saat
+login pertama berhasil jika username masih tersedia.
+
+Jika muncul `INVALIDPASS`, username tersebut sudah terikat ke password lain.
+Pilih username lain, jangan mencoba menebak password. Username maksimal 30
+karakter, hanya printable ASCII, dan tidak boleh memiliki spasi di awal atau
+akhir.
+
+Soulseek tidak memiliki mekanisme reset password. Simpan username dan password
+yang tepat di password manager. Uji bahwa Nicotine+ berstatus connected dan
+dapat melakukan search, lalu tutup Nicotine+ sepenuhnya sebelum memakai akun
+yang sama di slskd. Login bersamaan dapat membuat salah satu client terputus.
 
 ### slskd
 
-Open <http://127.0.0.1:5030>. Remote configuration is enabled by the local
-Compose override.
+Buka <http://127.0.0.1:5030>. Remote configuration diaktifkan oleh local Compose
+override.
 
-Configure:
+Konfigurasikan:
 
-- Soulseek username and password
+- username dan password Soulseek yang sudah diuji melalui Nicotine+
 - download directory `/data/downloads/slskd`
-- incomplete directory below the same mounted download tree
-- strong Web UI authentication
-- a read/write API key for Lidarr.Plugin.Slskd
+- incomplete directory di bawah download tree yang sama
+- autentikasi Web UI yang kuat
+- read/write API key untuk Lidarr.Plugin.Slskd
 - incoming listen port `50300`
 
-The current deployment mounts slskd state at `/app`, so its saved configuration
-survives container recreation.
+Deployment memasang state slskd di `/app`, sehingga konfigurasi tersimpan saat
+container dibuat ulang.
 
 ### SFTPGo
 
-Open <http://127.0.0.1:8080>, create the first SFTPGo administrator, then create
-upload users restricted to `/data/incoming/manual`. SFTPGo must not receive
-access to processing, quarantine, or the final library.
+Buka <http://127.0.0.1:8080>, buat administrator SFTPGo pertama, lalu buat
+upload user yang dibatasi ke `/data/incoming/manual`. SFTPGo tidak boleh
+memiliki akses ke processing, quarantine, atau library akhir.
 
 ### Navidrome
 
-Open <http://127.0.0.1:4533> and create the first music administrator. Navidrome
-uses `/music:ro`; its database, cache, and transcoding data live in separate
-writable volumes.
+Buka <http://127.0.0.1:4533> dan buat music administrator pertama. Navidrome
+memakai `/music:ro`; database, cache, dan transcoding berada di volume writable
+terpisah.
 
-Configure Feishin or Tempus with the Navidrome URL and a Navidrome music
-account. Prefer original FLAC on LAN. On constrained links, request an
-appropriate OpenSubsonic maximum bitrate such as the logical `opus-256` or
-`opus-160` policy.
+Konfigurasikan Feishin atau Tempus dengan URL Navidrome dan akun music user.
+Gunakan original FLAC di LAN. Pada koneksi terbatas, minta maximum bitrate
+OpenSubsonic yang sesuai, misalnya logical policy `opus-256` atau `opus-160`.
 
 ### Denyra Admin UI
 
-Open <http://127.0.0.1:8090> and sign in with the bootstrap username and
-password. Change the password after first login, then empty the bootstrap secret
-file. The UI provides candidate details, per-track results, metadata diffs,
-checksums, provenance, artwork and lyrics status, plus Approve, Reject, and
-Retry actions.
+Buka <http://127.0.0.1:8090> dan login menggunakan bootstrap username serta
+password. Ubah password setelah login pertama, lalu kosongkan bootstrap secret
+file. UI menyediakan candidate detail, hasil per track, metadata diff, checksum,
+provenance, status artwork dan lyrics, serta action Approve, Reject, dan Retry.
 
-An approval requires a MusicBrainz Release ID and a reason. Mutations use
-optimistic state revisions, CSRF protection, and the same domain services used
-by the internal API.
+Approval memerlukan MusicBrainz Release ID dan alasan. Mutation memakai
+optimistic state revision, proteksi CSRF, dan domain service yang sama dengan
+internal API.
 
-## Daily operation
+## Operasi harian
 
-Useful commands:
+Command yang sering digunakan:
 
 ```sh
 docker compose -p denyra-local -f deploy/compose.yaml -f deploy/compose.local.yaml ps
@@ -369,69 +380,71 @@ docker compose -p denyra-local -f deploy/compose.yaml -f deploy/compose.local.ya
 docker compose -p denyra-local -f deploy/compose.yaml -f deploy/compose.local.yaml restart acquisition-gateway media-pipeline
 ```
 
-Media locations:
+Lokasi media:
 
-| Path                        | Owner or purpose                                                    |
+| Path                        | Pemilik atau fungsi                                                 |
 | --------------------------- | ------------------------------------------------------------------- |
-| `/data/downloads/slskd`     | slskd raw downloads; Pipeline claims only completed and locked jobs |
-| `/data/downloads/spotiflac` | Gateway fallback output; Pipeline claims completed candidates       |
-| `/data/incoming/manual`     | SFTPGo manual submissions                                           |
-| `/data/processing/work`     | Pipeline validation and deterministic mutation                      |
-| `/data/processing/approved` | Lidarr-visible approved import batches                              |
-| `/data/quarantine`          | Invalid, ambiguous, review-required, or superseded candidates       |
-| `/data/library`             | Lidarr-owned final library                                          |
+| `/data/downloads/slskd`     | Download mentah slskd; Pipeline hanya claim job complete dan locked |
+| `/data/downloads/spotiflac` | Output fallback Gateway; Pipeline claim completed candidate         |
+| `/data/incoming/manual`     | Submission manual dari SFTPGo                                       |
+| `/data/processing/work`     | Validasi dan deterministic mutation oleh Pipeline                   |
+| `/data/processing/approved` | Batch approved yang terlihat oleh Lidarr                            |
+| `/data/quarantine`          | Candidate invalid, ambigu, review-required, atau superseded         |
+| `/data/library`             | Library akhir milik Lidarr                                          |
 
-Low storage blocks new claim, acquisition, and import work when available
-capacity falls below `max(20 GiB, 5%)`. Cleanup, quarantine handling,
-reconciliation, backup, recovery, and capacity-restoring administration remain
-available.
+Low storage menghentikan claim, acquisition, dan import baru jika kapasitas
+tersedia kurang dari `max(20 GiB, 5%)`. Cleanup, quarantine handling,
+reconciliation, backup, recovery, dan administrasi pemulihan kapasitas tetap
+diizinkan.
 
-## Backup, restore, and upgrades
+## Backup, restore, dan upgrade
 
-Restic is an optional Compose profile. The repository must be explicit and must
-not share the `/data` filesystem. Denyra enters maintenance mode, drains
-mutations, creates online SQLite backups, briefly stops stateful third-party
-services, and verifies the snapshot before leaving maintenance.
+Restic tersedia sebagai optional Compose profile. Repository harus eksplisit dan
+tidak boleh berada pada filesystem `/data`. Denyra masuk maintenance mode,
+menunggu mutation selesai, membuat online SQLite backup, menghentikan service
+third-party yang stateful untuk waktu singkat, lalu memverifikasi snapshot
+sebelum keluar dari maintenance.
 
-Read these runbooks before relying on the deployment:
+Baca runbook berikut sebelum mengandalkan deployment:
 
 - [`docs/runbooks/backup.md`](docs/runbooks/backup.md)
 - [`docs/runbooks/restore.md`](docs/runbooks/restore.md)
 - [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)
 
-Restore always targets a new directory. Cutover remains manual. Do not overwrite
-the live data tree.
+Restore selalu menuju directory baru. Cutover tetap manual dan tidak boleh
+menimpa live data tree.
 
-## Security model
+## Model keamanan
 
-The Admin UI intentionally uses HTTP on `0.0.0.0:8090`. Its cookie is
-`HttpOnly`, `SameSite=Strict`, and has no `Secure` attribute because TLS is not
-part of this internal stack. This is an accepted risk. The deployment and
-firewall must limit who can reach the port.
+Admin UI sengaja memakai HTTP pada `0.0.0.0:8090`. Cookie memakai `HttpOnly`,
+`SameSite=Strict`, dan tidak memiliki atribut `Secure` karena TLS bukan bagian
+dari internal stack. Ini adalah accepted risk. Deployment dan firewall harus
+membatasi pihak yang dapat mencapai port tersebut.
 
-Other controls include:
+Kontrol lain:
 
-- Argon2id password hashes
-- server-side sessions with 32-byte opaque CSPRNG tokens
-- only session-token hashes stored in SQLite
-- 30-day absolute session lifetime with no idle timeout
-- CSRF protection on every mutation
-- append-only audit evidence and optimistic state revisions
-- generic authentication errors
-- logout, logout-all, password-change, and explicit revocation
-- private Gateway to Pipeline network and constant-time bearer comparison
-- secret redaction from structured logs and config snapshots
+- password hash Argon2id
+- server-side session dengan opaque CSPRNG token 32 byte
+- hanya hash session token yang disimpan di SQLite
+- absolute session lifetime 30 hari tanpa idle timeout
+- proteksi CSRF pada setiap mutation
+- append-only audit evidence dan optimistic state revision
+- generic authentication error
+- logout, logout-all, password change, dan explicit revocation
+- private network antara Gateway dan Pipeline
+- constant-time bearer comparison
+- redaksi secret dari structured log dan config snapshot
 
-Read [`docs/runbooks/security-boundary.md`](docs/runbooks/security-boundary.md)
-before changing ports or network exposure.
+Baca [`docs/runbooks/security-boundary.md`](docs/runbooks/security-boundary.md)
+sebelum mengubah port atau network exposure.
 
-## Development
+## Pengembangan
 
-The custom services use Go, `net/http`, `database/sql`, go-sqlite3 with CGO,
-handwritten repositories, embedded migrations, templ, and locally vendored HTMX.
-There is no Node frontend toolchain.
+Custom service memakai Go, `net/http`, `database/sql`, go-sqlite3 dengan CGO,
+handwritten repository, embedded migration, templ, dan HTMX yang divendor secara
+lokal. Tidak ada Node frontend toolchain.
 
-Common commands:
+Command umum:
 
 ```sh
 make fmt
@@ -442,7 +455,7 @@ make verify-lock
 make compose-config
 ```
 
-Regenerate the Admin UI after changing a `.templ` source:
+Regenerasikan Admin UI setelah mengubah source `.templ`:
 
 ```sh
 go run github.com/a-h/templ/cmd/templ@v0.3.1020 generate
@@ -450,28 +463,28 @@ scripts/verify-ui-source.sh
 go run ./scripts/verify-tokens
 ```
 
-Format and lint the entire codebase before committing:
+Format dan lint seluruh codebase sebelum commit:
 
 ```sh
 make fmt
 go vet ./...
 ```
 
-## Testing
+## Pengujian
 
-Run the full race suite:
+Jalankan seluruh race suite:
 
 ```sh
 go test -race -count=1 ./...
 ```
 
-Run deterministic acceptance tests:
+Jalankan deterministic acceptance test:
 
 ```sh
 go test -count=1 ./tests/acceptance -run Denyra
 ```
 
-Run the pinned Compose smoke after building the locked images:
+Jalankan pinned Compose smoke setelah image dikompilasi:
 
 ```sh
 DENYRA_ACCEPTANCE_COMPOSE=1 \
@@ -479,51 +492,51 @@ DENYRA_ACCEPTANCE_COMPOSE=1 \
   -run TestDenyraPinnedComposeStartsReadyWithLocalAdapters -v
 ```
 
-Live-provider acceptance is excluded from CI and normal local tests. It starts
-only with the exact explicit side-effect acknowledgement required by the
+Live-provider acceptance tidak masuk CI dan test lokal normal. Profile tersebut
+hanya berjalan dengan explicit side-effect acknowledgement yang diwajibkan
 Gateway.
 
-The last verified artifact identities, commands, and results are in
+Identitas artifact, command, dan hasil verifikasi terakhir tersedia di
 [`docs/runbooks/acceptance-evidence.md`](docs/runbooks/acceptance-evidence.md).
 
 ## Troubleshooting
 
-Start with service status and recent logs:
+Mulai dari service status dan log terbaru:
 
 ```sh
 docker compose -p denyra-local -f deploy/compose.yaml -f deploy/compose.local.yaml ps
 docker compose -p denyra-local -f deploy/compose.yaml -f deploy/compose.local.yaml logs --since 10m
 ```
 
-Common problems:
+Masalah umum:
 
-| Symptom                              | Check                                                                                                                |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| Pipeline is not ready                | Directory ownership, mode, filesystem device identity, required binaries, config, migrations, and secret-file access |
-| Gateway restarts                     | Lidarr API key, Lidarr readiness, Pipeline readiness, locked SpotiFLAC artifacts, and private network addresses      |
-| External dependency is degraded      | MusicBrainz, LRCLIB, Soulseek, or fallback provider availability; local readiness should stay healthy                |
-| New work stops                       | Free capacity on the filesystem that contains the actual mounted `/data` paths                                       |
-| Manual submission returns to waiting | The sealed tree fingerprint changed before claim; inspect and submit again                                           |
-| Candidate stays in review            | Supply a definite MusicBrainz Release ID and record an approval reason                                               |
-| Navidrome shows no new track         | Check watcher logs, then wait for the one-minute recovery scan                                                       |
-| Login session disappears             | Check 30-day expiry, password change, logout-all, or explicit revocation                                             |
+| Gejala                                 | Pemeriksaan                                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Pipeline tidak ready                   | Ownership, mode, filesystem device identity, binary, config, migration, dan akses secret file       |
+| Gateway restart                        | API key dan readiness Lidarr, readiness Pipeline, artifact SpotiFLAC, serta private network address |
+| External dependency degraded           | MusicBrainz, LRCLIB, Soulseek, atau fallback provider; local readiness harus tetap sehat            |
+| Pekerjaan baru berhenti                | Kapasitas filesystem yang menaungi path `/data` aktual                                              |
+| Manual submission kembali menunggu     | Sealed tree fingerprint berubah sebelum claim; periksa dan submit ulang                             |
+| Candidate tertahan di review           | Berikan MusicBrainz Release ID pasti dan catat alasan approval                                      |
+| Track baru belum terlihat di Navidrome | Periksa watcher log, lalu tunggu recovery scan satu menit                                           |
+| Login session hilang                   | Periksa expiry 30 hari, password change, logout-all, atau explicit revocation                       |
 
-Incident-specific recovery steps are documented in
+Recovery per jenis insiden tersedia di
 [`docs/runbooks/incidents.md`](docs/runbooks/incidents.md).
 
-## Project documentation
+## Dokumentasi proyek
 
-- [Installation runbook](docs/runbooks/install.md)
-- [Client setup](docs/runbooks/clients.md)
+- [Runbook instalasi](docs/runbooks/install.md)
+- [Setup client](docs/runbooks/clients.md)
 - [Security boundary](docs/runbooks/security-boundary.md)
 - [Incident recovery](docs/runbooks/incidents.md)
 - [Backup](docs/runbooks/backup.md)
 - [Restore](docs/runbooks/restore.md)
-- [Upgrade and rollback](docs/runbooks/upgrade.md)
-- [System foundation design](docs/superpowers/specs/2026-08-24-system-foundation-design.md)
-- [Acquisition orchestration design](docs/superpowers/specs/2026-08-24-acquisition-orchestration-design.md)
-- [Controlled media pipeline design](docs/superpowers/specs/2026-08-24-controlled-media-pipeline-design.md)
-- [Operations and clients design](docs/superpowers/specs/2026-08-24-operations-and-clients-design.md)
+- [Upgrade dan rollback](docs/runbooks/upgrade.md)
+- [Desain system foundation](docs/superpowers/specs/2026-08-24-system-foundation-design.md)
+- [Desain acquisition orchestration](docs/superpowers/specs/2026-08-24-acquisition-orchestration-design.md)
+- [Desain controlled media pipeline](docs/superpowers/specs/2026-08-24-controlled-media-pipeline-design.md)
+- [Desain operations dan clients](docs/superpowers/specs/2026-08-24-operations-and-clients-design.md)
 
-No license file is currently included. Treat the repository as all rights
-reserved until the owner adds an explicit license.
+Repository belum memiliki file license. Perlakukan source sebagai all rights
+reserved sampai pemilik menambahkan license eksplisit.
