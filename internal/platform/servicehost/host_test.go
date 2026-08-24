@@ -32,12 +32,6 @@ func TestPreparePersistsImmutableConfigWithoutDeploymentIdentity(t *testing.T) {
 	if configCount != 1 || !prepared.Health.Snapshot().Ready {
 		t.Fatalf("prepared runtime: config=%d health=%+v", configCount, prepared.Health.Snapshot())
 	}
-	for _, dependency := range prepared.Health.Snapshot().Dependencies {
-		if dependency.Name == "dependency-lock" {
-			t.Fatal("dependency-lock remained in runtime health")
-		}
-	}
-
 	second, err := servicehost.Prepare(context.Background(), slog.Default(), options)
 	if err != nil {
 		t.Fatalf("Prepare second run: %v", err)

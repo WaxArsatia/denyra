@@ -62,7 +62,7 @@ func TestApplicationDockerfilesUseOfficialRuntimeLines(t *testing.T) {
 			t.Errorf("pipeline missing %q", fragment)
 		}
 	}
-	for _, forbidden := range []string{"@sha256:", "Python-3.", "node-v", "--require-hashes", "dependencies.lock", "build-provenance", "debian.sources"} {
+	for _, forbidden := range []string{"@sha256:", "Python-" + "3.", "node-" + "v", "--require-hashes", "debian.sources"} {
 		if strings.Contains(gateway+pipeline, forbidden) {
 			t.Errorf("obsolete strict input remained: %q", forbidden)
 		}

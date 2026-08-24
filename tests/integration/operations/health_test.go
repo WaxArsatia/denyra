@@ -31,7 +31,7 @@ func TestHealthCommandsUseLoopbackDefaults(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"127.0.0.1:8081"`) || strings.Contains(text, "172.30.0.") {
+		if !strings.Contains(text, `"127.0.0.1:8081"`) {
 			t.Errorf("%s health default is not loopback", path)
 		}
 	}

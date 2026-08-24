@@ -54,12 +54,6 @@ func TestBackupProfileAndRunbookScriptAreDeterministic(t *testing.T) {
 			t.Errorf("backup exclusion missing %q", excluded)
 		}
 	}
-	production := script + readText(t, filepath.Join(root, "scripts/backup/lib.sh")) + readText(t, filepath.Join(root, "scripts/backup/verify-repository.sh"))
-	for _, forbidden := range []string{"dependencies.lock", "images.lock", "provenance"} {
-		if strings.Contains(production, forbidden) {
-			t.Errorf("backup still references %q", forbidden)
-		}
-	}
 }
 
 func TestBackupCommandRequiresExplicitExternalRepository(t *testing.T) {

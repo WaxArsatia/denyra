@@ -6,7 +6,7 @@ func Defaults() Config {
 	return Config{
 		HTTP: HTTPConfig{
 			AdminAddress:            "0.0.0.0:8090",
-			InternalAddress:         "172.30.0.3:8081",
+			InternalAddress:         "0.0.0.0:8081",
 			AcquisitionEventAddress: "0.0.0.0:8082",
 			InternalBodyLimit:       1 << 20,
 			AdminMutationLimit:      256 << 10,

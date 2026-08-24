@@ -19,8 +19,8 @@ case "$DENYRA_BACKUP_ID" in ''|*[!A-Za-z0-9._-]*) echo "invalid backup ID" >&2; 
 export DENYRA_BACKUP_ID
 workspace="$DENYRA_DATA_ROOT/backups/$DENYRA_BACKUP_ID"
 mkdir -m 0700 -p "$workspace"
-gateway=${DENYRA_GATEWAY_URL:-http://172.30.0.2:8081}
-pipeline=${DENYRA_PIPELINE_URL:-http://172.30.0.3:8081}
+gateway=${DENYRA_GATEWAY_URL:-http://acquisition-gateway:8081}
+pipeline=${DENYRA_PIPELINE_URL:-http://media-pipeline:8081}
 success=false
 
 cleanup() {
