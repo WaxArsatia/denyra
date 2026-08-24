@@ -221,6 +221,38 @@ func TestPersistenceSubmissionPreviewAndDraftSurviveRestart(t *testing.T) {
 	}
 }
 
+func TestPersistenceUnmanagedPlanAndIntentSurviveRestartIdempotently(t *testing.T) {
+	db, repositories, now := pipelineRepositories(t)
+	defer db.Close()
+	createPersistedCandidate(t, repositories, now)
+	plan := domain.UnmanagedPlan{CandidateID: "candidate-1", RelativeRoot: filepath.Join("Kaleb J", "OFF GUARD (2024)"), Files: []domain.PlannedFile{{SourceRelative: "01.flac", TargetRelative: "01 - Untukmu.flac", Kind: "flac"}}, Tags: map[string]domain.TagSet{"01.flac": {"TITLE": {"Untukmu"}}}}
+	evidence := domain.TechnicalReleaseResult{Files: []domain.FileTechnicalEvidence{{RelativePath: "01.flac", SHA256Before: "abc", Info: domain.TechnicalInfo{DurationMS: 1000}}}}
+	release := domain.UnmanagedRelease{CandidateID: "candidate-1", Plan: plan, Evidence: evidence, State: domain.StateUnmanagedReady, Status: "PREPARED"}
+	intent := domain.UnmanagedImportIntent{ID: "unmanaged-intent-1", CandidateID: "candidate-1", IdempotencyKey: "unmanaged-candidate-1", Plan: plan, Evidence: evidence, Status: "PENDING"}
+	if err := repositories.PutUnmanagedRelease(context.Background(), release, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := repositories.PutUnmanagedImportIntent(context.Background(), intent, now); err != nil {
+		t.Fatal(err)
+	}
+	restarted := persistence.New(db, time.Now)
+	loadedRelease, err := restarted.UnmanagedRelease(context.Background(), "candidate-1")
+	if err != nil || loadedRelease.Plan.RelativeRoot != plan.RelativeRoot || loadedRelease.Status != "PREPARED" {
+		t.Fatalf("release=%+v err=%v", loadedRelease, err)
+	}
+	loadedIntent, err := restarted.UnmanagedImportIntent(context.Background(), "candidate-1")
+	if err != nil || loadedIntent.IdempotencyKey != intent.IdempotencyKey || len(loadedIntent.Plan.Files) != 1 {
+		t.Fatalf("intent=%+v err=%v", loadedIntent, err)
+	}
+	if err := restarted.PutUnmanagedImportIntent(context.Background(), intent, now.Add(time.Second)); err != nil {
+		t.Fatalf("idempotent intent rejected: %v", err)
+	}
+	intent.Plan.RelativeRoot = "different"
+	if err := restarted.PutUnmanagedImportIntent(context.Background(), intent, now.Add(2*time.Second)); !errors.Is(err, contracts.ErrIdempotencyConflict) {
+		t.Fatalf("conflicting intent error=%v", err)
+	}
+}
+
 func pipelineRepositories(t *testing.T) (*sql.DB, *persistence.Repositories, time.Time) {
 	t.Helper()
 	ctx := context.Background()

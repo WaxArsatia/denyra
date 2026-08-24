@@ -20,6 +20,11 @@ type TagMutator interface {
 	Apply(context.Context, string, domain.TagSet, bool) ([]domain.CommandEvidence, error)
 }
 
+type SelectedTagMutator interface {
+	TagMutator
+	ApplySelected(context.Context, string, domain.TagSet, []string, bool) ([]domain.CommandEvidence, error)
+}
+
 type MutationEvidence struct {
 	RelativePath    string                   `json:"relative_path"`
 	BeforeTags      domain.TagSet            `json:"before_tags"`
@@ -81,6 +86,130 @@ func (s MutationService) MutateRelease(ctx context.Context, candidateID string, 
 	}
 	result.Approved = true
 	return result, nil
+}
+
+func (s MutationService) MutateUnmanagedRelease(ctx context.Context, candidateID string, plans map[string]domain.TagSet) (MutationResult, error) {
+	if err := domain.ValidateCandidateID(candidateID); err != nil {
+		return MutationResult{}, err
+	}
+	selected, ok := s.Tags.(SelectedTagMutator)
+	if !ok || s.Integrity == nil || s.Checksum == nil || len(plans) == 0 {
+		return MutationResult{}, fmt.Errorf("unmanaged mutation service or plans are incomplete")
+	}
+	workPath := filepath.Join(s.WorkRoot, candidateID)
+	result := MutationResult{Path: workPath}
+	paths := make([]string, 0, len(plans))
+	for relative := range plans {
+		if filepath.IsAbs(relative) || filepath.Clean(relative) != relative || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || !strings.EqualFold(filepath.Ext(relative), ".flac") {
+			return result, fmt.Errorf("invalid mutation path %q", relative)
+		}
+		paths = append(paths, relative)
+	}
+	sort.Strings(paths)
+	for _, relative := range paths {
+		evidence, err := s.mutateUnmanagedFile(ctx, selected, filepath.Join(workPath, relative), relative, plans[relative])
+		result.Files = append(result.Files, evidence)
+		if err != nil {
+			result.Reason = err.Error()
+			quarantinePath, moveErr := s.moveToQuarantine(candidateID)
+			if moveErr != nil {
+				return result, fmt.Errorf("unmanaged mutation failed (%v) and quarantine move failed: %w", err, moveErr)
+			}
+			result.Path, result.Quarantined = quarantinePath, true
+			return result, nil
+		}
+	}
+	result.Approved = true
+	return result, nil
+}
+
+func (s MutationService) mutateUnmanagedFile(ctx context.Context, mutator SelectedTagMutator, path, relative string, desired domain.TagSet) (MutationEvidence, error) {
+	evidence := MutationEvidence{RelativePath: relative}
+	beforeChecksum, err := s.Checksum(path)
+	if err != nil {
+		return evidence, err
+	}
+	evidence.BeforeSHA256 = beforeChecksum
+	beforeTags, command, err := mutator.ReadTags(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil {
+		return evidence, err
+	}
+	evidence.BeforeTags = beforeTags
+	beforeMD5, command, err := mutator.AudioMD5(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil {
+		return evidence, err
+	}
+	beforePictures, command, err := mutator.PictureCount(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil {
+		return evidence, err
+	}
+	commands, err := mutator.ApplySelected(ctx, path, desired, UnmanagedTagFields, true)
+	evidence.Commands = append(evidence.Commands, commands...)
+	if err != nil {
+		return evidence, err
+	}
+	afterTags, command, err := mutator.ReadTags(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	evidence.AfterTags = afterTags
+	if err != nil {
+		return evidence, err
+	}
+	if err := validateSelectedMutationTags(beforeTags, afterTags, desired, UnmanagedTagFields); err != nil {
+		return evidence, err
+	}
+	afterPictures, command, err := mutator.PictureCount(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil || afterPictures != beforePictures {
+		return evidence, fmt.Errorf("embedded picture count changed: before=%d after=%d error=%v", beforePictures, afterPictures, err)
+	}
+	afterMD5, command, err := mutator.AudioMD5(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil || afterMD5 != beforeMD5 {
+		return evidence, fmt.Errorf("audio-frame signature changed: before=%s after=%s error=%v", beforeMD5, afterMD5, err)
+	}
+	evidence.AudioMD5 = afterMD5
+	evidence.AfterSHA256, err = s.Checksum(path)
+	if err != nil {
+		return evidence, err
+	}
+	command, err = s.Integrity.Test(ctx, path)
+	evidence.Commands = append(evidence.Commands, command)
+	if err != nil {
+		return evidence, fmt.Errorf("post-mutation flac integrity: %w", err)
+	}
+	return evidence, nil
+}
+
+func validateSelectedMutationTags(before, after, desired domain.TagSet, fields []string) error {
+	selected := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		selected[strings.ToUpper(field)] = true
+	}
+	for field, beforeValues := range before {
+		if selected[strings.ToUpper(field)] {
+			continue
+		}
+		if !slices.Equal(beforeValues, after[field]) {
+			return fmt.Errorf("unselected tag %s was not preserved", field)
+		}
+	}
+	for field, afterValues := range after {
+		if selected[strings.ToUpper(field)] {
+			continue
+		}
+		if !slices.Equal(afterValues, before[field]) {
+			return fmt.Errorf("unselected tag %s was added or changed", field)
+		}
+	}
+	for _, field := range fields {
+		if !slices.Equal(after[field], desired[field]) {
+			return fmt.Errorf("selected tag %s differs after mutation: got=%v want=%v", field, after[field], desired[field])
+		}
+	}
+	return nil
 }
 
 func (s MutationService) mutateFile(ctx context.Context, path, relative string, desired domain.TagSet) (MutationEvidence, error) {

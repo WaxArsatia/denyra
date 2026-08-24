@@ -57,17 +57,36 @@ func (m MetaFLAC) PictureCount(ctx context.Context, path string) (int, domain.Co
 }
 
 func (m MetaFLAC) Apply(ctx context.Context, path string, tags domain.TagSet, removePictures bool) ([]domain.CommandEvidence, error) {
-	entries, err := tags.OrderedEntries()
-	if err != nil {
+	if _, err := tags.OrderedEntries(); err != nil {
 		return nil, err
 	}
+	fields := append(append([]string(nil), domain.ManagedTagFields...), "MUSICBRAINZ_RECORDINGID")
+	return m.ApplySelected(ctx, path, tags, fields, !removePictures)
+}
+
+func (m MetaFLAC) ApplySelected(ctx context.Context, path string, tags domain.TagSet, fields []string, preservePictures bool) ([]domain.CommandEvidence, error) {
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("at least one selected tag field is required")
+	}
 	arguments := []string{"--preserve-modtime"}
-	for _, field := range domain.ManagedTagFields {
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		field = strings.ToUpper(strings.TrimSpace(field))
+		if field == "" || seen[field] {
+			return nil, fmt.Errorf("selected tag fields must be non-empty and unique")
+		}
+		seen[field] = true
 		arguments = append(arguments, "--remove-tag="+field)
 	}
-	arguments = append(arguments, "--remove-tag=MUSICBRAINZ_RECORDINGID")
-	for _, entry := range entries {
-		arguments = append(arguments, "--set-tag="+entry)
+	for _, field := range fields {
+		field = strings.ToUpper(strings.TrimSpace(field))
+		for _, value := range tags[field] {
+			normalized, err := domain.NormalizeTagValue(value)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", field, err)
+			}
+			arguments = append(arguments, "--set-tag="+field+"="+normalized)
+		}
 	}
 	arguments = append(arguments, path)
 	tagEvidence, err := m.run(ctx, arguments...)
@@ -75,7 +94,7 @@ func (m MetaFLAC) Apply(ctx context.Context, path string, tags domain.TagSet, re
 	if err != nil {
 		return result, err
 	}
-	if removePictures {
+	if !preservePictures {
 		pictureEvidence, err := m.run(ctx, "--preserve-modtime", "--remove", "--block-type=PICTURE", path)
 		result = append(result, pictureEvidence)
 		if err != nil {

@@ -311,7 +311,7 @@ func (c Console) submissionDecision(r *http.Request) (domain.SubmissionDecision,
 		}
 	}
 	metadata.TrackTotal = len(metadata.Tracks)
-	return domain.SubmissionDecision{PreviewFingerprint: r.Form.Get("preview_fingerprint"), Destination: domain.Destination(r.Form.Get("destination")), ReleaseMBID: strings.TrimSpace(r.Form.Get("release_mbid")), Metadata: metadata}, nil
+	return domain.SubmissionDecision{PreviewFingerprint: r.Form.Get("preview_fingerprint"), Destination: domain.Destination(r.Form.Get("destination")), ReleaseMBID: strings.TrimSpace(r.Form.Get("release_mbid")), Metadata: metadata, Artwork: preview.Artwork}, nil
 }
 
 func (c Console) render(w http.ResponseWriter, r *http.Request, full, fragment templ.Component) {

@@ -81,6 +81,47 @@ func TestMutationPreservesUTF8TagsUnderPOSIXParentLocale(t *testing.T) {
 	}
 }
 
+func TestUnmanagedMutationPreservesIdentifiersUnknownTagsAudioAndPictures(t *testing.T) {
+	root := t.TempDir()
+	work, quarantine := filepath.Join(root, "work"), filepath.Join(root, "quarantine")
+	candidate := filepath.Join(work, "candidate-unmanaged")
+	if err := os.MkdirAll(candidate, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := generateFLACFixtures(t)
+	track := filepath.Join(candidate, "01.flac")
+	copyFile(t, filepath.Join(fixtures, "mono-16-44100.flac"), track)
+	runCommand(t, "metaflac", "--set-tag=UPC=123456789012", "--set-tag=ISRC=USAAA2600001", "--set-tag=SOURCE_URL=https://example.invalid/source", "--set-tag=CUSTOM=keep", track)
+	cover := filepath.Join(root, "cover.jpg")
+	runCommand(t, "ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=black:s=16x16", "-frames:v", "1", cover)
+	runCommand(t, "metaflac", "--import-picture-from="+cover, track)
+	runner := media.Runner{MaxOutput: 1 << 20}
+	metaflac := media.MetaFLAC{Binary: "metaflac", Version: "test", Timeout: 10 * time.Second, Runner: runner}
+	before, _, err := metaflac.ReadTags(context.Background(), track)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired := before
+	for field, value := range map[string]string{"TITLE": "Untukmu", "ARTIST": "Kaleb J", "ALBUM": "OFF GUARD", "ALBUMARTIST": "Kaleb J", "TRACKNUMBER": "1", "TRACKTOTAL": "1", "DISCNUMBER": "1", "DISCTOTAL": "1"} {
+		desired[field] = []string{value}
+	}
+	service := application.MutationService{WorkRoot: work, QuarantineRoot: quarantine, Tags: metaflac, Integrity: media.FLAC{Binary: "flac", Version: "test", Timeout: 10 * time.Second, Runner: runner}, Checksum: media.SHA256}
+	result, err := service.MutateUnmanagedRelease(context.Background(), "candidate-unmanaged", map[string]domain.TagSet{"01.flac": desired})
+	if err != nil || !result.Approved || result.Quarantined {
+		t.Fatalf("unmanaged mutation=%+v err=%v", result, err)
+	}
+	after := result.Files[0].AfterTags
+	for _, field := range []string{"UPC", "ISRC", "SOURCE_URL", "CUSTOM"} {
+		if !reflect.DeepEqual(after[field], before[field]) {
+			t.Fatalf("preserved tag %s changed: before=%v after=%v", field, before[field], after[field])
+		}
+	}
+	pictures, _, err := metaflac.PictureCount(context.Background(), track)
+	if err != nil || pictures != 1 || result.Files[0].AudioMD5 == "" {
+		t.Fatalf("pictures=%d evidence=%+v err=%v", pictures, result.Files[0], err)
+	}
+}
+
 func TestMutationPostIntegrityFailureQuarantinesWholeRelease(t *testing.T) {
 	root := t.TempDir()
 	work, quarantine := filepath.Join(root, "work"), filepath.Join(root, "quarantine")

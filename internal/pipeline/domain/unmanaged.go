@@ -2,8 +2,14 @@ package domain
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"unicode"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 type Destination string
@@ -66,6 +72,89 @@ type SubmissionDecision struct {
 	ReleaseMBID        string           `json:"release_mbid,omitempty"`
 	Metadata           MetadataPlan     `json:"metadata"`
 	Artwork            ArtworkSelection `json:"artwork,omitempty"`
+}
+
+type PlannedFile struct {
+	SourceRelative string `json:"source_relative"`
+	TargetRelative string `json:"target_relative"`
+	Kind           string `json:"kind"`
+}
+
+type UnmanagedPlan struct {
+	CandidateID  string            `json:"candidate_id"`
+	Metadata     MetadataPlan      `json:"metadata"`
+	Artwork      ArtworkSelection  `json:"artwork,omitempty"`
+	RelativeRoot string            `json:"relative_root"`
+	Files        []PlannedFile     `json:"files"`
+	Tags         map[string]TagSet `json:"tags"`
+}
+
+func BuildUnmanagedLayout(plan MetadataPlan) (string, []PlannedFile, error) {
+	if err := ValidateMetadataPlan(plan); err != nil {
+		return "", nil, err
+	}
+	artist, err := SanitizeMusicComponent(plan.AlbumArtist)
+	if err != nil {
+		return "", nil, fmt.Errorf("album artist path: %w", err)
+	}
+	album, err := SanitizeMusicComponent(plan.Album)
+	if err != nil {
+		return "", nil, fmt.Errorf("album path: %w", err)
+	}
+	if len(plan.Date) >= 4 {
+		album += " (" + plan.Date[:4] + ")"
+	}
+	if strings.TrimSpace(plan.Edition) != "" {
+		edition, err := SanitizeMusicComponent(plan.Edition)
+		if err != nil {
+			return "", nil, fmt.Errorf("edition path: %w", err)
+		}
+		album += " [" + edition + "]"
+	}
+	width := len(strconv.Itoa(plan.TrackTotal))
+	if width < 2 {
+		width = 2
+	}
+	files := make([]PlannedFile, 0, len(plan.Tracks))
+	seen := make(map[string]string, len(plan.Tracks))
+	for _, track := range plan.Tracks {
+		if filepath.IsAbs(track.RelativePath) || filepath.Clean(track.RelativePath) != track.RelativePath || strings.HasPrefix(track.RelativePath, ".."+string(filepath.Separator)) {
+			return "", nil, fmt.Errorf("unsafe source path %q", track.RelativePath)
+		}
+		title, err := SanitizeMusicComponent(track.Title)
+		if err != nil {
+			return "", nil, fmt.Errorf("track title path: %w", err)
+		}
+		target := fmt.Sprintf("%0*d - %s.flac", width, track.Track, title)
+		if plan.DiscTotal > 1 {
+			target = filepath.Join(fmt.Sprintf("Disc %02d", track.Disc), target)
+		}
+		key := cases.Fold().String(norm.NFC.String(filepath.ToSlash(target)))
+		if previous, duplicate := seen[key]; duplicate {
+			return "", nil, fmt.Errorf("target collision between %q and %q", previous, track.RelativePath)
+		}
+		seen[key] = track.RelativePath
+		files = append(files, PlannedFile{SourceRelative: track.RelativePath, TargetRelative: target, Kind: "flac"})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].TargetRelative < files[j].TargetRelative })
+	return filepath.Join(artist, album), files, nil
+}
+
+func SanitizeMusicComponent(value string) (string, error) {
+	value = norm.NFC.String(value)
+	var output strings.Builder
+	for _, character := range value {
+		if character == '/' || character == '\\' || unicode.IsControl(character) {
+			output.WriteRune('_')
+			continue
+		}
+		output.WriteRune(character)
+	}
+	cleaned := strings.TrimRight(strings.TrimSpace(output.String()), ". ")
+	if cleaned == "" || cleaned == "." || cleaned == ".." {
+		return "", fmt.Errorf("music path component is empty or reserved")
+	}
+	return cleaned, nil
 }
 
 type SubmissionPreview struct {

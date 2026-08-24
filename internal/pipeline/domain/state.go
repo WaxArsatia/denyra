@@ -24,6 +24,10 @@ const (
 	StateRejected            State = "REJECTED"
 	StateSuperseded          State = "SUPERSEDED"
 	StateCancelled           State = "CANCELLED"
+	StateUnmanagedReview     State = "UNMANAGED_REVIEW"
+	StateUnmanagedReady      State = "UNMANAGED_READY"
+	StateUnmanagedImporting  State = "UNMANAGED_IMPORTING"
+	StateUnmanagedImported   State = "UNMANAGED_IMPORTED"
 )
 
 var allStates = map[State]struct{}{
@@ -32,6 +36,7 @@ var allStates = map[State]struct{}{
 	StateEnriching: {}, StateApproved: {}, StateArbitrationPending: {}, StateImportReady: {},
 	StateImportSubmitted: {}, StateImportReconciling: {}, StateImported: {}, StateQuarantined: {},
 	StateRejected: {}, StateSuperseded: {}, StateCancelled: {},
+	StateUnmanagedReview: {}, StateUnmanagedReady: {}, StateUnmanagedImporting: {}, StateUnmanagedImported: {},
 }
 
 func ParseState(value string) (State, error) {
@@ -49,7 +54,7 @@ func (s State) Valid() bool {
 
 func (s State) Terminal() bool {
 	switch s {
-	case StateImported, StateRejected, StateSuperseded, StateCancelled:
+	case StateImported, StateUnmanagedImported, StateRejected, StateSuperseded, StateCancelled:
 		return true
 	default:
 		return false

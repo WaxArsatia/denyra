@@ -24,7 +24,7 @@ var allowedTransitions = map[State]map[State]struct{}{
 	StateWaitingResubmit:     edges(StateReceived, StateCancelled),
 	StateWorking:             edges(StateTechnicalValidation, StateQuarantined, StateCancelled),
 	StateTechnicalValidation: edges(StateReleaseMatching, StateQuarantined, StateRejected, StateCancelled),
-	StateReleaseMatching:     edges(StateReviewRequired, StateEnriching, StateQuarantined, StateRejected, StateCancelled),
+	StateReleaseMatching:     edges(StateReviewRequired, StateEnriching, StateUnmanagedReview, StateUnmanagedReady, StateQuarantined, StateRejected, StateCancelled),
 	StateReviewRequired:      edges(StateWorking, StateRejected, StateCancelled),
 	StateEnriching:           edges(StateApproved, StateQuarantined, StateCancelled),
 	StateApproved:            edges(StateArbitrationPending, StateImportReady, StateSuperseded, StateCancelled),
@@ -33,6 +33,9 @@ var allowedTransitions = map[State]map[State]struct{}{
 	StateImportSubmitted:     edges(StateImportReconciling),
 	StateImportReconciling:   edges(StateImported, StateImportSubmitted),
 	StateQuarantined:         edges(StateWorking, StateReviewRequired, StateRejected, StateCancelled),
+	StateUnmanagedReview:     edges(StateUnmanagedReady, StateRejected, StateCancelled),
+	StateUnmanagedReady:      edges(StateUnmanagedImporting),
+	StateUnmanagedImporting:  edges(StateUnmanagedImported, StateUnmanagedReview),
 }
 
 func edges(states ...State) map[State]struct{} {
