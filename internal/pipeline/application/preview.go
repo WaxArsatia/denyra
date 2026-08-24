@@ -27,6 +27,7 @@ type PreviewInspector interface {
 type SubmissionPreviewService struct {
 	Store     SubmissionPreviewStore
 	Inspector PreviewInspector
+	Identity  *IdentityService
 	Scan      func(string) (denyrafs.Tree, error)
 	Now       func() time.Time
 }
@@ -55,6 +56,7 @@ func (s SubmissionPreviewService) Preview(ctx context.Context, submissionID stri
 		}
 	}
 	preview := domain.SubmissionPreview{SubmissionID: submissionID, Ingress: record.Ingress, Revision: record.Revision, Fingerprint: tree.Fingerprint}
+	observed := domain.TechnicalReleaseResult{}
 	var albumArtists, albums, dates []fieldObservation
 	for _, entry := range tree.Entries {
 		if !strings.EqualFold(filepath.Ext(entry.RelativePath), ".flac") {
@@ -65,6 +67,7 @@ func (s SubmissionPreviewService) Preview(ctx context.Context, submissionID stri
 			return domain.SubmissionPreview{}, fmt.Errorf("inspect %s: %w", entry.RelativePath, err)
 		}
 		track := domain.TrackMetadata{RelativePath: entry.RelativePath, DurationMS: info.DurationMS, ISRCs: append([]string(nil), comments["ISRC"]...)}
+		observed.Files = append(observed.Files, domain.FileTechnicalEvidence{RelativePath: entry.RelativePath, Info: info, OriginalComments: cloneComments(comments)})
 		track.Title = oneTrackValue(comments, "TITLE", entry.RelativePath, &preview.Conflicts)
 		track.Artist = oneTrackValue(comments, "ARTIST", entry.RelativePath, &preview.Conflicts)
 		track.Track, _ = positionValue(comments, "TRACKNUMBER", entry.RelativePath, &preview.Conflicts)
@@ -93,10 +96,42 @@ func (s SubmissionPreviewService) Preview(ctx context.Context, submissionID stri
 	if preview.Metadata.DiscTotal == 0 {
 		preview.Metadata.DiscTotal = 1
 	}
+	if s.Identity != nil {
+		if validationErr := domain.ValidateMetadataPlan(preview.Metadata); validationErr == nil {
+			decision, _ := s.Identity.Decide(ctx, preview.Metadata, observed)
+			preview.Identity = identityPreview(decision)
+		}
+	}
 	if err := s.Store.PutSubmissionPreview(ctx, preview, s.now()); err != nil {
 		return domain.SubmissionPreview{}, err
 	}
 	return preview, nil
+}
+
+func identityPreview(decision IdentityDecision) *domain.IdentityPreview {
+	preview := &domain.IdentityPreview{Status: string(decision.Status), Reason: decision.Reason}
+	switch decision.Status {
+	case IdentityExact:
+		preview.SuggestedDestination = domain.DestinationManaged
+		if decision.Exact != nil {
+			preview.ExactReleaseMBID = decision.Exact.Release.ReleaseMBID
+		}
+	case IdentityNoMatch:
+		preview.SuggestedDestination = domain.DestinationUnmanaged
+	}
+	for _, candidate := range decision.Candidates {
+		preview.Candidates = append(preview.Candidates, domain.IdentityCandidatePreview{
+			ReleaseMBID: candidate.Release.ReleaseMBID,
+			Title:       candidate.Release.Title,
+			Artist:      joinCredits(candidate.Release.ArtistCredits),
+			Date:        candidate.Release.Date,
+			MatchStatus: candidate.Match.Status,
+		})
+	}
+	for _, evidence := range decision.Evidence {
+		preview.Evidence = append(preview.Evidence, domain.IdentityEvidence{Endpoint: evidence.Endpoint, StatusCode: evidence.StatusCode, ResponseSHA256: evidence.ResponseSHA256})
+	}
+	return preview
 }
 
 func (s SubmissionPreviewService) SaveDraft(ctx context.Context, submissionID string, decision domain.SubmissionDecision) error {

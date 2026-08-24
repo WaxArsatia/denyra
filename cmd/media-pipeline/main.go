@@ -153,7 +153,17 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			auth := application.AuthService{Repository: repositories, AbsoluteExpiry: time.Duration(prepared.Config.Sessions.AbsoluteExpiry), PasswordMinLen: prepared.Config.Sessions.PasswordMinLen}
 			gatewayClient := gatewayadapter.Client{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
 			previewInspector := media.FFProbe{Binary: "ffprobe", Version: "deployment-release", Timeout: time.Duration(prepared.Config.Validation.FFProbeTimeout), Runner: media.Runner{MaxOutput: int(prepared.Config.Acquisition.ProcessOutputLimit)}}
-			previews := &application.SubmissionPreviewService{Store: repositories, Inspector: previewInspector}
+			previewHTTP := &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}
+			previewMusicBrainz := &musicbrainz.Client{BaseURL: prepared.Config.Services.MusicBrainzURL, UserAgent: "Denyra/1 (+https://github.com/waxarsatia/denyra)", HTTP: previewHTTP, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit, RateInterval: time.Duration(prepared.Config.Validation.MusicBrainzRateInterval)}
+			previews := &application.SubmissionPreviewService{Store: repositories, Inspector: previewInspector, Identity: &application.IdentityService{
+				Search: previewMusicBrainz,
+				DurationPolicy: domain.DurationPolicy{
+					TrackAutoFloorMS: prepared.Config.Validation.TrackAutoFloorMS, TrackAutoPercentBasisPoints: prepared.Config.Validation.TrackAutoPercentBasisPoints,
+					TrackManualFloorMS: prepared.Config.Validation.TrackManualFloorMS, TrackManualPercentBasisPoints: prepared.Config.Validation.TrackManualPercentBasisPoints,
+					ReleaseAutoFloorMS: prepared.Config.Validation.ReleaseAutoFloorMS, ReleaseAutoPercentBasisPoints: prepared.Config.Validation.ReleaseAutoPercentBasisPoints,
+					ReleaseManualFloorMS: prepared.Config.Validation.ReleaseManualFloorMS, ReleaseManualPercentBasisPoints: prepared.Config.Validation.ReleaseManualPercentBasisPoints,
+				},
+			}}
 			uploads := &application.UploadService{
 				Store: repositories, Writer: denyrafs.UploadWriter{Root: prepared.Config.Filesystem.IncomingUploading},
 				UploadingRoot: prepared.Config.Filesystem.IncomingUploading, IncomingRoot: prepared.Config.Filesystem.IncomingManual,

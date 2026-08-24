@@ -63,7 +63,32 @@ type SubmissionPreview struct {
 	Fingerprint  string              `json:"fingerprint"`
 	Metadata     MetadataPlan        `json:"metadata"`
 	Conflicts    []MetadataConflict  `json:"conflicts,omitempty"`
+	Identity     *IdentityPreview    `json:"identity,omitempty"`
 	Draft        *SubmissionDecision `json:"draft,omitempty"`
+}
+
+type IdentityPreview struct {
+	Status               string                     `json:"status"`
+	SuggestedDestination Destination                `json:"suggested_destination,omitempty"`
+	ExactReleaseMBID     string                     `json:"exact_release_mbid,omitempty"`
+	Candidates           []IdentityCandidatePreview `json:"candidates,omitempty"`
+	Evidence             []IdentityEvidence         `json:"evidence,omitempty"`
+	Reason               string                     `json:"reason,omitempty"`
+}
+
+type IdentityCandidatePreview struct {
+	ReleaseMBID string         `json:"release_mbid"`
+	Title       string         `json:"title"`
+	Artist      string         `json:"artist"`
+	Date        string         `json:"date,omitempty"`
+	MatchStatus DurationStatus `json:"match_status"`
+}
+
+type IdentityEvidence struct {
+	Endpoint       string `json:"endpoint"`
+	StatusCode     int    `json:"status_code"`
+	ResponseSHA256 string `json:"response_sha256"`
+	ResponseBody   []byte `json:"-"`
 }
 
 func ValidateMetadataPlan(plan MetadataPlan) error {

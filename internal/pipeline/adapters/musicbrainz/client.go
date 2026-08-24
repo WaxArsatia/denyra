@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,21 @@ type Evidence struct {
 	StatusCode     int    `json:"status_code"`
 	ResponseSHA256 string `json:"response_sha256"`
 	ResponseBody   []byte `json:"response_body"`
+}
+
+type SearchInput struct {
+	TaggedReleaseMBIDs []string
+	Barcodes           []string
+	ISRCs              []string
+	AlbumArtist        string
+	Album              string
+	Date               string
+	TrackCount         int
+}
+
+type SearchResult struct {
+	Releases []domain.CanonicalRelease
+	Evidence []Evidence
 }
 
 type Client struct {
@@ -104,6 +120,214 @@ func (c *Client) LookupRelease(ctx context.Context, releaseMBID string) (domain.
 		return domain.CanonicalRelease{}, evidence, fmt.Errorf("MusicBrainz returned release %q for %q", release.ReleaseMBID, releaseID)
 	}
 	return release, evidence, nil
+}
+
+func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchResult, error) {
+	result := SearchResult{}
+	ids := make([]string, 0)
+	seenIDs := make(map[string]bool)
+	releases := make(map[string]domain.CanonicalRelease)
+	addID := func(value string) error {
+		id, err := domain.CanonicalMBID(strings.TrimSpace(value))
+		if err != nil {
+			return err
+		}
+		if !seenIDs[id] {
+			seenIDs[id] = true
+			ids = append(ids, id)
+		}
+		return nil
+	}
+
+	for _, id := range sortedUnique(input.TaggedReleaseMBIDs) {
+		if err := addID(id); err != nil {
+			return result, fmt.Errorf("tagged release MBID: %w", err)
+		}
+		release, evidence, err := c.LookupRelease(ctx, id)
+		result.Evidence = append(result.Evidence, evidence)
+		if err != nil {
+			return result, err
+		}
+		releases[release.ReleaseMBID] = release
+	}
+
+	for _, barcode := range sortedUnique(input.Barcodes) {
+		body, evidence, err := c.requestJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"barcode:" + barcode}})
+		result.Evidence = append(result.Evidence, evidence)
+		if err != nil {
+			return result, err
+		}
+		var payload struct {
+			Releases []struct {
+				ID string `json:"id"`
+			} `json:"releases"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return result, fmt.Errorf("decode MusicBrainz release search: %w", err)
+		}
+		for index, release := range payload.Releases {
+			if index == 10 {
+				break
+			}
+			if err := addID(release.ID); err != nil {
+				return result, fmt.Errorf("release search MBID: %w", err)
+			}
+		}
+	}
+
+	for _, isrc := range sortedUnique(input.ISRCs) {
+		body, evidence, err := c.requestJSON(ctx, "/ws/2/recording", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"isrc:" + isrc}})
+		result.Evidence = append(result.Evidence, evidence)
+		if err != nil {
+			return result, err
+		}
+		var payload struct {
+			Recordings []struct {
+				ID string `json:"id"`
+			} `json:"recordings"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return result, fmt.Errorf("decode MusicBrainz recording search: %w", err)
+		}
+		for index, recording := range payload.Recordings {
+			if index == 10 {
+				break
+			}
+			recordingID, err := domain.CanonicalMBID(recording.ID)
+			if err != nil {
+				return result, fmt.Errorf("recording search MBID: %w", err)
+			}
+			body, evidence, err := c.requestJSON(ctx, "/ws/2/recording/"+recordingID, url.Values{"fmt": {"json"}, "inc": {"releases"}})
+			result.Evidence = append(result.Evidence, evidence)
+			if err != nil {
+				return result, err
+			}
+			var lookup struct {
+				Releases []struct {
+					ID string `json:"id"`
+				} `json:"releases"`
+			}
+			if err := json.Unmarshal(body, &lookup); err != nil {
+				return result, fmt.Errorf("decode MusicBrainz recording lookup: %w", err)
+			}
+			for _, release := range lookup.Releases {
+				if err := addID(release.ID); err != nil {
+					return result, fmt.Errorf("recording release MBID: %w", err)
+				}
+			}
+		}
+	}
+
+	if strings.TrimSpace(input.AlbumArtist) != "" && strings.TrimSpace(input.Album) != "" && input.TrackCount > 0 {
+		terms := []string{"artist:" + strings.TrimSpace(input.AlbumArtist), "release:" + strings.TrimSpace(input.Album)}
+		if value := strings.TrimSpace(input.Date); value != "" {
+			terms = append(terms, "date:"+value)
+		}
+		terms = append(terms, fmt.Sprintf("tracks:%d", input.TrackCount))
+		body, evidence, err := c.requestJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {strings.Join(terms, " AND ")}})
+		result.Evidence = append(result.Evidence, evidence)
+		if err != nil {
+			return result, err
+		}
+		var payload struct {
+			Releases []struct {
+				ID string `json:"id"`
+			} `json:"releases"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			return result, fmt.Errorf("decode MusicBrainz metadata search: %w", err)
+		}
+		for index, release := range payload.Releases {
+			if index == 10 {
+				break
+			}
+			if err := addID(release.ID); err != nil {
+				return result, fmt.Errorf("metadata search MBID: %w", err)
+			}
+		}
+	}
+
+	for _, id := range ids {
+		release, exists := releases[id]
+		if !exists {
+			var evidence Evidence
+			var err error
+			release, evidence, err = c.LookupRelease(ctx, id)
+			result.Evidence = append(result.Evidence, evidence)
+			if err != nil {
+				return result, err
+			}
+		}
+		result.Releases = append(result.Releases, release)
+	}
+	return result, nil
+}
+
+func (c *Client) requestJSON(ctx context.Context, path string, query url.Values) ([]byte, Evidence, error) {
+	if strings.TrimSpace(c.UserAgent) == "" || (!strings.Contains(c.UserAgent, "@") && !strings.Contains(c.UserAgent, "http")) {
+		return nil, Evidence{}, fmt.Errorf("MusicBrainz User-Agent must identify a version and contact")
+	}
+	base := c.BaseURL
+	if base == "" {
+		base = "https://musicbrainz.org"
+	}
+	endpoint, err := url.Parse(strings.TrimRight(base, "/") + path)
+	if err != nil {
+		return nil, Evidence{}, err
+	}
+	endpoint.RawQuery = query.Encode()
+	if err := c.waitRate(ctx); err != nil {
+		return nil, Evidence{}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, Evidence{}, err
+	}
+	request.Header.Set("User-Agent", c.UserAgent)
+	request.Header.Set("Accept", "application/json")
+	client := c.HTTP
+	if client == nil {
+		client = &http.Client{Timeout: 30 * time.Second}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, Evidence{Endpoint: endpoint.String()}, &RetryableError{Err: err}
+	}
+	defer response.Body.Close()
+	limit := c.ResponseLimit
+	if limit <= 0 {
+		limit = 4 << 20
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil {
+		return nil, Evidence{}, &RetryableError{Err: err}
+	}
+	bodyHash := sha256.Sum256(body)
+	evidence := Evidence{Endpoint: endpoint.String(), StatusCode: response.StatusCode, ResponseBody: body, ResponseSHA256: hex.EncodeToString(bodyHash[:])}
+	if int64(len(body)) > limit {
+		return nil, evidence, fmt.Errorf("MusicBrainz response exceeds %d bytes", limit)
+	}
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
+		return nil, evidence, &RetryableError{Err: fmt.Errorf("HTTP status %d", response.StatusCode)}
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, evidence, fmt.Errorf("MusicBrainz HTTP status %d", response.StatusCode)
+	}
+	return body, evidence, nil
+}
+
+func sortedUnique(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			result = append(result, value)
+		}
+	}
+	slices.Sort(result)
+	return result
 }
 
 func (c *Client) waitRate(ctx context.Context) error {

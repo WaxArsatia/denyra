@@ -118,6 +118,31 @@ func TestMusicBrainzOperationalFailureIsRetryableNotAmbiguity(t *testing.T) {
 	}
 }
 
+func TestIdentitySearchEvidenceCannotOverrideReleaseAtomicValidation(t *testing.T) {
+	goodDuration, badDuration := int64(180_000), int64(260_000)
+	makeRelease := func(id string, duration *int64) domain.CanonicalRelease {
+		return domain.CanonicalRelease{
+			ReleaseMBID: id, ReleaseGroupMBID: releaseGroupMBID, Title: "OFF GUARD", Date: "2026", ArtistCredits: []domain.ArtistCredit{{Name: "Kaleb J", ArtistMBID: "55555555-5555-5555-5555-555555555555"}},
+			Tracks: []domain.CanonicalTrack{{ReleaseTrackMBID: releaseTrackMBID, RecordingMBID: recordingMBID, Title: "Track", Disc: 1, Track: 1, Number: "1", DurationMS: duration, ArtistCredits: []domain.ArtistCredit{{Name: "Kaleb J"}}, ISRCs: []string{"IDABC2600001"}}},
+		}
+	}
+	plan := domain.MetadataPlan{AlbumArtist: "Kaleb J", Album: "OFF GUARD", Date: "2026", DiscTotal: 1, TrackTotal: 1, Preserved: map[string]map[string][]string{"01.flac": {}}, Tracks: []domain.TrackMetadata{{RelativePath: "01.flac", Title: "Track", Artist: "Kaleb J", Disc: 1, Track: 1, DurationMS: goodDuration, ISRCs: []string{"IDABC2600001"}}}}
+	observed := domain.TechnicalReleaseResult{Files: []domain.FileTechnicalEvidence{{RelativePath: "01.flac", Info: domain.TechnicalInfo{DurationMS: goodDuration}}}}
+	decision, err := (application.IdentityService{Search: staticReleaseSearch{releases: []domain.CanonicalRelease{
+		makeRelease("66666666-6666-6666-6666-666666666666", &badDuration),
+		makeRelease(releaseMBID, &goodDuration),
+	}}, DurationPolicy: pipelineDurationPolicy()}).Decide(context.Background(), plan, observed)
+	if err != nil || decision.Status != application.IdentityExact || decision.Exact == nil || decision.Exact.Release.ReleaseMBID != releaseMBID {
+		t.Fatalf("release-atomic identity decision=%+v err=%v", decision, err)
+	}
+}
+
+type staticReleaseSearch struct{ releases []domain.CanonicalRelease }
+
+func (s staticReleaseSearch) SearchReleases(context.Context, musicbrainz.SearchInput) (musicbrainz.SearchResult, error) {
+	return musicbrainz.SearchResult{Releases: s.releases}, nil
+}
+
 func TestReleaseMatchingBeetsAdvisorIsIsolatedAndCannotAccessLibrary(t *testing.T) {
 	root := t.TempDir()
 	library := filepath.Join(root, "library")

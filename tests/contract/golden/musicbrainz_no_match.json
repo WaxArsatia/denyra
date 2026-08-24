@@ -1,0 +1,12 @@
+{
+  "status": "NO_MATCH",
+  "suggested_destination": "UNMANAGED",
+  "evidence": [
+    {
+      "endpoint": "https://musicbrainz.org/ws/2/release?query=barcode%3A123456789012",
+      "status_code": 200,
+      "response_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "reason": "no release satisfies identity and duration checks"
+}

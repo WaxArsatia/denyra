@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
 func TestCandidateAcceptedGoldenJSON(t *testing.T) {
@@ -43,6 +44,24 @@ func TestCandidateApprovedGoldenJSON(t *testing.T) {
 		StateRevision: 7,
 	}
 	assertGolden(t, "candidate_approved.json", value)
+}
+
+func TestMusicBrainzIdentityGoldenJSON(t *testing.T) {
+	t.Parallel()
+	evidence := domain.IdentityEvidence{Endpoint: "https://musicbrainz.org/ws/2/release?query=barcode%3A123456789012", StatusCode: 200, ResponseSHA256: strings.Repeat("a", 64)}
+	candidate := domain.IdentityCandidatePreview{ReleaseMBID: "11111111-1111-1111-1111-111111111111", Title: "OFF GUARD", Artist: "Kaleb J", Date: "2024", MatchStatus: domain.DurationAutoApprove}
+	tests := []struct {
+		name  string
+		value domain.IdentityPreview
+	}{
+		{name: "musicbrainz_no_match.json", value: domain.IdentityPreview{Status: "NO_MATCH", SuggestedDestination: domain.DestinationUnmanaged, Evidence: []domain.IdentityEvidence{evidence}, Reason: "no release satisfies identity and duration checks"}},
+		{name: "musicbrainz_ambiguous.json", value: domain.IdentityPreview{Status: "AMBIGUOUS", Candidates: []domain.IdentityCandidatePreview{candidate, {ReleaseMBID: "22222222-2222-2222-2222-222222222222", Title: "OFF GUARD", Artist: "Kaleb J", Date: "2024", MatchStatus: domain.DurationAutoApprove}}, Evidence: []domain.IdentityEvidence{evidence}, Reason: "multiple releases satisfy all identity and duration checks"}},
+		{name: "musicbrainz_exact_barcode.json", value: domain.IdentityPreview{Status: "EXACT", SuggestedDestination: domain.DestinationManaged, ExactReleaseMBID: candidate.ReleaseMBID, Candidates: []domain.IdentityCandidatePreview{candidate}, Evidence: []domain.IdentityEvidence{evidence}, Reason: "one release satisfies all identity and duration checks"}},
+		{name: "musicbrainz_identifier_conflict.json", value: domain.IdentityPreview{Status: "AMBIGUOUS", Candidates: []domain.IdentityCandidatePreview{candidate}, Evidence: []domain.IdentityEvidence{evidence}, Reason: "conflicting tagged release MBIDs require manual choice"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) { assertGolden(t, test.name, test.value) })
+	}
 }
 
 func TestStrictDecodeRejectsUnknownFieldsAndOversize(t *testing.T) {

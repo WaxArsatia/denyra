@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/pipeline/adapters/musicbrainz"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
@@ -68,6 +69,58 @@ func TestSubmissionPreviewDoesNotInventMajorityAlbumValue(t *testing.T) {
 	if preview.Metadata.Album != "" || !hasMetadataConflict(preview.Conflicts, "ALBUM", "") {
 		t.Fatalf("conflicting album was invented: %+v conflicts=%+v", preview.Metadata, preview.Conflicts)
 	}
+}
+
+func TestSubmissionPreviewCachesIdentityEvidenceAndSuggestedDestination(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "01.flac"), []byte("flac"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	duration := int64(1000)
+	release := domain.CanonicalRelease{
+		ReleaseMBID:      "11111111-1111-1111-1111-111111111111",
+		ReleaseGroupMBID: "22222222-2222-2222-2222-222222222222",
+		Title:            "OFF GUARD",
+		Date:             "2024",
+		ArtistCredits:    []domain.ArtistCredit{{Name: "Kaleb J", ArtistMBID: "33333333-3333-3333-3333-333333333333"}},
+		Tracks: []domain.CanonicalTrack{{
+			ReleaseTrackMBID: "44444444-4444-4444-4444-444444444444", RecordingMBID: "55555555-5555-5555-5555-555555555555",
+			Title: "First", Disc: 1, Track: 1, DurationMS: &duration, ArtistCredits: []domain.ArtistCredit{{Name: "Kaleb J"}}, ISRCs: []string{"IDABC2600001"},
+		}},
+	}
+	store := &previewMemoryStore{record: application.SubmissionRecord{ID: "submission-1", SourcePath: root, Status: "DISCOVERED", Ingress: "browser"}}
+	searcher := &countingIdentitySearcher{result: musicbrainz.SearchResult{Releases: []domain.CanonicalRelease{release}, Evidence: []musicbrainz.Evidence{{Endpoint: "https://musicbrainz.invalid/release", StatusCode: 200, ResponseSHA256: "abc"}}}}
+	service := application.SubmissionPreviewService{
+		Store: store, Inspector: &previewInspector{tags: map[string]map[string][]string{"01.flac": {
+			"ALBUMARTIST": {"Kaleb J"}, "ALBUM": {"OFF GUARD"}, "DATE": {"2024"}, "TITLE": {"First"}, "ARTIST": {"Kaleb J"}, "TRACKNUMBER": {"1"}, "DISCNUMBER": {"1"}, "ISRC": {"IDABC2600001"},
+		}}},
+		Identity: &application.IdentityService{Search: searcher, DurationPolicy: identityDurationPolicy()},
+	}
+	preview, err := service.Preview(context.Background(), "submission-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Identity == nil || preview.Identity.Status != string(application.IdentityExact) || preview.Identity.SuggestedDestination != domain.DestinationManaged || preview.Identity.ExactReleaseMBID != release.ReleaseMBID {
+		t.Fatalf("identity preview=%+v", preview.Identity)
+	}
+	if len(preview.Identity.Evidence) != 1 || preview.Identity.Evidence[0].ResponseSHA256 != "abc" || preview.Identity.Evidence[0].ResponseBody != nil {
+		t.Fatalf("persisted evidence=%+v", preview.Identity.Evidence)
+	}
+	if _, err := service.Preview(context.Background(), "submission-1", false); err != nil || searcher.calls != 1 {
+		t.Fatalf("cached identity search calls=%d err=%v", searcher.calls, err)
+	}
+}
+
+type countingIdentitySearcher struct {
+	result musicbrainz.SearchResult
+	err    error
+	calls  int
+}
+
+func (s *countingIdentitySearcher) SearchReleases(context.Context, musicbrainz.SearchInput) (musicbrainz.SearchResult, error) {
+	s.calls++
+	return s.result, s.err
 }
 
 type previewMemoryStore struct {
