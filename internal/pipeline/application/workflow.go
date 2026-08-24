@@ -62,6 +62,7 @@ type ControlledWorkflow struct {
 	Validator            TechnicalValidator
 	Lookup               ReleaseLookup
 	Matching             MatchingService
+	Catalog              LidarrCatalogService
 	Enrichment           EnrichmentService
 	Mutation             MutationService
 	Quality              QualityReporter
@@ -171,6 +172,7 @@ func (workflow ControlledWorkflow) validate(ctx context.Context, candidate domai
 }
 
 func (workflow ControlledWorkflow) match(ctx context.Context, candidate domain.Candidate) error {
+	var target string
 	if candidate.Source == domain.SourceManual {
 		approved, decisionErr := workflow.Store.SubmissionDecision(ctx, candidate.ID)
 		if decisionErr != nil {
@@ -186,10 +188,14 @@ func (workflow ControlledWorkflow) match(ctx context.Context, candidate domain.C
 			}
 			return workflow.transition(ctx, candidate, domain.StateUnmanagedReady, "approved unmanaged metadata and layout passed preflight", "")
 		}
+		target = approved.ReleaseMBID
 	}
-	target, err := workflow.Store.TargetRelease(ctx, candidate.ID)
-	if err != nil {
-		return err
+	if candidate.Source != domain.SourceManual {
+		var err error
+		target, err = workflow.Store.TargetRelease(ctx, candidate.ID)
+		if err != nil {
+			return err
+		}
 	}
 	if target == "" {
 		if err := moveCandidate(workflow.Claim.WorkRoot, workflow.Matching.QuarantineRoot, candidate.ID); err != nil {
@@ -221,6 +227,9 @@ func (workflow ControlledWorkflow) match(ctx context.Context, candidate domain.C
 		return err
 	}
 	if err := workflow.Store.RecordMatch(ctx, candidate.ID, decision.Match, workflow.now()); err != nil {
+		return err
+	}
+	if _, err := workflow.Catalog.EnsureRelease(ctx, release); err != nil {
 		return err
 	}
 	return workflow.transition(ctx, candidate, decision.State, defaultReason(decision.Reason, "release-atomic MusicBrainz match passed"), target)
@@ -333,7 +342,11 @@ func (workflow ControlledWorkflow) submitImport(ctx context.Context, candidate d
 	} else if !errors.Is(existingErr, sql.ErrNoRows) {
 		return existingErr
 	}
-	if _, err := workflow.Import.Submit(ctx, candidate.ID, state.TargetReleaseMBID, state.DownloadID, authorization); err != nil {
+	catalog, err := workflow.Catalog.EnsureRelease(ctx, state.Release)
+	if err != nil {
+		return err
+	}
+	if _, err := workflow.Import.Submit(ctx, candidate.ID, state.TargetReleaseMBID, state.DownloadID, authorization, catalog.AlbumReleaseID); err != nil {
 		return err
 	}
 	return workflow.transition(ctx, candidate, domain.StateImportSubmitted, "release batch handed to Lidarr Manual Import API", state.TargetReleaseMBID)

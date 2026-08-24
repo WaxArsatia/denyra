@@ -26,5 +26,12 @@ func (s LidarrCatalogService) EnsureRelease(ctx context.Context, release domain.
 	if len(release.ArtistCredits) == 0 || len(release.Tracks) == 0 {
 		return CatalogResult{}, fmt.Errorf("canonical release artist and tracks are required")
 	}
-	return s.Catalog.EnsureRelease(ctx, release)
+	result, err := s.Catalog.EnsureRelease(ctx, release)
+	if err != nil {
+		return CatalogResult{}, err
+	}
+	if result.ArtistID <= 0 || result.AlbumID <= 0 || result.AlbumReleaseID <= 0 {
+		return CatalogResult{}, fmt.Errorf("Lidarr catalog response omitted concrete artist, album, or album release ID")
+	}
+	return result, nil
 }

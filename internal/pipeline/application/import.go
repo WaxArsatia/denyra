@@ -57,7 +57,7 @@ type ImportSubmission struct {
 	ReconcileRequired bool
 }
 
-func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, downloadID string, authorization ImportAuthorization) (ImportSubmission, error) {
+func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, downloadID string, authorization ImportAuthorization, catalogAlbumReleaseID int) (ImportSubmission, error) {
 	if authorization != ImportManualApproved && authorization != ImportGatewayWinner {
 		return ImportSubmission{}, fmt.Errorf("candidate lacks manual approval or gateway winner lock")
 	}
@@ -66,6 +66,9 @@ func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, dow
 	}
 	if _, err := domain.CanonicalMBID(releaseMBID); err != nil {
 		return ImportSubmission{}, err
+	}
+	if catalogAlbumReleaseID <= 0 {
+		return ImportSubmission{}, fmt.Errorf("catalog album release ID is required")
 	}
 	if s.Configuration == nil || s.Importer == nil || s.Store == nil {
 		return ImportSubmission{}, fmt.Errorf("import service is not configured")
@@ -105,6 +108,9 @@ func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, dow
 	plan, err := s.Importer.Prepare(ctx, approvedPath, releaseMBID, downloadID, flacCount)
 	if err != nil {
 		return ImportSubmission{ApprovedPath: approvedPath}, err
+	}
+	if plan.AlbumReleaseID != catalogAlbumReleaseID {
+		return ImportSubmission{ApprovedPath: approvedPath}, fmt.Errorf("catalog album release ID %d does not match Manual Import album release ID %d", catalogAlbumReleaseID, plan.AlbumReleaseID)
 	}
 	requestHash := sha256.Sum256(plan.RequestBody)
 	intentID, err := ids.NewToken(16)

@@ -99,7 +99,7 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 		Importer: lidarr.ManualImporter{Client: client}, Verifier: lidarr.LibraryVerifier{Client: client, LibraryRoot: libraryRoot}, Store: store,
 		Now: func() time.Time { return time.Date(2026, 8, 24, 4, 0, 0, 0, time.UTC) },
 	}
-	submission, err := service.Submit(context.Background(), "candidate-1", releaseMBID, "download-1", application.ImportGatewayWinner)
+	submission, err := service.Submit(context.Background(), "candidate-1", releaseMBID, "download-1", application.ImportGatewayWinner, 11)
 	if err != nil || !submission.ReconcileRequired || postCount != 1 || store.status != "IMPORT_SUBMITTED" {
 		t.Fatalf("import submission = %+v store=%+v posts=%d error=%v", submission, store, postCount, err)
 	}
@@ -232,7 +232,7 @@ func TestImportConfigurationDriftBlocksBeforeMoveOrIntent(t *testing.T) {
 	store := &importStore{}
 	client := lidarr.Client{BaseURL: server.URL, APIKey: "key", HTTP: server.Client()}
 	service := application.ImportService{WorkRoot: filepath.Join(root, "work"), ApprovedRoot: filepath.Join(root, "approved"), Configuration: lidarr.ConfigVerifier{Client: client}, Importer: lidarr.ManualImporter{Client: client}, Store: store}
-	if _, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved); err == nil {
+	if _, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved, 1); err == nil {
 		t.Fatal("configuration drift accepted")
 	}
 	if _, err := os.Stat(work); err != nil || store.hasIntent() {
@@ -252,9 +252,33 @@ func TestImportAmbiguousAcknowledgementEntersReconciliationWithoutRetry(t *testi
 	store := &importStore{}
 	importer := &fakeAmbiguousImporter{}
 	service := application.ImportService{WorkRoot: filepath.Join(root, "work"), ApprovedRoot: filepath.Join(root, "approved"), Configuration: passingConfig{}, Importer: importer, Store: store}
-	submission, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved)
+	submission, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved, 2)
 	if err != nil || !submission.ReconcileRequired || importer.calls != 1 || store.status != "IMPORT_RECONCILING" {
 		t.Fatalf("ambiguous submit = %+v store=%+v calls=%d err=%v", submission, store, importer.calls, err)
+	}
+}
+
+func TestImportRejectsCatalogAlbumReleaseMismatchBeforeIntentOrSubmit(t *testing.T) {
+	root := t.TempDir()
+	work := filepath.Join(root, "work", "candidate")
+	if err := os.MkdirAll(work, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "01.flac"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := &importStore{}
+	importer := &fakeAmbiguousImporter{}
+	service := application.ImportService{
+		WorkRoot: filepath.Join(root, "work"), ApprovedRoot: filepath.Join(root, "approved"),
+		Configuration: passingConfig{}, Importer: importer, Store: store,
+	}
+	_, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved, 99)
+	if err == nil || !strings.Contains(err.Error(), "catalog album release") {
+		t.Fatalf("catalog mismatch error=%v", err)
+	}
+	if importer.calls != 0 || store.hasIntent() {
+		t.Fatalf("catalog mismatch caused effects calls=%d store=%+v", importer.calls, store)
 	}
 }
 

@@ -19,6 +19,9 @@ func TestLidarrCatalogServiceRequiresConfiguredCatalogAndCanonicalIdentity(t *te
 	if err != nil || result != fake.result {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
+	if _, err := (application.LidarrCatalogService{Catalog: catalogFake{}}).EnsureRelease(context.Background(), release); err == nil {
+		t.Fatal("catalog result without concrete Lidarr IDs accepted")
+	}
 }
 
 type catalogFake struct{ result application.CatalogResult }

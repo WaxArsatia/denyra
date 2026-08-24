@@ -78,6 +78,7 @@ func TestPipelineControlledWorkflowRunsAcceptedReleaseToArbitration(t *testing.T
 		Validator:   application.TechnicalValidator{Inspector: ffprobe, Integrity: flac, Heuristic: media.NoHeuristic{}, Checksum: media.SHA256},
 		Lookup:      &musicbrainz.Client{BaseURL: server.URL, UserAgent: "Denyra/test (test@example.invalid)", HTTP: server.Client(), ResponseLimit: 1 << 20, RateInterval: time.Nanosecond},
 		Matching:    application.MatchingService{DurationPolicy: durationPolicy(), WorkRoot: work, QuarantineRoot: quarantine},
+		Catalog:     application.LidarrCatalogService{Catalog: staticCatalog{}},
 		Enrichment:  application.EnrichmentService{WorkRoot: work, EvidenceRoot: filepath.Join(root, "evidence"), Lyrics: lrclib.Client{BaseURL: server.URL, UserAgent: "Denyra/test (test@example.invalid)", HTTP: server.Client(), ResponseLimit: 1 << 20}},
 		Mutation:    application.MutationService{WorkRoot: work, QuarantineRoot: quarantine, Tags: metaflac, Integrity: flac, Checksum: media.SHA256},
 		Quality:     application.QualityReporter{Store: repository, Callback: qualityHTTPClient{url: server.URL, client: server.Client()}},
@@ -99,6 +100,12 @@ func TestPipelineControlledWorkflowRunsAcceptedReleaseToArbitration(t *testing.T
 			t.Fatalf("%s count=%d err=%v", table, count, err)
 		}
 	}
+}
+
+type staticCatalog struct{}
+
+func (staticCatalog) EnsureRelease(context.Context, domain.CanonicalRelease) (application.CatalogResult, error) {
+	return application.CatalogResult{ArtistID: 1, AlbumID: 2, AlbumReleaseID: 3}, nil
 }
 
 type qualityHTTPClient struct {
