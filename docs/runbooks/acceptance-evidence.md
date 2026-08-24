@@ -8,7 +8,7 @@ This file records the full Denyra acceptance run completed on 2026-08-24. The lo
 - Deployment image lock SHA-256: `55bb14784b7b2af862dae943323a5d67b96d5764492e31c2770e9795fa1751be`
 - Acquisition Gateway image: `docker.io/denyra/acquisition-gateway:local@sha256:15de3c7d9fa23f1b46c74e8f3edb0ed331dee74a1b53fe240de65b9043da0ad7`
 - Media Pipeline image: `docker.io/denyra/media-pipeline:local@sha256:76995bc1150c6537fd7d9213a4604f812f6c333d4ba5961e12415a7a1f64484d`
-- Lidarr derived image: `docker.io/denyra/lidarr:local@sha256:a6a7b287657d71798092aa72821ab903e43a5ddfa2168d61a18bfd2ccb582dbe`
+- Lidarr derived image: `docker.io/denyra/lidarr:local@sha256:652020c8c6185e6874944f5177c1a768b0b91113943f1b0ea48f04348384f4a3`
 - Navidrome derived image: `docker.io/denyra/navidrome:local@sha256:2abd04221d9848bfe0097836e2a5fdc449bbf37004468a43837a4c3068f2fa40`
 - Gateway build provenance SHA-256: `7dcb859f594e2d57a13579a1859d080eb372c284fb3b12a21fb2f97fa22ce26d`
 - Pipeline build provenance SHA-256: `50c9acebe4975d2ce88a41e92ce959668334e8fa846a209f2b5a66ccd9a1d510`
