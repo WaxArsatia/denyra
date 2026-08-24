@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -141,5 +142,13 @@ func TestHandoffReplaysLostAcknowledgementWithoutSharingState(t *testing.T) {
 	}
 	if acknowledged != 2 {
 		t.Fatalf("acknowledged handoff effects=%d", acknowledged)
+	}
+	var acceptanceKey string
+	if err := gatewayDB.QueryRow(`SELECT idempotency_key FROM external_effects WHERE job_id=? AND effect_type='PIPELINE_ACCEPT'`, job.ID).Scan(&acceptanceKey); err != nil {
+		t.Fatal(err)
+	}
+	wantKey := fmt.Sprintf("candidate-complete-%s-release-1", candidateID)
+	if acceptanceKey != wantKey {
+		t.Fatalf("completion intent key=%q, want %q", acceptanceKey, wantKey)
 	}
 }

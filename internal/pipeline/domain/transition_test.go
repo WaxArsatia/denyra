@@ -58,6 +58,7 @@ func TestTransitionMatrix(t *testing.T) {
 		{domain.StateImportSubmitted, domain.StateImportReconciling}:   true,
 		{domain.StateImportReconciling, domain.StateImported}:          true,
 		{domain.StateImportReconciling, domain.StateImportSubmitted}:   true,
+		{domain.StateQuarantined, domain.StateWorking}:                 true,
 		{domain.StateQuarantined, domain.StateReviewRequired}:          true,
 		{domain.StateQuarantined, domain.StateRejected}:                true,
 		{domain.StateQuarantined, domain.StateCancelled}:               true,

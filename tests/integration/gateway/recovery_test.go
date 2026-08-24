@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,16 +27,18 @@ import (
 type runtimeClock struct{ now time.Time }
 
 type recoveryPipelineClient struct {
-	acceptErr error
-	accepted  []contracts.CandidateAccepted
+	acceptErr  error
+	accepted   []contracts.CandidateAccepted
+	acceptKeys []string
 }
 
 func (client *recoveryPipelineClient) Register(context.Context, contracts.CandidateRegistered, string, string) (pipelineadapter.Response, error) {
 	return pipelineadapter.Response{Status: http.StatusAccepted, Body: []byte(`{"status":"ok"}`)}, nil
 }
 
-func (client *recoveryPipelineClient) Accept(_ context.Context, request contracts.CandidateAccepted, _, _ string) (pipelineadapter.Response, error) {
+func (client *recoveryPipelineClient) Accept(_ context.Context, request contracts.CandidateAccepted, _, key string) (pipelineadapter.Response, error) {
 	client.accepted = append(client.accepted, request)
+	client.acceptKeys = append(client.acceptKeys, key)
 	if client.acceptErr != nil {
 		return pipelineadapter.Response{}, client.acceptErr
 	}
@@ -225,6 +228,210 @@ func TestAcquisitionRecoveryReplaysExactPrimaryCompletionProvenance(t *testing.T
 	}
 	if report.ReplayedHandoffs != 1 || len(replayed.accepted) != 1 || replayed.accepted[0].Provenance != provenance {
 		t.Fatalf("report=%+v accepted=%+v", report, replayed.accepted)
+	}
+}
+
+func TestAcquisitionRecoveryReplaysUnacknowledgedCompletionWithItsOriginalKey(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateID, err := persistence.NewCandidateID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{
+		ID: candidateID, JobID: job.ID, Source: "slskd",
+		SourceLocator: "/data/downloads/slskd/lidarr/download-1", DownloadID: "download-1",
+		CompletedAt: &completedAt, Provenance: []byte(`{"source":"slskd"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt,
+	}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	request := contracts.CandidateAccepted{
+		RequestID: "candidate-complete-" + candidateID, JobID: job.ID, CandidateID: candidateID,
+		ConfigSnapshotID: job.ConfigSnapshotID, Source: contracts.SourceSlskd, Path: candidate.SourceLocator,
+		CompletionAt: completedAt, MusicBrainzReleaseID: releaseMBID,
+		Provenance: contracts.AcquisitionProvenance{Provider: "slskd", DownloadID: "download-1"},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	legacyKey := "candidate-complete-" + candidateID + "-job-5"
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: legacyKey,
+		RequestHash: hex.EncodeToString(sum[:]), Request: payload, CreatedAt: completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pipeline := &recoveryPipelineClient{}
+	recovery := application.GatewayRecovery{
+		Store:         store,
+		Handoff:       application.CandidateHandoffService{Pipeline: pipeline, Store: store, ReplayAttempts: 1, Now: func() time.Time { return completedAt }},
+		RetryPolicy:   domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour},
+		SpotiFLACRoot: t.TempDir(), Now: func() time.Time { return completedAt },
+	}
+	if _, err := recovery.Reconcile(context.Background()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(pipeline.acceptKeys) != 1 || pipeline.acceptKeys[0] != legacyKey {
+		t.Fatalf("acceptance keys=%v, want original %q", pipeline.acceptKeys, legacyKey)
+	}
+}
+
+func TestAcquisitionRecoveryDefersCompletionUntilReleaseSelectionIsBackfilled(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	candidateID, err := persistence.NewCandidateID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{
+		ID: candidateID, JobID: job.ID, Source: "slskd",
+		SourceLocator: "/data/downloads/slskd/lidarr/download-1", DownloadID: "download-1",
+		CompletedAt: &completedAt, Provenance: []byte(`{"source":"slskd"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt,
+	}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	request := contracts.CandidateAccepted{
+		RequestID: "candidate-complete-" + candidateID, JobID: job.ID, CandidateID: candidateID,
+		ConfigSnapshotID: job.ConfigSnapshotID, Source: contracts.SourceSlskd, Path: candidate.SourceLocator,
+		CompletionAt: completedAt, Provenance: contracts.AcquisitionProvenance{Provider: "slskd", DownloadID: "download-1"},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: request.RequestID,
+		RequestHash: hex.EncodeToString(sum[:]), Request: payload, CreatedAt: completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pipeline := &recoveryPipelineClient{}
+	recovery := application.GatewayRecovery{
+		Store:         store,
+		Handoff:       application.CandidateHandoffService{Pipeline: pipeline, Store: store, ReplayAttempts: 1, Now: func() time.Time { return completedAt }},
+		RetryPolicy:   domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour},
+		SpotiFLACRoot: t.TempDir(), Now: func() time.Time { return completedAt },
+	}
+	report, err := recovery.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if report.ReplayedHandoffs != 0 || len(pipeline.accepted) != 0 {
+		t.Fatalf("report=%+v accepted=%+v", report, pipeline.accepted)
+	}
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, completedAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	report, err = recovery.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile after backfill: %v", err)
+	}
+	if report.ReplayedHandoffs != 1 || len(pipeline.accepted) != 1 || pipeline.accepted[0].MusicBrainzReleaseID != releaseMBID {
+		t.Fatalf("report=%+v accepted=%+v", report, pipeline.accepted)
+	}
+	var legacyStatus string
+	if err := db.QueryRow(`SELECT status FROM external_effects WHERE idempotency_key=?`, request.RequestID).Scan(&legacyStatus); err != nil {
+		t.Fatal(err)
+	}
+	if legacyStatus != "ACKNOWLEDGED" {
+		t.Fatalf("legacy completion intent status=%q", legacyStatus)
+	}
+}
+
+func TestAcquisitionRecoverySupersedesLegacyIntentAfterMatchingCompletionWasAcknowledged(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateID, err := persistence.NewCandidateID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{
+		ID: candidateID, JobID: job.ID, Source: "slskd",
+		SourceLocator: "/data/downloads/slskd/lidarr/download-1", DownloadID: "download-1",
+		CompletedAt: &completedAt, Provenance: []byte(`{"source":"slskd"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt,
+	}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	request := contracts.CandidateAccepted{
+		RequestID: "candidate-complete-" + candidateID, JobID: job.ID, CandidateID: candidateID,
+		ConfigSnapshotID: job.ConfigSnapshotID, Source: contracts.SourceSlskd, Path: candidate.SourceLocator,
+		CompletionAt: completedAt, MusicBrainzReleaseID: releaseMBID,
+		Provenance: contracts.AcquisitionProvenance{Provider: "slskd", DownloadID: "download-1"},
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(payload)
+	acknowledgedKey := "candidate-complete-" + candidateID + "-job-5"
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: acknowledgedKey,
+		RequestHash: hex.EncodeToString(sum[:]), Request: payload, CreatedAt: completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeEffect(context.Background(), acknowledgedKey, []byte(`{"status":"ok"}`), "ok", completedAt); err != nil {
+		t.Fatal(err)
+	}
+	legacyKey := "candidate-complete-" + candidateID
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: legacyKey,
+		RequestHash: hex.EncodeToString(sum[:]), Request: payload, CreatedAt: completedAt.Add(time.Second),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pipeline := &recoveryPipelineClient{}
+	recovery := application.GatewayRecovery{
+		Store:         store,
+		Handoff:       application.CandidateHandoffService{Pipeline: pipeline, Store: store, ReplayAttempts: 1, Now: func() time.Time { return completedAt }},
+		RetryPolicy:   domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour},
+		SpotiFLACRoot: t.TempDir(), Now: func() time.Time { return completedAt },
+	}
+	report, err := recovery.Reconcile(context.Background())
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if len(pipeline.accepted) != 0 {
+		t.Fatalf("pipeline acceptance replayed: %+v", pipeline.accepted)
+	}
+	if report.ReplayedHandoffs != 0 {
+		t.Fatalf("report=%+v", report)
+	}
+	effect, err := store.Effect(context.Background(), legacyKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if effect.AcknowledgedAt == nil || !bytes.Contains(effect.Response, []byte("SUPERSEDED_BY_ACKNOWLEDGED_COMPLETION")) {
+		t.Fatalf("legacy effect=%+v", effect)
 	}
 }
 

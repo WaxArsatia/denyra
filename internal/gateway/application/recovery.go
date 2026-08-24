@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
@@ -73,8 +74,45 @@ func (recovery GatewayRecovery) Reconcile(ctx context.Context) (RecoveryReport, 
 			if err != nil {
 				return report, err
 			}
+			job, err := recovery.Store.Job(ctx, candidate.JobID)
+			if err != nil {
+				return report, err
+			}
+			if strings.TrimSpace(job.SelectedReleaseMBID) == "" {
+				continue
+			}
+			if _, err := domain.CanonicalMBID(job.SelectedReleaseMBID); err != nil {
+				return report, err
+			}
+			acknowledged, err := recovery.Store.CandidateCompletionAcknowledged(ctx, candidate.ID, job.SelectedReleaseMBID)
+			if err != nil {
+				return report, err
+			}
+			if acknowledged {
+				response := []byte(`{"status":"SUPERSEDED_BY_ACKNOWLEDGED_COMPLETION"}`)
+				sum := sha256.Sum256(response)
+				if err := recovery.Store.AcknowledgeEffect(ctx, effect.IdempotencyKey, response, hex.EncodeToString(sum[:]), recovery.now()); err != nil {
+					return report, err
+				}
+				continue
+			}
+			if request.MusicBrainzReleaseID == job.SelectedReleaseMBID {
+				if err := recovery.Handoff.deliverCompletion(ctx, request, effect.IdempotencyKey); err != nil {
+					return report, err
+				}
+				report.ReplayedHandoffs++
+				continue
+			}
 			if err := recovery.Handoff.AcceptCompleted(ctx, candidate, request.Provenance); err != nil {
 				return report, err
+			}
+			currentKey := fmt.Sprintf("candidate-complete-%s-release-%d", candidate.ID, job.SelectedReleaseRevision)
+			if effect.IdempotencyKey != currentKey {
+				response := []byte(`{"status":"SUPERSEDED_BY_CURRENT_RELEASE_REVISION"}`)
+				sum := sha256.Sum256(response)
+				if err := recovery.Store.AcknowledgeEffect(ctx, effect.IdempotencyKey, response, hex.EncodeToString(sum[:]), recovery.now()); err != nil {
+					return report, err
+				}
 			}
 			report.ReplayedHandoffs++
 		case "PIPELINE_WINNER", "PIPELINE_SUPERSEDE", "TRANSFER_CANCEL":

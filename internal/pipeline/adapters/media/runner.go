@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ func (r Runner) Run(ctx context.Context, tool, version string, arguments ...stri
 	stdout := &limitedBuffer{limit: limit}
 	stderr := &limitedBuffer{limit: limit}
 	command := exec.CommandContext(ctx, tool, arguments...)
+	command.Env = utf8Environment(os.Environ())
 	command.Stdout, command.Stderr = stdout, stderr
 	err := command.Run()
 	exitStatus := 0
@@ -84,3 +86,14 @@ func (b *limitedBuffer) Write(value []byte) (int, error) {
 }
 
 func (b *limitedBuffer) String() string { return b.buffer.String() }
+
+func utf8Environment(parent []string) []string {
+	environment := make([]string, 0, len(parent)+2)
+	for _, entry := range parent {
+		if strings.HasPrefix(entry, "LANG=") || strings.HasPrefix(entry, "LC_ALL=") {
+			continue
+		}
+		environment = append(environment, entry)
+	}
+	return append(environment, "LANG=C.UTF-8", "LC_ALL=C.UTF-8")
+}

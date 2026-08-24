@@ -59,7 +59,12 @@ func (s ReviewDecisionService) returnToWork(ctx context.Context, candidateID str
 	if s.Store == nil || s.WorkRoot == "" || s.QuarantineRoot == "" {
 		return fmt.Errorf("review service is not configured")
 	}
-	if _, err := s.Store.TransitionCandidate(ctx, candidateID, expected, domain.StateWorking, actor, reason, target, s.now()); err != nil {
+	now := s.now()
+	candidate, err := s.Store.Candidate(ctx, candidateID)
+	if err != nil {
+		return err
+	}
+	if _, err := candidate.Transition(expected, domain.StateWorking, actor, reason, now); err != nil {
 		return err
 	}
 	move := s.Move
@@ -69,8 +74,16 @@ func (s ReviewDecisionService) returnToWork(ctx context.Context, candidateID str
 	if err := os.MkdirAll(s.WorkRoot, 0o750); err != nil {
 		return err
 	}
-	if err := move(filepath.Join(s.QuarantineRoot, candidateID), filepath.Join(s.WorkRoot, candidateID)); err != nil {
+	source := filepath.Join(s.QuarantineRoot, candidateID)
+	destination := filepath.Join(s.WorkRoot, candidateID)
+	if err := move(source, destination); err != nil {
 		return fmt.Errorf("return approved candidate to work: %w", err)
+	}
+	if _, err := s.Store.TransitionCandidate(ctx, candidateID, expected, domain.StateWorking, actor, reason, target, now); err != nil {
+		if rollbackErr := move(destination, source); rollbackErr != nil {
+			return fmt.Errorf("persist review decision: %v; rollback candidate move: %w", err, rollbackErr)
+		}
+		return err
 	}
 	return nil
 }

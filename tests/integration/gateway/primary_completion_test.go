@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,7 +36,19 @@ func (handoff *recordingPrimaryCompletionHandoff) AcceptCompleted(_ context.Cont
 	handoff.candidates = append(handoff.candidates, candidate)
 	handoff.evidence = append(handoff.evidence, evidence)
 	if handoff.store != nil {
-		return handoff.store.PutEffect(context.Background(), persistence.Effect{JobID: candidate.JobID, Type: "PIPELINE_ACCEPT", IdempotencyKey: "candidate-complete-" + candidate.ID, RequestHash: "test", Request: []byte(`{}`), CreatedAt: handoff.now})
+		job, err := handoff.store.Job(context.Background(), candidate.JobID)
+		if err != nil {
+			return err
+		}
+		key := fmt.Sprintf("candidate-complete-%s-release-%d", candidate.ID, job.SelectedReleaseRevision)
+		request, err := json.Marshal(contracts.CandidateAccepted{CandidateID: candidate.ID, MusicBrainzReleaseID: job.SelectedReleaseMBID})
+		if err != nil {
+			return err
+		}
+		if err := handoff.store.PutEffect(context.Background(), persistence.Effect{JobID: candidate.JobID, Type: "PIPELINE_ACCEPT", IdempotencyKey: key, RequestHash: "test", Request: request, CreatedAt: handoff.now}); err != nil {
+			return err
+		}
+		return handoff.store.AcknowledgeEffect(context.Background(), key, []byte(`{"status":"ok"}`), "ok", handoff.now)
 	}
 	return nil
 }
@@ -54,7 +68,7 @@ func TestPrimaryCompletionRequiresCompletedHealthyLidarrBatch(t *testing.T) {
 		Queue: fixedPrimaryCompletionQueue{records: []lidarr.QueueRecord{{
 			DownloadID: pending.DownloadID, Status: "downloading", TrackedDownloadStatus: "ok", OutputPath: completedPath,
 		}}},
-		Store: store, Handoff: handoff, DownloadsRoot: root, PageSize: 100, EngineVersion: "0.26.0", Now: func() time.Time { return now.Add(time.Minute) },
+		Store: store, Handoff: handoff, DownloadsRoot: root, PageSize: 100, EngineVersion: "0.26.0", StabilityInterval: 10 * time.Second, Now: func() time.Time { return now.Add(time.Minute) },
 	}
 
 	if completed, err := service.Reconcile(context.Background()); err != nil || completed != 0 {
@@ -90,7 +104,7 @@ func TestPrimaryCompletionPersistsThenHandsOffExactlyOnce(t *testing.T) {
 		Queue: fixedPrimaryCompletionQueue{records: []lidarr.QueueRecord{{
 			ID: 91, DownloadID: pending.DownloadID, Title: "Artist - Album", Status: "completed", TrackedDownloadStatus: "ok", OutputPath: completedPath,
 		}}},
-		Store: store, Handoff: handoff, DownloadsRoot: root, PageSize: 100, EngineVersion: "0.26.0", Now: func() time.Time { return now.Add(time.Minute) },
+		Store: store, Handoff: handoff, DownloadsRoot: root, PageSize: 100, EngineVersion: "0.26.0", StabilityInterval: 10 * time.Second, Now: func() time.Time { return now.Add(time.Minute) },
 	}
 
 	if completed, err := service.Reconcile(context.Background()); err != nil || completed != 1 {
@@ -132,7 +146,7 @@ func TestPrimaryCompletionRejectsQueuePathOutsideSlskdRoot(t *testing.T) {
 		Queue: fixedPrimaryCompletionQueue{records: []lidarr.QueueRecord{{
 			DownloadID: pending.DownloadID, Status: "completed", TrackedDownloadStatus: "ok", OutputPath: filepath.Join(t.TempDir(), pending.DownloadID),
 		}}},
-		Store: store, Handoff: handoff, DownloadsRoot: t.TempDir(), PageSize: 100, EngineVersion: "0.26.0", Now: func() time.Time { return now.Add(time.Minute) },
+		Store: store, Handoff: handoff, DownloadsRoot: t.TempDir(), PageSize: 100, EngineVersion: "0.26.0", StabilityInterval: 10 * time.Second, Now: func() time.Time { return now.Add(time.Minute) },
 	}
 	if _, err := service.Reconcile(context.Background()); err == nil {
 		t.Fatal("queue path outside slskd root was accepted")
@@ -156,12 +170,92 @@ func TestPrimaryCompletionRecoversDurableCandidateMissingHandoffIntent(t *testin
 		t.Fatal(err)
 	}
 	handoff := &recordingPrimaryCompletionHandoff{store: store, now: now}
-	service := application.PrimaryCompletionService{Queue: fixedPrimaryCompletionQueue{}, Store: store, Handoff: handoff, DownloadsRoot: filepath.Dir(filepath.Dir(candidate.SourceLocator)), PageSize: 100, EngineVersion: "0.26.0", Now: func() time.Time { return now.Add(2 * time.Minute) }}
+	service := application.PrimaryCompletionService{Queue: fixedPrimaryCompletionQueue{}, Store: store, Handoff: handoff, DownloadsRoot: filepath.Dir(filepath.Dir(candidate.SourceLocator)), PageSize: 100, EngineVersion: "0.26.0", StabilityInterval: 10 * time.Second, Now: func() time.Time { return now.Add(2 * time.Minute) }}
 	if recovered, err := service.Reconcile(context.Background()); err != nil || recovered != 1 {
 		t.Fatalf("recovered=%d err=%v", recovered, err)
 	}
 	if len(handoff.candidates) != 1 || handoff.candidates[0].ID != candidate.ID {
 		t.Fatalf("handoff=%+v", handoff.candidates)
+	}
+}
+
+func TestPrimaryCompletionIgnoresUnacknowledgedLegacyIntentAfterReleaseBackfill(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending := primaryPendingCandidate(t, store, job.ID, now)
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{
+		ID: pending.ID, JobID: job.ID, Source: "slskd",
+		SourceLocator: filepath.Join(t.TempDir(), "lidarr", pending.DownloadID), DownloadID: pending.DownloadID,
+		CompletedAt: &completedAt, Provenance: []byte(`{"completion":"durable"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt,
+	}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	legacyKey := "candidate-complete-" + candidate.ID
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: legacyKey,
+		RequestHash: strings.Repeat("b", 64), Request: []byte(`{"musicbrainz_release_id":""}`), CreatedAt: completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	recoverable, err := store.CandidatesWithoutEffect(context.Background(), "slskd", "PIPELINE_ACCEPT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recoverable) != 1 || recoverable[0].ID != candidate.ID {
+		t.Fatalf("recoverable candidates=%+v", recoverable)
+	}
+}
+
+func TestPrimaryCompletionRecognizesAcknowledgedIntentByCandidateAndRelease(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	if err := store.ReviseSelectedRelease(context.Background(), job.ID, job.Revision, releaseMBID, now); err != nil {
+		t.Fatal(err)
+	}
+	pending := primaryPendingCandidate(t, store, job.ID, now)
+	completedAt := now.Add(time.Minute)
+	candidate := persistence.Candidate{
+		ID: pending.ID, JobID: job.ID, Source: "slskd",
+		SourceLocator: filepath.Join(t.TempDir(), "lidarr", pending.DownloadID), DownloadID: pending.DownloadID,
+		CompletedAt: &completedAt, Provenance: []byte(`{"completion":"durable"}`), ProvenanceSHA256: strings.Repeat("a", 64), CreatedAt: completedAt,
+	}
+	if err := store.InsertCandidate(context.Background(), candidate); err != nil {
+		t.Fatal(err)
+	}
+	request := contracts.CandidateAccepted{CandidateID: candidate.ID, MusicBrainzReleaseID: releaseMBID}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "historical-completion-key"
+	if err := store.PutEffect(context.Background(), persistence.Effect{
+		JobID: job.ID, Type: "PIPELINE_ACCEPT", IdempotencyKey: key,
+		RequestHash: strings.Repeat("b", 64), Request: payload, CreatedAt: completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AcknowledgeEffect(context.Background(), key, []byte(`{"status":"ok"}`), "ok", completedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	recoverable, err := store.CandidatesWithoutEffect(context.Background(), "slskd", "PIPELINE_ACCEPT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recoverable) != 0 {
+		t.Fatalf("acknowledged candidate was scheduled again: %+v", recoverable)
 	}
 }
 

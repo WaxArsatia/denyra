@@ -27,20 +27,22 @@ type PrimaryCompletionStore interface {
 	IncompletePendingCandidatesBySource(context.Context, string) ([]persistence.PendingCandidate, error)
 	CandidatesWithoutEffect(context.Context, string, string) ([]persistence.Candidate, error)
 	InsertCandidate(context.Context, persistence.Candidate) error
+	SlskdCompletionEventsSince(context.Context, time.Time) ([]persistence.SlskdCompletionEvent, error)
 }
 
 type PrimaryCompletionService struct {
-	Queue         PrimaryCompletionQueue
-	Store         PrimaryCompletionStore
-	Handoff       PrimaryCompletionHandoff
-	DownloadsRoot string
-	PageSize      int
-	EngineVersion string
-	Now           func() time.Time
+	Queue             PrimaryCompletionQueue
+	Store             PrimaryCompletionStore
+	Handoff           PrimaryCompletionHandoff
+	DownloadsRoot     string
+	PageSize          int
+	EngineVersion     string
+	StabilityInterval time.Duration
+	Now               func() time.Time
 }
 
 func (service PrimaryCompletionService) Reconcile(ctx context.Context) (int, error) {
-	if service.Queue == nil || service.Store == nil || service.Handoff == nil || service.PageSize <= 0 || service.EngineVersion == "" {
+	if service.Queue == nil || service.Store == nil || service.Handoff == nil || service.PageSize <= 0 || service.EngineVersion == "" || service.StabilityInterval <= 0 {
 		return 0, fmt.Errorf("primary completion service is not configured")
 	}
 	root := filepath.Clean(service.DownloadsRoot)
@@ -76,22 +78,46 @@ func (service PrimaryCompletionService) Reconcile(ctx context.Context) (int, err
 			byDownloadID[record.DownloadID] = record
 		}
 	}
+	events, err := service.Store.SlskdCompletionEventsSince(ctx, pending[0].CreatedAt)
+	if err != nil {
+		return completed, err
+	}
 	for _, candidate := range pending {
 		record, found := byDownloadID[candidate.DownloadID]
-		if !found || !healthyCompletedQueueRecord(record) {
+		if found && !healthyCompletedQueueRecord(record) {
 			continue
 		}
-		path, err := primaryCompletedPath(root, candidate.DownloadID, record.OutputPath)
-		if err != nil {
-			return completed, err
+		var path string
+		var completionEvents []persistence.SlskdCompletionEvent
+		completionSource := "lidarr_queue"
+		if found {
+			path, err = primaryCompletedPath(root, candidate.DownloadID, record.OutputPath)
+			if err != nil {
+				return completed, err
+			}
+		} else {
+			path, completionEvents, err = service.completedPathFromDurableEvent(root, candidate, events)
+			if err != nil {
+				return completed, err
+			}
+			if path == "" {
+				continue
+			}
+			completionSource = "slskd_durable_event"
 		}
 		completedAt := service.now()
-		provenance := contracts.AcquisitionProvenance{Provider: "slskd", EngineVersion: service.EngineVersion, DownloadID: candidate.DownloadID, ObservedStatus: strings.ToLower(strings.TrimSpace(record.Status))}
+		observedStatus := strings.ToLower(strings.TrimSpace(record.Status))
+		if !found {
+			observedStatus = "completed, succeeded"
+		}
+		provenance := contracts.AcquisitionProvenance{Provider: "slskd", EngineVersion: service.EngineVersion, DownloadID: candidate.DownloadID, ObservedStatus: observedStatus}
 		evidence, err := json.Marshal(struct {
-			PendingProvenance json.RawMessage    `json:"pending_provenance"`
-			Queue             lidarr.QueueRecord `json:"lidarr_queue"`
-			ObservedAt        time.Time          `json:"observed_at"`
-		}{PendingProvenance: candidate.Provenance, Queue: record, ObservedAt: completedAt})
+			PendingProvenance json.RawMessage                    `json:"pending_provenance"`
+			Queue             lidarr.QueueRecord                 `json:"lidarr_queue"`
+			CompletionEvents  []persistence.SlskdCompletionEvent `json:"completion_events,omitempty"`
+			CompletionSource  string                             `json:"completion_source"`
+			ObservedAt        time.Time                          `json:"observed_at"`
+		}{PendingProvenance: candidate.Provenance, Queue: record, CompletionEvents: completionEvents, CompletionSource: completionSource, ObservedAt: completedAt})
 		if err != nil {
 			return completed, err
 		}
@@ -106,6 +132,33 @@ func (service PrimaryCompletionService) Reconcile(ctx context.Context) (int, err
 		completed++
 	}
 	return completed, nil
+}
+
+func (service PrimaryCompletionService) completedPathFromDurableEvent(root string, candidate persistence.PendingCandidate, events []persistence.SlskdCompletionEvent) (string, []persistence.SlskdCompletionEvent, error) {
+	expected, err := primaryCompletedPath(root, candidate.DownloadID, filepath.Join(root, "lidarr", candidate.DownloadID))
+	if err != nil {
+		return "", nil, err
+	}
+	stableBefore := service.now().Add(-service.StabilityInterval)
+	var matched []persistence.SlskdCompletionEvent
+	for _, event := range events {
+		if !strings.EqualFold(strings.TrimSpace(event.TransferState), "Completed, Succeeded") || event.ReceivedAt.Before(candidate.CreatedAt) {
+			continue
+		}
+		path := filepath.Clean(event.LocalFilename)
+		relative, relErr := filepath.Rel(expected, path)
+		if !filepath.IsAbs(path) || relErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			continue
+		}
+		if event.ReceivedAt.After(stableBefore) {
+			continue
+		}
+		matched = append(matched, event)
+	}
+	if len(matched) == 0 {
+		return "", nil, nil
+	}
+	return expected, matched, nil
 }
 
 func healthyCompletedQueueRecord(record lidarr.QueueRecord) bool {

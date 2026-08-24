@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,7 +29,13 @@ type QualityClient struct {
 }
 
 func (c QualityClient) ReportApproved(ctx context.Context, payload []byte, requestID, idempotencyKey string) (contracts.CallbackResult, error) {
-	endpoint := strings.TrimRight(c.BaseURL, "/") + "/internal/candidates/approved"
+	var identity struct {
+		CandidateID string `json:"candidate_id"`
+	}
+	if err := json.Unmarshal(payload, &identity); err != nil || strings.TrimSpace(identity.CandidateID) == "" {
+		return contracts.CallbackResult{}, fmt.Errorf("quality callback candidate identity is invalid")
+	}
+	endpoint := strings.TrimRight(c.BaseURL, "/") + "/internal/candidates/" + url.PathEscape(identity.CandidateID) + "/approved"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
 		return contracts.CallbackResult{}, err

@@ -53,6 +53,34 @@ func TestMutationIsPicardCompatibleIdempotentAndPreservesAudioFrames(t *testing.
 	}
 }
 
+func TestMutationPreservesUTF8TagsUnderPOSIXParentLocale(t *testing.T) {
+	root := t.TempDir()
+	work, quarantine := filepath.Join(root, "work"), filepath.Join(root, "quarantine")
+	candidate := filepath.Join(work, "candidate-utf8")
+	if err := os.MkdirAll(candidate, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	fixtures := generateFLACFixtures(t)
+	track := filepath.Join(candidate, "08.flac")
+	copyFile(t, filepath.Join(fixtures, "mono-16-44100.flac"), track)
+	t.Setenv("LANG", "")
+	t.Setenv("LC_ALL", "POSIX")
+
+	tags := canonicalMutationTags(t)
+	tags["TITLE"] = []string{"Hati‐Hati di Jalan"}
+	service := realMutationService(work, quarantine, media.FLAC{Binary: "flac", Version: "test", Timeout: 10 * time.Second, Runner: media.Runner{}})
+	result, err := service.MutateRelease(context.Background(), "candidate-utf8", map[string]domain.TagSet{"08.flac": tags})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Approved || len(result.Files) != 1 {
+		t.Fatalf("mutation result=%+v", result)
+	}
+	if got := result.Files[0].AfterTags["TITLE"]; !reflect.DeepEqual(got, []string{"Hati‐Hati di Jalan"}) {
+		t.Fatalf("UTF-8 title=%q", got)
+	}
+}
+
 func TestMutationPostIntegrityFailureQuarantinesWholeRelease(t *testing.T) {
 	root := t.TempDir()
 	work, quarantine := filepath.Join(root, "work"), filepath.Join(root, "quarantine")

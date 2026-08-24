@@ -14,6 +14,7 @@ import (
 	"github.com/waxarsatia/denyra/internal/gateway/adapters/lidarr"
 	"github.com/waxarsatia/denyra/internal/gateway/application"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
+	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 )
 
 const releaseMBID = "abcdefab-1234-5678-9abc-abcdefabcdef"
@@ -212,5 +213,48 @@ func TestWantedDiscoveryDeduplicatesAndRevisesSelectedRelease(t *testing.T) {
 	}
 	if transitions != 1 {
 		t.Fatalf("release revision audit transitions = %d", transitions)
+	}
+}
+
+func TestWantedDiscoveryBackfillsMissingSelectedReleaseWithoutRestartingActiveAcquisition(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	preparePrimaryReconciliation(t, repositories, job, now)
+	job, err := repositories.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repositories.UpdateState(context.Background(), persistence.TransitionCommand{
+		JobID: job.ID, Expected: job.Revision, To: domain.StatePrimaryActive,
+		Actor: "test", Reason: "correlated primary grab", OccurredAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(writer, `{"records":[{"id":42,"foreignAlbumId":%q,"monitored":true,"releases":[{"foreignReleaseId":%q,"monitored":true}]}],"totalRecords":1}`, releaseGroupMBID, releaseMBID)
+	}))
+	defer server.Close()
+	service := application.WantedDiscovery{
+		Lidarr:           lidarr.Client{BaseURL: server.URL, APIKey: "test-key", HTTP: server.Client(), ResponseLimit: 1 << 20},
+		Store:            repositories,
+		ConfigSnapshotID: "config-1",
+		Now:              func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 1 {
+		t.Fatalf("backfill reconcile=%d err=%v", changed, err)
+	}
+	stored, err := repositories.Job(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.SelectedReleaseMBID != releaseMBID {
+		t.Fatalf("selected release=%q", stored.SelectedReleaseMBID)
+	}
+	if stored.State != domain.StatePrimaryActive {
+		t.Fatalf("state=%s, want %s", stored.State, domain.StatePrimaryActive)
 	}
 }

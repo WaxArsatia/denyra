@@ -86,15 +86,12 @@ func (r *Repositories) RecordMutation(ctx context.Context, candidateID string, r
 		beforeJSON, _ := json.Marshal(file.BeforeTags)
 		afterJSON, _ := json.Marshal(file.AfterTags)
 		beforeSum, afterSum := sha256.Sum256(beforeJSON), sha256.Sum256(afterJSON)
-		beforeID, err := r.InsertMetadataSnapshot(ctx, candidateID, fileID, "ORIGINAL", beforeJSON, hex.EncodeToString(beforeSum[:]), at)
-		if err != nil && !isUniqueConstraint(err) {
+		beforeID, err := r.mutationSnapshotID(ctx, candidateID, fileID, "ORIGINAL", beforeJSON, hex.EncodeToString(beforeSum[:]), at)
+		if err != nil {
 			return err
 		}
-		if beforeID == "" {
-			_ = r.DB.QueryRowContext(ctx, `SELECT id FROM metadata_snapshots WHERE candidate_id=? AND candidate_file_id=? AND kind='ORIGINAL' ORDER BY created_at LIMIT 1`, candidateID, fileID).Scan(&beforeID)
-		}
-		afterID, err := r.InsertMetadataSnapshot(ctx, candidateID, fileID, "FINAL", afterJSON, hex.EncodeToString(afterSum[:]), at)
-		if err != nil && !isUniqueConstraint(err) {
+		afterID, err := r.mutationSnapshotID(ctx, candidateID, fileID, "FINAL", afterJSON, hex.EncodeToString(afterSum[:]), at)
+		if err != nil {
 			return err
 		}
 		invocation, _ := json.Marshal(file.Commands)
@@ -108,6 +105,20 @@ func (r *Repositories) RecordMutation(ctx context.Context, candidateID string, r
 		}
 	}
 	return nil
+}
+
+func (r *Repositories) mutationSnapshotID(ctx context.Context, candidateID, fileID, kind string, canonicalJSON []byte, checksum string, at time.Time) (string, error) {
+	id, err := r.InsertMetadataSnapshot(ctx, candidateID, fileID, kind, canonicalJSON, checksum, at)
+	if err == nil {
+		return id, nil
+	}
+	if !isUniqueConstraint(err) {
+		return "", err
+	}
+	if err := r.DB.QueryRowContext(ctx, `SELECT id FROM metadata_snapshots WHERE candidate_id=? AND candidate_file_id=? AND kind=? AND sha256=?`, candidateID, fileID, kind, checksum).Scan(&id); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 func (r *Repositories) candidateFileID(ctx context.Context, candidateID, relative string) string {

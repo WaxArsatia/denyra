@@ -3,7 +3,7 @@
   "images": [
     {
       "id": "acquisition-gateway",
-      "reference": "docker.io/denyra/acquisition-gateway:local@sha256:00ddb7d300362bc5b8831c804dab1f9c7316f2d5c7fd77ed5a241b56f60a120e",
+      "reference": "docker.io/denyra/acquisition-gateway:local@sha256:16783876b1ddbe2bca74ba7c9fbad3b29c71491fd3a323878c290a1ae6e69855",
       "platform": "linux/amd64"
     },
     {
@@ -13,7 +13,7 @@
     },
     {
       "id": "media-pipeline",
-      "reference": "docker.io/denyra/media-pipeline:local@sha256:5d4138bafb4e6a2a202ef91c7d296cb088c3b6803b4a493f0fed565d0a39bf8c",
+      "reference": "docker.io/denyra/media-pipeline:local@sha256:ecd2be635ea7b76fde9eb76815f22700a046853690ef65e558f380c59e19ae4e",
       "platform": "linux/amd64"
     },
     {

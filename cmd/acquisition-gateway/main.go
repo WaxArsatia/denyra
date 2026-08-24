@@ -141,7 +141,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			if err != nil {
 				return err
 			}
-			completion := application.PrimaryCompletionService{Queue: lidarrClient, Store: repositories, Handoff: handoff, DownloadsRoot: prepared.Config.Filesystem.DownloadsSlskd, PageSize: prepared.Config.Acquisition.LidarrPageSize, EngineVersion: slskdImage.Version}
+			completion := application.PrimaryCompletionService{Queue: lidarrClient, Store: repositories, Handoff: handoff, DownloadsRoot: prepared.Config.Filesystem.DownloadsSlskd, PageSize: prepared.Config.Acquisition.LidarrPageSize, EngineVersion: slskdImage.Version, StabilityInterval: time.Duration(prepared.Config.Scanners.StabilityInterval)}
 			completionMonitor := &application.PrimaryCompletionMonitor{Service: completion, Safety: time.Duration(prepared.Config.Acquisition.ReconciliationSafety), OnError: func(err error) { logger.Error("primary completion reconciliation failed", "error", err) }}
 			primary := application.PrimarySearch{Lidarr: lidarrClient, Store: repositories, Policy: policy, CommandTimeout: time.Duration(prepared.Config.Acquisition.AlbumSearchTimeout), PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), GraceWindow: time.Duration(prepared.Config.Acquisition.PrimaryGraceWindow), Pause: pause}
 			reconciler := application.PrimaryReconciler{Lidarr: lidarrClient, Store: repositories, Policy: policy, PageSize: prepared.Config.Acquisition.LidarrPageSize, PollInterval: time.Duration(prepared.Config.Acquisition.ReconciliationPoll), Pause: pause, Handoff: handoff}

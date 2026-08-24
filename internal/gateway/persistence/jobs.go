@@ -34,7 +34,16 @@ func (r *Repositories) ReviseSelectedRelease(ctx context.Context, jobID string, 
 		if job.Revision != expected {
 			return &domain.StaleRevisionError{Expected: expected, Current: job.Revision, State: job.State}
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET selected_release_mbid=NULLIF(?,''),selected_release_revision=selected_release_revision+1,state='DISCOVERED',state_revision=state_revision+1,primary_attempt=0,fallback_attempt=0,next_retry_at=NULL,queue_watermark=NULL,history_watermark=NULL,command_id=NULL,correlation_started_at=NULL,command_deadline=NULL,grace_deadline=NULL,overall_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, selected, formatTime(at), jobID, expected)
+		targetState := domain.StateDiscovered
+		reason := "selected MusicBrainz release changed"
+		var result sql.Result
+		if job.SelectedReleaseMBID == "" && selected != "" {
+			targetState = job.State
+			reason = "selected MusicBrainz release backfilled from monitored Lidarr release"
+			result, err = tx.ExecContext(ctx, `UPDATE acquisition_jobs SET selected_release_mbid=?,selected_release_revision=selected_release_revision+1,state_revision=state_revision+1,updated_at=? WHERE id=? AND state_revision=?`, selected, formatTime(at), jobID, expected)
+		} else {
+			result, err = tx.ExecContext(ctx, `UPDATE acquisition_jobs SET selected_release_mbid=NULLIF(?,''),selected_release_revision=selected_release_revision+1,state='DISCOVERED',state_revision=state_revision+1,primary_attempt=0,fallback_attempt=0,next_retry_at=NULL,queue_watermark=NULL,history_watermark=NULL,command_id=NULL,correlation_started_at=NULL,command_deadline=NULL,grace_deadline=NULL,overall_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, selected, formatTime(at), jobID, expected)
+		}
 		if err != nil {
 			return err
 		}
@@ -46,7 +55,7 @@ func (r *Repositories) ReviseSelectedRelease(ctx context.Context, jobID string, 
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO state_transitions(id,job_id,actor,reason,previous_state,new_state,previous_revision,revision,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)`, id, jobID, "gateway-reconciliation", "selected MusicBrainz release changed", job.State, domain.StateDiscovered, expected, expected+1, formatTime(at))
+		_, err = tx.ExecContext(ctx, `INSERT INTO state_transitions(id,job_id,actor,reason,previous_state,new_state,previous_revision,revision,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)`, id, jobID, "gateway-reconciliation", reason, job.State, targetState, expected, expected+1, formatTime(at))
 		return err
 	})
 }
@@ -59,7 +68,7 @@ func jobQuery(ctx context.Context, q rowQuery, id string) (domain.Job, error) {
 	var job domain.Job
 	var state, created, updated string
 	var selected, next, overall sql.NullString
-	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,primary_attempt,fallback_attempt,next_retry_at,overall_deadline,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.ConfigSnapshotID, &state, &job.Revision, &job.PrimaryAttempt, &job.FallbackAttempt, &next, &overall, &created, &updated)
+	err := q.QueryRowContext(ctx, `SELECT id,lidarr_album_id,release_group_mbid,selected_release_mbid,selected_release_revision,config_snapshot_id,state,state_revision,primary_attempt,fallback_attempt,next_retry_at,overall_deadline,created_at,updated_at FROM acquisition_jobs WHERE id=?`, id).Scan(&job.ID, &job.LidarrAlbumID, &job.ReleaseGroupMBID, &selected, &job.SelectedReleaseRevision, &job.ConfigSnapshotID, &state, &job.Revision, &job.PrimaryAttempt, &job.FallbackAttempt, &next, &overall, &created, &updated)
 	if err != nil {
 		return job, err
 	}

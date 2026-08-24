@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/middleware"
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
 func TestAdminUIUsesAuthenticatedRealDataSecurityHeadersAndImmutableAssets(t *testing.T) {
@@ -109,6 +111,133 @@ func TestAdminUIRejectsMissingCSRFAndReturnsStaleReviewFragment(t *testing.T) {
 	handler.ServeHTTP(stale, request)
 	if stale.Code != http.StatusConflict || !strings.Contains(stale.Body.String(), "current state REVIEW_REQUIRED at revision 3") || strings.Contains(stale.Body.String(), "<!doctype html>") {
 		t.Fatalf("stale response=%d %s", stale.Code, stale.Body.String())
+	}
+}
+
+func TestAdminUIRetriesQuarantinedCandidate(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	candidate := createPersistedCandidate(t, repository, now)
+	if _, err := db.Exec(`UPDATE candidates SET state='QUARANTINED',state_revision=7,updated_at=? WHERE candidate_id=?`, now.Format(time.RFC3339Nano), candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	quarantine := t.TempDir()
+	work := t.TempDir()
+	quarantinedCandidate := filepath.Join(quarantine, candidate.ID)
+	if err := os.Mkdir(quarantinedCandidate, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(quarantinedCandidate, "01.flac"), []byte("candidate"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := assets.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	handler, err := handlers.New(handlers.Dependencies{
+		Auth: auth, Reader: repository, Assets: bundle,
+		Reviews: application.ReviewDecisionService{
+			Store: repository, WorkRoot: work, QuarantineRoot: quarantine,
+			Now: func() time.Time { return now },
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+	form := url.Values{
+		"_csrf":          {csrf.Value},
+		"state_revision": {"7"},
+		"reason":         {"retry after deterministic tool fix"},
+		"confirm":        {"yes"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/reviews/"+candidate.ID+"/retry", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.AddCookie(session)
+	request.AddCookie(csrf)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("retry status=%d body=%s", response.Code, response.Body.String())
+	}
+	updated, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.State != domain.StateWorking || updated.StateRevision != 8 {
+		t.Fatalf("candidate state=%s revision=%d", updated.State, updated.StateRevision)
+	}
+	if _, err := os.Stat(filepath.Join(work, candidate.ID, "01.flac")); err != nil {
+		t.Fatalf("candidate was not returned to work: %v", err)
+	}
+	if _, err := os.Stat(quarantinedCandidate); !os.IsNotExist(err) {
+		t.Fatalf("quarantined path still exists: %v", err)
+	}
+}
+
+func TestAdminUIRetryMoveFailureKeepsCandidateQuarantined(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	candidate := createPersistedCandidate(t, repository, now)
+	if _, err := db.Exec(`UPDATE candidates SET state='QUARANTINED',state_revision=7,updated_at=? WHERE candidate_id=?`, now.Format(time.RFC3339Nano), candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	quarantine := t.TempDir()
+	work := t.TempDir()
+	quarantinedCandidate := filepath.Join(quarantine, candidate.ID)
+	if err := os.Mkdir(quarantinedCandidate, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := assets.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	handler, err := handlers.New(handlers.Dependencies{
+		Auth: auth, Reader: repository, Assets: bundle,
+		Reviews: application.ReviewDecisionService{
+			Store: repository, WorkRoot: work, QuarantineRoot: quarantine,
+			Move: func(string, string) error { return errors.New("injected move failure") },
+			Now:  func() time.Time { return now },
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+	form := url.Values{
+		"_csrf":          {csrf.Value},
+		"state_revision": {"7"},
+		"reason":         {"retry after deterministic tool fix"},
+		"confirm":        {"yes"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/reviews/"+candidate.ID+"/retry", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.Header.Set("HX-Request", "true")
+	request.AddCookie(session)
+	request.AddCookie(csrf)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("retry status=%d body=%s", response.Code, response.Body.String())
+	}
+	updated, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.State != domain.StateQuarantined || updated.StateRevision != 7 {
+		t.Fatalf("candidate state=%s revision=%d", updated.State, updated.StateRevision)
+	}
+	if _, err := os.Stat(quarantinedCandidate); err != nil {
+		t.Fatalf("quarantined path changed after failed move: %v", err)
 	}
 }
 

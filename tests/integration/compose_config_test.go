@@ -304,9 +304,7 @@ func TestComposeMountOwnership(t *testing.T) {
 	assertMount("slskd", "/data/downloads/slskd", false)
 	assertMount("acquisition-gateway", "/data/downloads/spotiflac", false)
 	assertNoMount("acquisition-gateway", "/data/downloads/slskd")
-	for _, target := range []string{"/data/downloads/slskd", "/data/downloads/spotiflac", "/data/downloads/other", "/data/incoming/manual", "/data/processing/work", "/data/processing/approved", "/data/quarantine"} {
-		assertMount("media-pipeline", target, false)
-	}
+	assertMount("media-pipeline", "/data", false)
 	assertMount("media-pipeline", "/data/library", true)
 	assertMount("sftpgo", "/data/incoming/manual", false)
 	assertMount("navidrome", "/music", true)

@@ -32,7 +32,7 @@ var allowedTransitions = map[State]map[State]struct{}{
 	StateImportReady:         edges(StateImportSubmitted, StateSuperseded, StateCancelled),
 	StateImportSubmitted:     edges(StateImportReconciling),
 	StateImportReconciling:   edges(StateImported, StateImportSubmitted),
-	StateQuarantined:         edges(StateReviewRequired, StateRejected, StateCancelled),
+	StateQuarantined:         edges(StateWorking, StateReviewRequired, StateRejected, StateCancelled),
 }
 
 func edges(states ...State) map[State]struct{} {

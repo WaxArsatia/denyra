@@ -37,3 +37,30 @@ func (r *Repositories) RecordSlskdCompletionEvent(ctx context.Context, event Sls
 	}
 	return nil
 }
+
+func (r *Repositories) SlskdCompletionEventsSince(ctx context.Context, since time.Time) ([]SlskdCompletionEvent, error) {
+	rows, err := r.DB.QueryContext(ctx, `SELECT id,event_version,transfer_id,COALESCE(batch_id,''),local_filename,remote_filename,transfer_state,event_timestamp,payload_json,payload_sha256,received_at FROM slskd_completion_events WHERE received_at>=? AND transfer_state='Completed, Succeeded' ORDER BY received_at,id`, formatTime(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []SlskdCompletionEvent
+	for rows.Next() {
+		var event SlskdCompletionEvent
+		var timestamp, receivedAt string
+		if err := rows.Scan(&event.ID, &event.Version, &event.TransferID, &event.BatchID, &event.LocalFilename, &event.RemoteFilename, &event.TransferState, &timestamp, &event.Payload, &event.PayloadSHA256, &receivedAt); err != nil {
+			return nil, err
+		}
+		event.Timestamp, err = time.Parse(time.RFC3339Nano, timestamp)
+		if err != nil {
+			return nil, err
+		}
+		event.ReceivedAt, err = time.Parse(time.RFC3339Nano, receivedAt)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
+}

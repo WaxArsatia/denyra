@@ -6,18 +6,19 @@ import (
 )
 
 type Job struct {
-	ID                   string
-	LidarrAlbumID        int64
-	ReleaseGroupMBID     string
-	SelectedReleaseMBID  string
-	State                State
-	Revision             uint64
-	PrimaryAttempt       int
-	FallbackAttempt      int
-	ConfigSnapshotID     string
-	NextRetryAt          *time.Time
-	OverallDeadline      *time.Time
-	CreatedAt, UpdatedAt time.Time
+	ID                      string
+	LidarrAlbumID           int64
+	ReleaseGroupMBID        string
+	SelectedReleaseMBID     string
+	SelectedReleaseRevision uint64
+	State                   State
+	Revision                uint64
+	PrimaryAttempt          int
+	FallbackAttempt         int
+	ConfigSnapshotID        string
+	NextRetryAt             *time.Time
+	OverallDeadline         *time.Time
+	CreatedAt, UpdatedAt    time.Time
 }
 type Transition struct {
 	JobID, Actor, Reason       string

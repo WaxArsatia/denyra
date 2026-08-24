@@ -181,7 +181,16 @@ func (r *Repositories) CandidateForJobSource(ctx context.Context, jobID, source 
 }
 
 func (r *Repositories) CandidatesWithoutEffect(ctx context.Context, source, effectType string) ([]Candidate, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT c.candidate_id FROM candidates c LEFT JOIN external_effects e ON e.idempotency_key=('candidate-complete-' || c.candidate_id) AND e.effect_type=? WHERE c.source=? AND c.completed_at IS NOT NULL AND e.id IS NULL ORDER BY c.completed_at,c.candidate_id`, effectType, source)
+	rows, err := r.DB.QueryContext(ctx, `SELECT c.candidate_id
+		FROM candidates c
+		JOIN acquisition_jobs j ON j.id=c.job_id
+		WHERE c.source=? AND c.completed_at IS NOT NULL AND NOT EXISTS (
+			SELECT 1 FROM external_effects e
+			WHERE e.effect_type=? AND e.acknowledged_at IS NOT NULL
+				AND CASE WHEN json_valid(e.request_json) THEN json_extract(e.request_json,'$.candidate_id') END=c.candidate_id
+				AND CASE WHEN json_valid(e.request_json) THEN json_extract(e.request_json,'$.musicbrainz_release_id') END=j.selected_release_mbid
+		)
+		ORDER BY c.completed_at,c.candidate_id`, source, effectType)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +215,17 @@ func (r *Repositories) CandidatesWithoutEffect(ctx context.Context, source, effe
 		result = append(result, candidate)
 	}
 	return result, nil
+}
+
+func (r *Repositories) CandidateCompletionAcknowledged(ctx context.Context, candidateID, releaseMBID string) (bool, error) {
+	var acknowledged bool
+	err := r.DB.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM external_effects
+		WHERE effect_type='PIPELINE_ACCEPT' AND acknowledged_at IS NOT NULL
+			AND CASE WHEN json_valid(request_json) THEN json_extract(request_json,'$.candidate_id') END=?
+			AND CASE WHEN json_valid(request_json) THEN json_extract(request_json,'$.musicbrainz_release_id') END=?
+	)`, candidateID, releaseMBID).Scan(&acknowledged)
+	return acknowledged, err
 }
 
 func NewCandidateID() (string, error) { return ids.NewToken(16) }

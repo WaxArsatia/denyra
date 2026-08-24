@@ -11,6 +11,7 @@ import (
 
 	"github.com/waxarsatia/denyra/internal/contracts"
 	pipelineadapter "github.com/waxarsatia/denyra/internal/gateway/adapters/pipeline"
+	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 )
 
@@ -63,6 +64,9 @@ func (service CandidateHandoffService) AcceptCompleted(ctx context.Context, cand
 	if err != nil {
 		return err
 	}
+	if _, err := domain.CanonicalMBID(job.SelectedReleaseMBID); err != nil {
+		return fmt.Errorf("completed candidate requires an explicit selected MusicBrainz release: %w", err)
+	}
 	source := contractSource(candidate.Source)
 	if source == "" {
 		return fmt.Errorf("unsupported acquisition candidate source %q", candidate.Source)
@@ -82,7 +86,8 @@ func (service CandidateHandoffService) AcceptCompleted(ctx context.Context, cand
 	if request.Provenance.OutputSHA256 != candidate.OutputSHA256 {
 		return fmt.Errorf("handoff provenance checksum differs from immutable candidate output")
 	}
-	return service.deliverCompletion(ctx, request, requestID)
+	key := fmt.Sprintf("%s-release-%d", requestID, job.SelectedReleaseRevision)
+	return service.deliverCompletion(ctx, request, key)
 }
 
 func (service CandidateHandoffService) deliverRegistration(ctx context.Context, request contracts.CandidateRegistered, key string) error {
