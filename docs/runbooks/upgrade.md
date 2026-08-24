@@ -1,34 +1,37 @@
-# Upgrade and rollback
+# Update and rollback
 
-Dependency changes are explicit. Do not change a version, digest, registry commit, extension, runtime, or generated asset without updating `dependencies.lock.json` and running its compatibility tests.
+## Update
 
-## Verify an update
-
-Keep the previous lock file and create a review record containing `lock_sha256`, `reviewer`, and an RFC 3339 `reviewed_at` timestamp. Point the verifier at an empty evidence directory:
+Run from a clean checkout on its normal branch:
 
 ```sh
-export DENYRA_UPGRADE_BASE_LOCK=/srv/denyra-evidence/prior-dependencies.lock.json
-export DENYRA_UPGRADE_APPROVAL_FILE=/srv/denyra-evidence/update-approval.json
-export DENYRA_UPGRADE_EVIDENCE_DIR=/srv/denyra-evidence/update-20260824
-scripts/upgrade/verify-update.sh
+./denyra update
 ```
 
-The verifier checks the dependency lock, the hash-locked Python graph, generated templ files, provider compatibility, the complete Go test suite, image labels, platform, and Compose. It builds the custom and derived images, resolves their local immutable digests, and updates `deploy/images.lock.json` plus Compose. Review those generated changes before deployment.
+The command refuses tracked or staged source changes. It records the active commit, rendered Compose model, and exact running image IDs before fetching the branch. Pull and build happen while the old stack remains online.
 
-## Deploy
+After every candidate image is ready, the command stops the stack and copies only external config and service state into an update snapshot. Library, downloads, processing media, quarantine, and cache are not copied. The candidate starts with a health wait and the same smoke checks used by setup.
 
-Run a normal Denyra backup and restore it into a new test tree with the candidate images. Set `DENYRA_VERIFIED_BACKUP_DIR` to the backup workspace and `DENYRA_UPGRADE_RESTORE_TARGET` to the verified restored tree. The deployment command refuses to continue if the backup, lock, image, migration, or restore identities differ.
+If startup or smoke fails before the candidate is declared healthy, Denyra restores config and state and starts the exact prior image IDs. It does not rebuild an approximation from an old tag. Failed candidate trees remain inside the snapshot for diagnosis.
+
+The two newest update snapshots are retained. Docker images referenced by them are not pruned automatically.
+
+## Manual rollback
 
 ```sh
-export DENYRA_VERIFIED_BACKUP_DIR=/data/backups/<backup-id>
-export DENYRA_UPGRADE_RESTORE_TARGET=/srv/denyra-upgrade-smoke
-scripts/upgrade/deploy.sh
+./denyra rollback
 ```
 
-The script applies the candidate migrations to the restored test databases first. It then deploys only the digests recorded in `deploy/images.lock.json`, waits for service health, and runs contract and acceptance smoke tests. Preserve the evidence directory, prior image digests, and prior backup.
+The command selects the newest successful update snapshot and prints both commits. It then asks:
 
-## Roll back
+```text
+Rollback will discard service-state writes made after this update. Continue? [y/N]
+```
 
-Set the evidence directory, the prior backup workspace, and the current data root, then run `scripts/upgrade/rollback.sh`. The script compares the complete migration ledger in both custom SQLite databases.
+Only `y` or `yes` continues. The same exact-image restore path used by automatic rollback is used here. The current Git worktree stays on its present commit; rollback controls active images, config, and service state.
 
-If the ledgers match, it selects `BINARY_ONLY` and starts the exact prior Compose snapshot. If they differ, it selects `RESTORE_DATABASE_TREE`, stops, and directs the operator to the restore runbook. It never writes an older database over the live tree.
+Rollback cannot proceed if a required prior image has been manually deleted. Keep the snapshot and restore that exact image before retrying.
+
+Use `./denyra status` and `./denyra logs` after either operation. `./denyra credentials` shows the generated login locations without changing them.
+
+Update snapshots are not disaster backups. Configure `./denyra backup` separately when the library and long-lived state need recovery protection.

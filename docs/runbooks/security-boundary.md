@@ -1,11 +1,19 @@
 # Security boundary
 
-The Denyra Admin UI intentionally uses internal HTTP, binds to `0.0.0.0:8090`, and does not set the cookie `Secure` attribute. This is an accepted security risk. The session cookie remains `HttpOnly`, `SameSite=Strict`, and `Path=/`; mutations require CSRF protection and authentication. The deployment and firewall must restrict who can reach port `8090`. Public exposure, TLS termination, reverse proxies, DNS, and firewall design are outside this system.
+Denyra is designed for a local machine or private server. Its basic deployment boundary is:
 
-Gateway and pipeline JSON APIs use a shared bearer secret from a secret file, constant-time comparison, request IDs, idempotency keys, and explicit body limits. They share a dedicated private Compose network that no other container joins. The Admin JSON API is not an external interface; HTMX endpoints stay inside the same admin authentication boundary.
+- password-protected Denyra, Navidrome, SFTPGo, and slskd accounts
+- private Compose networks between services
+- secrets stored under the external deployment root, outside Git and image layers
+- a read-only Navidrome library mount
+- separate write roots for downloads, uploads, processing, and the final Lidarr library
 
-Navidrome music accounts, SFTPGo upload accounts, and Denyra admin accounts are separate. Navidrome mounts `/data/library` read-only. SFTPGo can write only manual incoming files. Downloaders write their own download roots. Pipeline can claim completed downloads and mutate staging candidates, while only Lidarr can rename, move, or import into the final library.
+The Denyra Admin UI uses HTTP and binds to `0.0.0.0:8090`. This is an accepted security risk for the intended private deployment. Sessions remain `HttpOnly` and `SameSite=Strict`, and mutations require authentication and CSRF protection.
 
-Provider credentials are not passed to SpotiFLAC. Runtime extension installation, registry updates, package installation, and dependency updates are disabled. Every deployment dependency changes through an explicit reviewed lock update and compatibility tests.
+The repository does not configure TLS, a reverse proxy, host firewall, DNS, VPN access, or public exposure. Add those controls outside Denyra before allowing access from an untrusted network.
 
-Secrets never enter TOML, configuration snapshots, logs, audit events, image layers, or source control. Audit records may store the secret source name and an HMAC fingerprint made with a separate audit key. They never store the secret value or a plain hash of a low-entropy secret.
+Navidrome music users, SFTPGo upload users, and Denyra administrators are separate accounts. Do not reuse passwords. SpotiFLAC does not receive personal streaming-provider credentials.
+
+Upstream services follow supported active release lines instead of promising exact build provenance for every release. Update rollback still records the actual running Docker image IDs so it can restore the previous local deployment exactly while those images remain present.
+
+Secrets must not be committed, copied into config files, added to logs, or pasted into support messages. `./denyra credentials` reads them locally when an operator needs the generated accounts.

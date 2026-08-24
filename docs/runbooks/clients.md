@@ -1,18 +1,22 @@
 # Playback clients
 
-Navidrome provides the OpenSubsonic endpoint and authenticates music users. Feishin and Tempus are installed on user devices; neither client is a container in the server Compose project.
+Navidrome provides the OpenSubsonic endpoint. Feishin, Tempus, and other clients use Navidrome music accounts, not the Denyra administrator account.
 
-## Linux with Feishin 1.15.1
+## Local machine
 
-Install the pinned Feishin release through its supported Linux package. Add a Navidrome/OpenSubsonic server using the Navidrome URL and a Navidrome music account. Keep stream quality at original for LAN, Wi-Fi, and fast remote links. Enable synchronized lyrics so local `.lrc` sidecars are used before the Navidrome runtime lyrics plugin.
+Use these addresses:
 
-## Android with Tempus 4.25.0
+- Denyra: `http://localhost:8090`
+- Feishin or Navidrome Web UI: `http://localhost:4533`
+- SFTPGo WebAdmin: `http://localhost:8080`
+- SFTP upload: `localhost:2022`
 
-Install the pinned Tempus release, add the same Navidrome server, and sign in with a Navidrome music account. Original FLAC is the default on LAN and Wi-Fi. Offline downloads, Android Auto, gapless playback, ReplayGain, and lyrics remain client settings.
+In Feishin, add a Navidrome or OpenSubsonic server with `http://localhost:4533`, then sign in with the Navidrome account shown by `./denyra credentials`.
 
-`opus-256` and `opus-160` are logical policies, not required internal profile names. A client may request the corresponding `maxBitRate`, downsampling, or server transcoding option:
+## Private server
 
-- `opus-256` means roughly 256 kbps for normal cellular links.
-- `opus-160` means roughly 160 kbps for constrained cellular links.
+Replace `localhost` with the server's LAN address, for example `http://server-lan-address:4533`. Do not enter a Compose service name or container network address in a client running on another machine.
 
-Changing transport quality does not change the FLAC master. If a client cannot express a named policy, select the closest requested bitrate manually.
+Use original quality on a fast LAN when you want the FLAC master. Lower bitrate or server transcoding remains a client preference and does not modify the master. Synchronized lyrics use the `.lrc` sidecar associated with each imported track. Album and artist artwork come from the files and metadata visible in the Navidrome library.
+
+If artwork or lyrics are missing after import, check that Lidarr imported the sidecar files and image files into the final library, then run a Navidrome rescan.
