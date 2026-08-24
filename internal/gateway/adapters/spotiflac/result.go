@@ -45,12 +45,12 @@ type ProviderExecution struct {
 }
 
 type RunResult struct {
-	EngineVersion, EngineSHA256, RegistryCommit, NodeVersion, NodeArtifactSHA256 string
-	Extensions                                                                   []ExtensionIdentity
-	Providers                                                                    []ProviderExecution
-	WinningProvider                                                              string
-	Output                                                                       []OutputFile
-	StartedAt, CompletedAt                                                       time.Time
+	EngineVersion, EngineSHA256, NodeVersion, NodeSHA256 string
+	Extensions                                           []ExtensionIdentity
+	Providers                                            []ProviderExecution
+	WinningProvider                                      string
+	Output                                               []OutputFile
+	StartedAt, CompletedAt                               time.Time
 }
 
 func (result RunResult) DomainResults() []domain.ProviderResult {

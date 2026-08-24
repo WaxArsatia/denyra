@@ -256,7 +256,7 @@ func (runner Runner) environment() []string {
 
 func (runner Runner) baseResult() RunResult {
 	manifest := runner.Runtime.Installation.Manifest
-	return RunResult{EngineVersion: manifest.EngineVersion, EngineSHA256: manifest.EngineSHA256, RegistryCommit: manifest.RegistryCommit, NodeVersion: manifest.NodeVersion, NodeArtifactSHA256: manifest.NodeArtifactSHA256, Extensions: append([]ExtensionIdentity(nil), manifest.Extensions...)}
+	return RunResult{EngineVersion: manifest.EngineVersion, EngineSHA256: manifest.EngineSHA256, NodeVersion: manifest.NodeVersion, NodeSHA256: manifest.NodeSHA256, Extensions: append([]ExtensionIdentity(nil), manifest.Extensions...)}
 }
 
 func (runner Runner) retryableResult(request RunRequest, class string, err error) RunResult {

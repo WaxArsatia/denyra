@@ -94,15 +94,20 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 			}
 			prepared.Health.Set(contracts.DependencyHealth{Name: "lidarr", State: contracts.DependencyOK, Local: true})
 			prepared.Health.Set(contracts.DependencyHealth{Name: "media-pipeline", State: contracts.DependencyOK, Local: true})
-			manifest := spotiflac.ExpectedManifest()
 			installation, err := (spotiflac.Installation{
-				EnginePath: "/opt/spotiflac/spotiflac", NodePath: "/opt/node/bin/node",
-				ArtifactDirectory: "/opt/spotiflac/artifacts", InstalledExtensionDirectory: "/opt/spotiflac/runtime-home/.spotiflac/extensions",
-				BuildProvenancePath: "/app/build-provenance.json", Manifest: manifest,
+				EnginePath:                  "/opt/spotiflac/spotiflac",
+				NodePath:                    "/usr/local/bin/node",
+				InstalledExtensionDirectory: "/opt/spotiflac/runtime-home/.spotiflac/extensions",
 			}).Verify(ctx, time.Duration(prepared.Config.HTTP.ExternalRequestTimeout), time.Now().UTC())
 			if err != nil {
 				return err
 			}
+			manifest := installation.Installation.Manifest
+			providers := make([]string, len(manifest.Extensions))
+			for index, extension := range manifest.Extensions {
+				providers[index] = extension.ID + "@" + extension.Version
+			}
+			logger.Info("SpotiFLAC runtime verified", "spotiflac_engine_version", manifest.EngineVersion, "node_version", manifest.NodeVersion, "providers", providers)
 			processes := spotiflac.NewProcessRegistry(time.Duration(prepared.Config.Acquisition.ProcessTerminateGrace))
 			runner := spotiflac.Runner{
 				Runtime:             installation,

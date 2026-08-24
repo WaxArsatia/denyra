@@ -1,11 +1,7 @@
 package gateway_test
 
 import (
-	"archive/zip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -94,39 +90,62 @@ func TestSpotiFLACRejectsProviderAndOutputOverrides(t *testing.T) {
 	}
 }
 
-func TestSpotiFLACManifestFailsClosedOnArtifactChange(t *testing.T) {
+func TestInstallationDiscoversUsableProviders(t *testing.T) {
 	verified, _, _ := fakeSpotiFLACInstallation(t)
-	installation := verified.Installation
-	artifact := filepath.Join(installation.ArtifactDirectory, installation.Manifest.Extensions[0].ID+".sflx")
-	if err := os.WriteFile(artifact, []byte("changed"), 0o444); err != nil {
-		t.Fatal(err)
+	manifest := verified.Installation.Manifest
+	if got := strings.Join(manifest.Providers(), ","); got != "ext:deezer,ext:qobuz-web,ext:tidal-web" {
+		t.Fatalf("providers = %q", got)
 	}
-	if _, err := installation.Verify(context.Background(), time.Second, time.Now()); err == nil {
-		t.Fatal("modified extension artifact passed verification")
+	if manifest.EngineVersion == "" || manifest.NodeVersion == "" || manifest.EngineSHA256 == "" || manifest.NodeSHA256 == "" {
+		t.Fatalf("runtime identity incomplete: %+v", manifest)
+	}
+	for _, extension := range manifest.Extensions {
+		if extension.SHA256 == "" || !containsString(extension.Types, "download_provider") {
+			t.Fatalf("extension identity incomplete: %+v", extension)
+		}
 	}
 }
 
-func TestSpotiFLACManifestRejectsUnexpectedOrModifiedInstalledExtension(t *testing.T) {
+func TestInstallationRejectsNoDownloadProvider(t *testing.T) {
 	verified, _, _ := fakeSpotiFLACInstallation(t)
-	installation := verified.Installation
-	if err := os.Mkdir(filepath.Join(installation.InstalledExtensionDirectory, "rogue"), 0o755); err != nil {
+	for _, extension := range verified.Installation.Manifest.Extensions {
+		path := filepath.Join(verified.Installation.InstalledExtensionDirectory, extension.ID, "manifest.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = []byte(strings.ReplaceAll(string(data), `"download_provider"`, `"metadata_provider"`))
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := verified.Installation.Verify(context.Background(), time.Second, time.Now()); err == nil || !strings.Contains(err.Error(), "download provider") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestInstallationRejectsInvalidManifest(t *testing.T) {
+	verified, _, _ := fakeSpotiFLACInstallation(t)
+	path := filepath.Join(verified.Installation.InstalledExtensionDirectory, "tidal-web", "manifest.json")
+	if err := os.Chmod(path, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := installation.Verify(context.Background(), time.Second, time.Now()); err == nil {
-		t.Fatal("unexpected installed extension passed verification")
-	}
-	if err := os.Remove(filepath.Join(installation.InstalledExtensionDirectory, "rogue")); err != nil {
+	if err := os.WriteFile(path, []byte(`{"name":"tidal-web"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	entryPoint := filepath.Join(installation.InstalledExtensionDirectory, installation.Manifest.Extensions[0].ID, "index.js")
-	if err := os.Chmod(entryPoint, 0o644); err != nil {
-		t.Fatal(err)
+	if _, err := verified.Installation.Verify(context.Background(), time.Second, time.Now()); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("error = %v", err)
 	}
-	if err := os.WriteFile(entryPoint, []byte("changed"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := installation.Verify(context.Background(), time.Second, time.Now()); err == nil {
-		t.Fatal("modified installed extension passed verification")
+}
+
+func TestInstallationRejectsBrokenRuntime(t *testing.T) {
+	verified, _, _ := fakeSpotiFLACInstallation(t)
+	writeExecutable(t, verified.Installation.EnginePath, "#!/bin/sh\nexit 7\n")
+	if _, err := verified.Installation.Verify(context.Background(), time.Second, time.Now()); err == nil || !strings.Contains(err.Error(), "SpotiFLAC runtime") {
+		t.Fatalf("error = %v", err)
 	}
 }
 
@@ -204,15 +223,18 @@ func fakeSpotiFLACInstallation(t *testing.T) (spotiflac.VerifiedInstallation, st
 	root := t.TempDir()
 	base := filepath.Join(root, "downloads")
 	home := filepath.Join(root, "home")
-	artifacts := filepath.Join(root, "artifacts")
 	installed := filepath.Join(home, ".spotiflac", "extensions")
-	for _, directory := range []string{base, artifacts, installed} {
+	for _, directory := range []string{base, installed} {
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 	engine := filepath.Join(root, "spotiflac")
 	engineScript := `#!/bin/sh
+if [ "${1:-}" = "--help" ]; then
+  printf 'SpotiFLAC Version 3.0.8-test\n'
+  exit 0
+fi
 input="$1"
 output="$2"
 provider=""
@@ -237,14 +259,8 @@ esac
 	writeExecutable(t, engine, engineScript)
 	node := filepath.Join(root, "node")
 	writeExecutable(t, node, "#!/bin/sh\nprintf 'v24.19.0\\n'\n")
-	manifest := spotiflac.RuntimeManifest{EngineVersion: "3.0.8-test", EngineSHA256: fileSHA256(t, engine), RegistryCommit: spotiflac.RegistryCommit, NodeVersion: "24.19.0", NodeArtifactSHA256: strings.Repeat("a", 64)}
 	for _, identity := range []struct{ id, version string }{{"tidal-web", "1.1.7"}, {"qobuz-web", "1.1.0"}, {"deezer", "1.2.0"}} {
-		extension := spotiflac.ExtensionIdentity{ID: identity.id, Version: identity.version, MinAppVersion: "4.7.0", RequiredRuntimeFeatures: []string{"signedSession@1", "sessionGrant@1"}}
-		archive := filepath.Join(artifacts, identity.id+".sflx")
 		manifestJSON := fmt.Sprintf(`{"name":%q,"version":%q,"minAppVersion":"4.7.0","requiredRuntimeFeatures":["signedSession@1","sessionGrant@1"],"type":["download_provider"]}`, identity.id, identity.version)
-		writeExtensionArchive(t, archive, manifestJSON)
-		extension.SHA256 = fileSHA256(t, archive)
-		manifest.Extensions = append(manifest.Extensions, extension)
 		directory := filepath.Join(installed, identity.id)
 		if err := os.MkdirAll(directory, 0o750); err != nil {
 			t.Fatal(err)
@@ -256,19 +272,7 @@ esac
 			t.Fatal(err)
 		}
 	}
-	provenance := map[string]any{"artifacts": []map[string]string{{"id": "spotiflac-engine", "version": manifest.EngineVersion, "sha256": manifest.EngineSHA256}, {"id": "node-runtime", "version": manifest.NodeVersion, "sha256": manifest.NodeArtifactSHA256}}, "registries": []map[string]string{{"id": "spotiflac-extension-registry", "commit": manifest.RegistryCommit}}}
-	for _, extension := range manifest.Extensions {
-		provenance["artifacts"] = append(provenance["artifacts"].([]map[string]string), map[string]string{"id": "spotiflac-ext-" + extension.ID, "version": extension.Version, "sha256": extension.SHA256})
-	}
-	data, err := json.Marshal(provenance)
-	if err != nil {
-		t.Fatal(err)
-	}
-	provenancePath := filepath.Join(root, "build-provenance.json")
-	if err := os.WriteFile(provenancePath, data, 0o444); err != nil {
-		t.Fatal(err)
-	}
-	installation := spotiflac.Installation{EnginePath: engine, NodePath: node, ArtifactDirectory: artifacts, InstalledExtensionDirectory: installed, BuildProvenancePath: provenancePath, Manifest: manifest}
+	installation := spotiflac.Installation{EnginePath: engine, NodePath: node, InstalledExtensionDirectory: installed}
 	verified, err := installation.Verify(context.Background(), time.Second, time.Now())
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -283,36 +287,11 @@ func writeExecutable(t *testing.T, path, body string) {
 	}
 }
 
-func writeExtensionArchive(t *testing.T, path, manifest string) {
-	t.Helper()
-	file, err := os.Create(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	archive := zip.NewWriter(file)
-	for name, body := range map[string]string{"manifest.json": manifest, "index.js": "module.exports = {}"} {
-		entry, err := archive.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := entry.Write([]byte(body)); err != nil {
-			t.Fatal(err)
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
 		}
 	}
-	if err := archive.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func fileSHA256(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return false
 }
