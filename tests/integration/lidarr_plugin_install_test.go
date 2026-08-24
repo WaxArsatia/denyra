@@ -24,10 +24,10 @@ func TestLidarrPluginInstallerUsesOwnerAndPluginDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(source, "plugin.dll"), []byte("fixture"), 0o440); err != nil {
 		t.Fatalf("write plugin fixture: %v", err)
 	}
-	image := "docker.io/library/debian:13.6-slim@sha256:3a39a0592364683e6bab97937b72cad5a8fa6dcbbee90edb3bb48c7f8e94f258"
+	image := "debian:stable-slim"
 	t.Cleanup(func() {
 		cleanup := exec.Command(
-			"docker", "run", "--rm", "--platform", "linux/amd64",
+			"docker", "run", "--rm",
 			"--entrypoint", "/bin/chmod",
 			"--mount", "type=bind,source="+config+",target=/config",
 			image, "-R", "a+rwx", "/config",
@@ -38,7 +38,7 @@ func TestLidarrPluginInstallerUsesOwnerAndPluginDirectory(t *testing.T) {
 	})
 
 	command := exec.Command(
-		"docker", "run", "--rm", "--platform", "linux/amd64",
+		"docker", "run", "--rm",
 		"--entrypoint", "/bin/sh",
 		"--mount", "type=bind,source="+filepath.Join(repoRoot, "deploy", "docker", "lidarr-install-plugin.sh")+",target=/install.sh,readonly",
 		"--mount", "type=bind,source="+source+",target=/defaults/denyra-plugins/Lidarr.Plugin.Slskd,readonly",

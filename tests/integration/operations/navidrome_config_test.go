@@ -9,7 +9,7 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-func TestNavidromePinnedReadOnlyConfiguration(t *testing.T) {
+func TestNavidromeCompatibleReadOnlyConfiguration(t *testing.T) {
 	root := repositoryRoot(t)
 	data, err := os.ReadFile(filepath.Join(root, "deploy/config/navidrome.toml"))
 	if err != nil {
@@ -43,8 +43,8 @@ func TestNavidromePinnedReadOnlyConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(dockerfile), "navidrome:0.63.2@sha256:") || !strings.Contains(string(dockerfile), "nd-lyrics.ndp") || !strings.Contains(string(dockerfile), "sha256:a9196e") {
-		t.Fatal("Navidrome/plugin image is not exact and verified")
+	if !strings.Contains(string(dockerfile), "FROM deluan/navidrome:latest") || !strings.Contains(string(dockerfile), "releases/latest/download/nd-lyrics.ndp") || strings.Contains(string(dockerfile), "@sha256:") {
+		t.Fatal("Navidrome/plugin image does not follow its compatible release channel")
 	}
 }
 

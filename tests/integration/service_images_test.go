@@ -18,6 +18,8 @@ func TestServiceImagesContainRequiredRuntimes(t *testing.T) {
 	}
 	gateway := "denyra/acquisition-gateway:" + imageTag
 	pipeline := "denyra/media-pipeline:" + imageTag
+	lidarr := "denyra/lidarr:" + imageTag
+	navidrome := "denyra/navidrome:" + imageTag
 	checks := []struct {
 		name       string
 		image      string
@@ -32,6 +34,9 @@ func TestServiceImagesContainRequiredRuntimes(t *testing.T) {
 		{name: "pipeline ffprobe", image: pipeline, entrypoint: "ffprobe", arguments: []string{"-version"}},
 		{name: "pipeline flac", image: pipeline, entrypoint: "flac", arguments: []string{"--version"}},
 		{name: "pipeline metaflac", image: pipeline, entrypoint: "metaflac", arguments: []string{"--version"}},
+		{name: "lidarr plugin", image: lidarr, entrypoint: "/bin/sh", arguments: []string{"-c", "test -s /defaults/denyra-plugins/Lidarr.Plugin.Slskd/Lidarr.Plugin.Slskd.dll"}},
+		{name: "navidrome binary", image: navidrome, entrypoint: "/app/navidrome", arguments: []string{"--version"}},
+		{name: "navidrome lyrics plugin", image: navidrome, entrypoint: "/bin/sh", arguments: []string{"-c", "test -r /plugins/nd-lyrics.ndp"}},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {
@@ -60,6 +65,21 @@ func TestApplicationDockerfilesUseOfficialRuntimeLines(t *testing.T) {
 	for _, forbidden := range []string{"@sha256:", "Python-3.", "node-v", "--require-hashes", "dependencies.lock", "build-provenance", "debian.sources"} {
 		if strings.Contains(gateway+pipeline, forbidden) {
 			t.Errorf("obsolete strict input remained: %q", forbidden)
+		}
+	}
+}
+
+func TestDerivedDockerfilesFollowCompatibleChannels(t *testing.T) {
+	for name, want := range map[string]string{
+		"lidarr.Dockerfile":    "FROM lscr.io/linuxserver/lidarr:nightly",
+		"navidrome.Dockerfile": "FROM deluan/navidrome:latest",
+	} {
+		text := readDockerfile(t, name)
+		if !strings.Contains(text, want) || strings.Contains(text, "@sha256:") {
+			t.Errorf("%s does not follow its compatible channel", name)
+		}
+		if !strings.Contains(text, "ARG DENYRA_RELEASE_REFRESH") {
+			t.Errorf("%s cannot refresh latest plugin assets", name)
 		}
 	}
 }
