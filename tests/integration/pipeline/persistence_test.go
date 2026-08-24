@@ -157,6 +157,42 @@ func TestPersistenceConcurrentWritersAllowExactlyOneRevision(t *testing.T) {
 	}
 }
 
+func TestPersistenceUploadSessionSurvivesRestartAndFinalizesIdempotently(t *testing.T) {
+	db, repositories, now := pipelineRepositories(t)
+	defer db.Close()
+	session := domain.UploadSession{
+		ID: "upload-1", SubmissionID: "submission-1", Actor: "admin-1", Status: domain.UploadSessionOpen,
+		Files:     []domain.UploadFileSpec{{ID: "entry-1", RelativePath: "OFF GUARD/01.flac", SizeBytes: 12, MediaType: "audio/flac", Status: domain.UploadEntryPending}},
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repositories.CreateUploadSession(context.Background(), session); err != nil {
+		t.Fatal(err)
+	}
+	if err := repositories.CompleteUploadEntry(context.Background(), session.ID, "entry-1", now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	restarted := persistence.New(db, func() time.Time { return now.Add(2 * time.Second) })
+	loaded, err := restarted.UploadSession(context.Background(), session.ID)
+	if err != nil || loaded.Files[0].Status != domain.UploadEntryComplete {
+		t.Fatalf("restarted session=%+v err=%v", loaded, err)
+	}
+	finalPath := "/data/incoming/manual/submission-1"
+	provenance := []byte(`{"ingress":"browser","manifest":["OFF GUARD/01.flac"]}`)
+	if err := restarted.FinalizeUploadSession(context.Background(), session.ID, finalPath, provenance, now.Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := restarted.FinalizeUploadSession(context.Background(), session.ID, finalPath, provenance, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("idempotent finalize: %v", err)
+	}
+	var submissions int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM submissions WHERE id='submission-1' AND ingress='browser' AND provenance_json=?`, provenance).Scan(&submissions); err != nil {
+		t.Fatal(err)
+	}
+	if submissions != 1 {
+		t.Fatalf("browser submissions=%d, want 1", submissions)
+	}
+}
+
 func pipelineRepositories(t *testing.T) (*sql.DB, *persistence.Repositories, time.Time) {
 	t.Helper()
 	ctx := context.Background()
