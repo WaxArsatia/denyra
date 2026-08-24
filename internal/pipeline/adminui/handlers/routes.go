@@ -22,6 +22,7 @@ type Dependencies struct {
 	Reviews        application.ReviewDecisionService
 	Submissions    application.SubmissionService
 	Uploads        *application.UploadService
+	Previews       *application.SubmissionPreviewService
 	Assets         *assets.Bundle
 	ConfigSnapshot string
 }
@@ -45,6 +46,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("GET /reviews/{candidateID}", console.review)
 	private.HandleFunc("POST /reviews/{candidateID}/{action}", console.reviewAction)
 	private.HandleFunc("GET /incoming", console.incoming)
+	private.HandleFunc("GET /incoming/{submissionID}", console.incomingDetail)
 	private.HandleFunc("POST /incoming/{submissionID}/submit", console.submit)
 	private.HandleFunc("POST /upload-sessions", console.createUploadSession)
 	private.HandleFunc("GET /upload-sessions/{sessionID}", console.getUploadSession)
@@ -106,6 +108,19 @@ func (c Console) incoming(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Unable to load incoming submissions."
 	}
 	c.render(w, r, views.Incoming(page), views.IncomingContent(page))
+}
+func (c Console) incomingDetail(w http.ResponseWriter, r *http.Request) {
+	if c.dependencies.Previews == nil {
+		http.NotFound(w, r)
+		return
+	}
+	preview, err := c.dependencies.Previews.Preview(r.Context(), r.PathValue("submissionID"), false)
+	if err != nil {
+		http.Error(w, "preview unavailable", http.StatusConflict)
+		return
+	}
+	page := views.IncomingDetailPage{Shell: c.shell(r), Preview: preview}
+	c.render(w, r, views.IncomingDetail(page), views.IncomingDetailContent(page))
 }
 func (c Console) audit(w http.ResponseWriter, r *http.Request) {
 	items, next, err := c.dependencies.Reader.Audit(r.Context(), 50, r.URL.Query().Get("cursor"))
@@ -205,14 +220,58 @@ func (c Console) submit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	revision, err := strconv.ParseUint(r.Form.Get("state_revision"), 10, 64)
+	if r.Form.Get("state_revision") == "" {
+		revision = 0
+		err = nil
+	}
+	var decision domain.SubmissionDecision
 	if err == nil {
-		err = c.dependencies.Submissions.Submit(r.Context(), r.PathValue("submissionID"), revision, principal.UserID)
+		decision, err = c.submissionDecision(r)
+	}
+	if err == nil {
+		err = c.dependencies.Submissions.Submit(r.Context(), r.PathValue("submissionID"), revision, principal.UserID, decision)
 	}
 	if err != nil {
 		http.Error(w, "submission failed", http.StatusConflict)
 		return
 	}
 	http.Redirect(w, r, "/incoming", http.StatusSeeOther)
+}
+
+func (c Console) submissionDecision(r *http.Request) (domain.SubmissionDecision, error) {
+	if c.dependencies.Previews == nil {
+		return domain.SubmissionDecision{}, fmt.Errorf("preview service unavailable")
+	}
+	preview, err := c.dependencies.Previews.Preview(r.Context(), r.PathValue("submissionID"), false)
+	if err != nil {
+		return domain.SubmissionDecision{}, err
+	}
+	paths, titles, artists := r.Form["track_path"], r.Form["track_title"], r.Form["track_artist"]
+	tracks, discs := r.Form["track_number"], r.Form["disc_number"]
+	if len(paths) != len(preview.Metadata.Tracks) || len(titles) != len(paths) || len(artists) != len(paths) || len(tracks) != len(paths) || len(discs) != len(paths) {
+		return domain.SubmissionDecision{}, fmt.Errorf("track form is incomplete")
+	}
+	metadata := preview.Metadata
+	metadata.AlbumArtist, metadata.Album = strings.TrimSpace(r.Form.Get("album_artist")), strings.TrimSpace(r.Form.Get("album"))
+	metadata.Date, metadata.Edition = strings.TrimSpace(r.Form.Get("date")), strings.TrimSpace(r.Form.Get("edition"))
+	metadata.DiscTotal = 0
+	for index := range metadata.Tracks {
+		if paths[index] != metadata.Tracks[index].RelativePath {
+			return domain.SubmissionDecision{}, fmt.Errorf("track paths changed")
+		}
+		track, trackErr := strconv.Atoi(tracks[index])
+		disc, discErr := strconv.Atoi(discs[index])
+		if trackErr != nil || discErr != nil {
+			return domain.SubmissionDecision{}, fmt.Errorf("invalid track position")
+		}
+		metadata.Tracks[index].Title, metadata.Tracks[index].Artist = strings.TrimSpace(titles[index]), strings.TrimSpace(artists[index])
+		metadata.Tracks[index].Track, metadata.Tracks[index].Disc = track, disc
+		if disc > metadata.DiscTotal {
+			metadata.DiscTotal = disc
+		}
+	}
+	metadata.TrackTotal = len(metadata.Tracks)
+	return domain.SubmissionDecision{PreviewFingerprint: r.Form.Get("preview_fingerprint"), Destination: domain.Destination(r.Form.Get("destination")), ReleaseMBID: strings.TrimSpace(r.Form.Get("release_mbid")), Metadata: metadata}, nil
 }
 
 func (c Console) render(w http.ResponseWriter, r *http.Request, full, fragment templ.Component) {

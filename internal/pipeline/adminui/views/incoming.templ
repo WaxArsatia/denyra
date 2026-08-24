@@ -38,7 +38,7 @@ templ IncomingContent(page IncomingPage) {
 		} else {
 			<div class="table-wrap"><table><caption>Discovered manual submissions</caption><thead><tr><th>Submission</th><th>Path</th><th>Status</th><th>Revision</th><th>Fingerprint</th><th>Action</th></tr></thead><tbody>
 			for _, item := range page.Items {
-				<tr><td class="mono">{ item.ID }</td><td class="mono">{ item.SourcePath }</td><td><span class="status">{ item.Status }</span></td><td class="mono">{ fmt.Sprint(item.Revision) }</td><td class="checksum">{ item.SealedFingerprint }</td><td><form method="post" action={ templ.SafeURL("/incoming/" + item.ID + "/submit") }><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="state_revision" value={ fmt.Sprint(item.Revision) }/><button type="submit">Submit</button></form></td></tr>
+				<tr><td><a class="mono" href={ templ.SafeURL("/incoming/" + item.ID) }>{ item.ID }</a></td><td class="mono">{ item.SourcePath }</td><td><span class="status">{ item.Status }</span></td><td class="mono">{ fmt.Sprint(item.Revision) }</td><td class="checksum">{ item.SealedFingerprint }</td><td><a href={ templ.SafeURL("/incoming/" + item.ID) }>Review</a></td></tr>
 			}
 			</tbody></table></div>
 		}

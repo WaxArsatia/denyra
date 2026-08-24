@@ -113,6 +113,69 @@ func TestAdminUIStreamsFolderUploadWithCSRFAndDeclaredSizeLimit(t *testing.T) {
 	}
 }
 
+func TestAdminUIEditsPreviewAndSubmitsSealedDecision(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	incoming := t.TempDir()
+	source := filepath.Join(incoming, "submission-preview-ui")
+	if err := os.Mkdir(source, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "01.flac"), []byte("fixture"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DiscoverSubmission(context.Background(), "submission-preview-ui", source, now); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _ := assets.New()
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	previews := &application.SubmissionPreviewService{Store: repository, Inspector: uiPreviewInspector{}, Now: func() time.Time { return now }}
+	handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, Assets: bundle, Previews: previews, Submissions: application.SubmissionService{Store: repository, IncomingRoot: incoming, Now: func() time.Time { return now }}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+	get := httptest.NewRequest(http.MethodGet, "/incoming/submission-preview-ui", nil)
+	get.AddCookie(session)
+	get.AddCookie(csrf)
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, get)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), `name="album_artist" value="Kaleb J"`) || !strings.Contains(page.Body.String(), `name="destination"`) {
+		t.Fatalf("preview page=%d %s", page.Code, page.Body.String())
+	}
+	preview, err := previews.Preview(context.Background(), "submission-preview-ui", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{
+		"_csrf": {csrf.Value}, "preview_fingerprint": {preview.Fingerprint}, "destination": {string(domain.DestinationUnmanaged)},
+		"album_artist": {"Kaleb J"}, "album": {"OFF GUARD"}, "date": {"2024"}, "edition": {""},
+		"track_path": {"01.flac"}, "track_title": {"Track"}, "track_artist": {"Kaleb J"}, "track_number": {"1"}, "disc_number": {"1"},
+	}
+	post := authenticatedMutation(http.MethodPost, "/incoming/submission-preview-ui/submit", strings.NewReader(form.Encode()), session, csrf)
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, post)
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("submit=%d %s", response.Code, response.Body.String())
+	}
+	record, err := repository.Submission(context.Background(), "submission-preview-ui")
+	if err != nil || record.Status != "SEALED" || record.SealedFingerprint != preview.Fingerprint {
+		t.Fatalf("sealed submission=%+v err=%v", record, err)
+	}
+}
+
+type uiPreviewInspector struct{}
+
+func (uiPreviewInspector) Inspect(context.Context, string) (domain.TechnicalInfo, map[string][]string, domain.CommandEvidence, error) {
+	return domain.TechnicalInfo{Container: "flac", Codec: "flac", Channels: 2, DurationMS: 1000, SampleRate: 44100, BitDepth: 16}, map[string][]string{
+		"ALBUMARTIST": {"Kaleb J"}, "ALBUM": {"OFF GUARD"}, "TITLE": {"Track"}, "ARTIST": {"Kaleb J"}, "TRACKNUMBER": {"1"}, "DISCNUMBER": {"1"},
+	}, domain.CommandEvidence{}, nil
+}
+
 func authenticatedMutation(method, target string, body io.Reader, session, csrf *http.Cookie) *http.Request {
 	request := httptest.NewRequest(method, target, body)
 	request.Header.Set("X-CSRF-Token", csrf.Value)

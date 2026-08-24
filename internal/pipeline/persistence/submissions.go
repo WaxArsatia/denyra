@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -20,17 +21,21 @@ func (r *Repositories) DiscoverSubmission(ctx context.Context, id, path string, 
 
 func (r *Repositories) Submission(ctx context.Context, id string) (application.SubmissionRecord, error) {
 	var record application.SubmissionRecord
-	err := r.DB.QueryRowContext(ctx, `SELECT id,source_path,status,state_revision,COALESCE(sealed_fingerprint,'') FROM submissions WHERE id=?`, id).Scan(&record.ID, &record.SourcePath, &record.Status, &record.Revision, &record.SealedFingerprint)
+	err := r.DB.QueryRowContext(ctx, `SELECT id,source_path,status,state_revision,COALESCE(sealed_fingerprint,''),ingress FROM submissions WHERE id=?`, id).Scan(&record.ID, &record.SourcePath, &record.Status, &record.Revision, &record.SealedFingerprint, &record.Ingress)
 	return record, err
 }
 
-func (r *Repositories) SealSubmission(ctx context.Context, id string, expected uint64, fingerprint, actor string, at time.Time) error {
+func (r *Repositories) SealSubmission(ctx context.Context, id string, expected uint64, fingerprint, actor string, decision domain.SubmissionDecision, at time.Time) error {
+	decisionJSON, err := json.Marshal(decision)
+	if err != nil {
+		return err
+	}
 	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
 		var sourcePath string
 		if err := tx.QueryRowContext(ctx, `SELECT source_path FROM submissions WHERE id=?`, id).Scan(&sourcePath); err != nil {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE submissions SET sealed_fingerprint=?,status='SEALED',state_revision=state_revision+1,submitted_by=?,submitted_at=?,updated_at=? WHERE id=? AND state_revision=?`, fingerprint, actor, formatTime(at), formatTime(at), id, expected)
+		result, err := tx.ExecContext(ctx, `UPDATE submissions SET sealed_fingerprint=?,decision_json=?,status='SEALED',state_revision=state_revision+1,submitted_by=?,submitted_at=?,updated_at=? WHERE id=? AND state_revision=?`, fingerprint, decisionJSON, actor, formatTime(at), formatTime(at), id, expected)
 		if err != nil {
 			return err
 		}

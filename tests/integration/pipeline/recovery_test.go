@@ -2,14 +2,17 @@ package pipeline_test
 
 import (
 	"context"
-	"github.com/waxarsatia/denyra/internal/pipeline/application"
-	"github.com/waxarsatia/denyra/internal/pipeline/domain"
-	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	denyrafs "github.com/waxarsatia/denyra/internal/pipeline/adapters/filesystem"
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
+	"github.com/waxarsatia/denyra/internal/pipeline/domain"
+	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 )
 
 type processorFunc func(context.Context, application.WorkItem) error
@@ -65,13 +68,54 @@ func TestPipelineRecoveryReconcilesLeaseOrphansAndManualDiscovery(t *testing.T) 
 	if _, err := db.Exec(`INSERT INTO users(id,username,password_hash,password_changed_at,created_at,updated_at) VALUES('admin-1','admin','hash',?,?,?)`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano)); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Submit(context.Background(), submission.ID, submission.Revision, "admin-1"); err != nil {
+	tree, err := denyrafs.Scan(submission.SourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision := validUnmanagedDecision(tree.Fingerprint)
+	if err := service.Submit(context.Background(), submission.ID, submission.Revision, "admin-1", decision); err != nil {
 		t.Fatal(err)
 	}
 	manualCandidate, err := repository.Candidate(context.Background(), submission.ID)
 	if err != nil || manualCandidate.State != domain.StateReceived || manualCandidate.Source != domain.SourceManual {
 		t.Fatalf("manual candidate=%+v err=%v", manualCandidate, err)
 	}
+}
+
+func TestSubmissionRejectsTreeChangedAfterPreview(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	incoming := t.TempDir()
+	source := filepath.Join(incoming, "submission-changed")
+	if err := os.Mkdir(source, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	track := filepath.Join(source, "track.flac")
+	if err := os.WriteFile(track, []byte("before"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.DiscoverSubmission(context.Background(), "submission-changed", source, now); err != nil {
+		t.Fatal(err)
+	}
+	tree, err := denyrafs.Scan(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(track, []byte("after"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	service := application.SubmissionService{Store: repository, IncomingRoot: incoming, Now: func() time.Time { return now }}
+	err = service.Submit(context.Background(), "submission-changed", 0, "admin-1", validUnmanagedDecision(tree.Fingerprint))
+	if !errors.Is(err, application.ErrPreviewChanged) {
+		t.Fatalf("changed preview error=%v", err)
+	}
+}
+
+func validUnmanagedDecision(fingerprint string) domain.SubmissionDecision {
+	return domain.SubmissionDecision{PreviewFingerprint: fingerprint, Destination: domain.DestinationUnmanaged, Metadata: domain.MetadataPlan{
+		AlbumArtist: "Kaleb J", Album: "OFF GUARD", DiscTotal: 1, TrackTotal: 1,
+		Tracks: []domain.TrackMetadata{{RelativePath: "track.flac", Title: "Track", Artist: "Kaleb J", Track: 1, Disc: 1, DurationMS: 1000}},
+	}}
 }
 
 func TestPipelineWorkerUsesAdmissionLeaseAndEventFirstTrigger(t *testing.T) {

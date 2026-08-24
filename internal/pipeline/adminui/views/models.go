@@ -40,6 +40,11 @@ type IncomingPage struct {
 	Next              string
 	Error             string
 }
+type IncomingDetailPage struct {
+	Shell   Shell
+	Preview domain.SubmissionPreview
+	Error   string
+}
 type AuditPage struct {
 	Shell Shell
 	Items []application.AuditSummary

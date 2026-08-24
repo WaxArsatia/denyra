@@ -193,6 +193,34 @@ func TestPersistenceUploadSessionSurvivesRestartAndFinalizesIdempotently(t *test
 	}
 }
 
+func TestPersistenceSubmissionPreviewAndDraftSurviveRestart(t *testing.T) {
+	db, repositories, now := pipelineRepositories(t)
+	defer db.Close()
+	if err := repositories.DiscoverSubmission(context.Background(), "submission-preview", "/data/incoming/manual/submission-preview", now); err != nil {
+		t.Fatal(err)
+	}
+	preview := domain.SubmissionPreview{SubmissionID: "submission-preview", Ingress: "sftp", Fingerprint: "tree-1", Metadata: domain.MetadataPlan{
+		AlbumArtist: "Kaleb J", Album: "OFF GUARD", DiscTotal: 1, TrackTotal: 1,
+		Tracks: []domain.TrackMetadata{{RelativePath: "01.flac", Title: "Track", Artist: "Kaleb J", Track: 1, Disc: 1, DurationMS: 1000}},
+	}}
+	if err := repositories.PutSubmissionPreview(context.Background(), preview, now); err != nil {
+		t.Fatal(err)
+	}
+	decision := domain.SubmissionDecision{PreviewFingerprint: "tree-1", Destination: domain.DestinationUnmanaged, Metadata: preview.Metadata}
+	if err := repositories.SaveSubmissionDraft(context.Background(), preview.SubmissionID, decision, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	restarted := persistence.New(db, time.Now)
+	loaded, found, err := restarted.CachedSubmissionPreview(context.Background(), preview.SubmissionID, "tree-1")
+	if err != nil || !found || loaded.Draft == nil || loaded.Draft.Destination != domain.DestinationUnmanaged {
+		t.Fatalf("cached preview=%+v found=%v err=%v", loaded, found, err)
+	}
+	record, err := restarted.Submission(context.Background(), preview.SubmissionID)
+	if err != nil || record.Ingress != "sftp" {
+		t.Fatalf("submission ingress=%q err=%v", record.Ingress, err)
+	}
+}
+
 func pipelineRepositories(t *testing.T) (*sql.DB, *persistence.Repositories, time.Time) {
 	t.Helper()
 	ctx := context.Background()
