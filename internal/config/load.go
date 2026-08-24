@@ -13,6 +13,7 @@ import (
 type envSetter func(*Config, string) error
 
 var environmentRegistry = map[string]envSetter{
+	"DENYRA_GIT_COMMIT":                       func(*Config, string) error { return nil },
 	"DENYRA_HTTP_ADMIN_ADDRESS":               func(c *Config, value string) error { c.HTTP.AdminAddress = value; return nil },
 	"DENYRA_HTTP_INTERNAL_ADDRESS":            func(c *Config, value string) error { c.HTTP.InternalAddress = value; return nil },
 	"DENYRA_HTTP_ACQUISITION_EVENT_ADDRESS":   func(c *Config, value string) error { c.HTTP.AcquisitionEventAddress = value; return nil },

@@ -116,6 +116,13 @@ func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoresRuntimeMetadataEnvironment(t *testing.T) {
+	commit := strings.Repeat("a", 40)
+	if _, err := config.Load("", []string{"DENYRA_GIT_COMMIT=" + commit}); err != nil {
+		t.Fatalf("Load rejected runtime metadata: %v", err)
+	}
+}
+
 func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 	tests := map[string]struct {
 		toml string
