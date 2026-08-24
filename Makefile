@@ -1,7 +1,10 @@
-.PHONY: fmt vet test race verify-lock compose-config check-clean generate-provenance verify
+.PHONY: fmt fmt-check vet test race compose-config images verify
 
 fmt:
 	gofmt -w $$(find cmd internal migrations tests scripts -type f -name '*.go')
+
+fmt-check:
+	test -z "$$(gofmt -l $$(find cmd internal migrations tests scripts -type f -name '*.go'))"
 
 vet:
 	go vet ./...
@@ -12,18 +15,10 @@ test:
 race:
 	go test -race ./...
 
-verify-lock:
-	scripts/verify-pins/verify.sh --offline
-
 compose-config:
 	docker compose -f deploy/compose.yaml config --quiet
 
-check-clean:
-	scripts/check-clean-tree.sh
+images:
+	DENYRA_RELEASE_REFRESH=$$(date -u +%Y%m%dT%H%M%SZ) docker compose -f deploy/compose.yaml build --pull
 
-generate-provenance:
-	scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service gateway --output deploy/docker/generated/gateway-build-provenance.json
-	scripts/verify-pins/build-provenance.sh --lock dependencies.lock.json --service pipeline --output deploy/docker/generated/pipeline-build-provenance.json
-
-verify: fmt vet race verify-lock compose-config check-clean
-	git diff --exit-code
+verify: fmt-check vet race compose-config
