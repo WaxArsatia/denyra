@@ -127,6 +127,26 @@ func TestComposeTopologyAndListeners(t *testing.T) {
 	}
 }
 
+func TestSFTPGoUsesNativeHealthcheck(t *testing.T) {
+	document := renderCompose(t)
+	values, ok := document.Services["sftpgo"].Healthcheck["test"].([]any)
+	if !ok {
+		t.Fatalf("SFTPGo healthcheck test has type %T", document.Services["sftpgo"].Healthcheck["test"])
+	}
+	got := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			t.Fatalf("SFTPGo healthcheck value has type %T", value)
+		}
+		got = append(got, text)
+	}
+	want := []string{"CMD", "sftpgo", "ping"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("SFTPGo healthcheck = %v, want %v", got, want)
+	}
+}
+
 func TestComposeUsesDerivedImageLock(t *testing.T) {
 	document := renderCompose(t)
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
