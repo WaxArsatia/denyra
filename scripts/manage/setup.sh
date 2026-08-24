@@ -9,6 +9,16 @@ denyra_setup_copy_secret() {
   fi
 }
 
+denyra_setup_migrate_secret() {
+  denyra_setup_legacy_name=$1
+  denyra_setup_current_name=$2
+  denyra_setup_legacy_path=$DENYRA_SECRETS_DIR/$denyra_setup_legacy_name
+  denyra_setup_current_path=$DENYRA_SECRETS_DIR/$denyra_setup_current_name
+  if [ ! -s "$denyra_setup_current_path" ] && [ -s "$denyra_setup_legacy_path" ]; then
+    denyra_atomic_file "$denyra_setup_current_path" 0600 < "$denyra_setup_legacy_path"
+  fi
+}
+
 denyra_setup_input_secret() {
   denyra_setup_input_name=$1
   denyra_setup_input_value=$2
@@ -79,6 +89,11 @@ denyra_setup() {
   chmod 0750 "$DENYRA_CONFIG_DIR" "$DENYRA_DATA_ROOT" "$DENYRA_UPDATES_DIR"
   chmod 0700 "$DENYRA_SECRETS_DIR"
   denyra_lock
+
+  denyra_setup_migrate_secret denyra_admin_password bootstrap_admin
+  denyra_setup_migrate_secret navidrome_admin_password navidrome_admin
+  denyra_setup_migrate_secret sftpgo_admin_password sftpgo_admin
+  denyra_setup_migrate_secret sftpgo_upload_password sftpgo_upload
 
   for denyra_setup_generated_secret in \
     internal_bearer audit_key bootstrap_admin navidrome_admin \

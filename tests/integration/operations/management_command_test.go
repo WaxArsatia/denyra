@@ -299,6 +299,34 @@ func TestSetupResumesMissingGeneratedConfig(t *testing.T) {
 	}
 }
 
+func TestSetupMigratesLegacyLocalCredentialNames(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	if err := os.MkdirAll(filepath.Join(f.home, "secrets"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := map[string]string{
+		"denyra_admin_password":    "legacy-denyra-password",
+		"navidrome_admin_password": "legacy-navidrome-password",
+		"sftpgo_admin_password":    "legacy-sftpgo-admin-password",
+		"sftpgo_upload_password":   "legacy-sftpgo-upload-password",
+	}
+	for name, value := range legacy {
+		if err := os.WriteFile(filepath.Join(f.home, "secrets", name), []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.runSetup()
+	for oldName, newName := range map[string]string{
+		"denyra_admin_password": "bootstrap_admin", "navidrome_admin_password": "navidrome_admin",
+		"sftpgo_admin_password": "sftpgo_admin", "sftpgo_upload_password": "sftpgo_upload",
+	} {
+		if got, want := readFile(t, filepath.Join(f.home, "secrets", newName)), legacy[oldName]; got != want {
+			t.Errorf("%s=%q want legacy %q", newName, got, want)
+		}
+	}
+}
+
 func readSetupSecrets(t *testing.T, home string) map[string][]byte {
 	t.Helper()
 	result := make(map[string][]byte, len(setupSecretNames))
