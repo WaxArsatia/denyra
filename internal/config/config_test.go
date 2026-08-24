@@ -93,6 +93,9 @@ func TestDefaultsIncludeUnmanagedUploadPolicy(t *testing.T) {
 	if cfg.Services.NavidromeURL != "http://navidrome:4533" || cfg.Services.SpotifyOEmbedURL != "https://open.spotify.com" || cfg.Services.CoverArtURL != "https://coverartarchive.org" {
 		t.Fatalf("unexpected external service defaults: %+v", cfg.Services)
 	}
+	if cfg.Secrets.NavidromeAdmin.Source != "file" || cfg.Secrets.NavidromeAdmin.Name != "/run/secrets/navidrome_admin" {
+		t.Fatalf("unexpected Navidrome secret default: %+v", cfg.Secrets.NavidromeAdmin)
+	}
 }
 
 func TestLoadAppliesDefaultsThenTOMLThenEnvironment(t *testing.T) {

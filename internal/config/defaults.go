@@ -87,7 +87,7 @@ func Defaults() Config {
 			AuditKey:       SecretRef{Source: "file", Name: "audit-key"},
 			LidarrAPIKey:   SecretRef{Source: "file", Name: "lidarr-api-key"},
 			BootstrapAdmin: SecretRef{Source: "file", Name: "bootstrap-admin"},
-			NavidromeAdmin: SecretRef{Source: "file", Name: "navidrome-admin"},
+			NavidromeAdmin: SecretRef{Source: "file", Name: "/run/secrets/navidrome_admin"},
 		},
 	}
 }
