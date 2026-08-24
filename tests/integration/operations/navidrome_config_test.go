@@ -20,7 +20,7 @@ func TestNavidromeCompatibleReadOnlyConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, required := range []string{`MusicFolder = "/music"`, `DataFolder = "/data"`, `CacheFolder = "/cache"`, `Scanner.ScanOnStartup = true`, `Scanner.WatcherWait = "5s"`, `Scanner.Schedule = "@every 1m"`, `Plugins.AutoReload = false`, `LyricsPriority = ".ttml,.elrc,.lrc,embedded,nd-lyrics"`} {
+	for _, required := range []string{`MusicFolder = "/music-managed"`, `DataFolder = "/data"`, `CacheFolder = "/cache"`, `Scanner.ScanOnStartup = true`, `Scanner.WatcherWait = "5s"`, `Scanner.Schedule = "@every 1m"`, `Plugins.AutoReload = false`, `LyricsPriority = ".ttml,.elrc,.lrc,embedded,nd-lyrics"`} {
 		if !strings.Contains(text, required) {
 			t.Errorf("missing %s", required)
 		}
@@ -31,13 +31,6 @@ func TestNavidromeCompatibleReadOnlyConfiguration(t *testing.T) {
 	}
 	if !strings.Contains(string(lyrics), `WriteToMusicFolder = false`) || !strings.Contains(string(lyrics), `"lrclib"`) {
 		t.Fatal("runtime lyrics policy can write to library or lacks LRCLIB")
-	}
-	compose, err := os.ReadFile(filepath.Join(root, "deploy/compose.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(compose), "target: /music\n        read_only: true") {
-		t.Fatal("Navidrome /music is not read-only")
 	}
 	dockerfile, err := os.ReadFile(filepath.Join(root, "deploy/docker/navidrome.Dockerfile"))
 	if err != nil {

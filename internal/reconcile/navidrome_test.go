@@ -12,14 +12,28 @@ import (
 func TestNavidromeCreatesFirstAdministrator(t *testing.T) {
 	var received map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/auth/createAdmin" {
+		switch r.URL.Path {
+		case "/auth/createAdmin":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method", http.StatusMethodNotAllowed)
+				return
+			}
+			if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+				t.Fatal(err)
+			}
+			w.WriteHeader(http.StatusOK)
+		case "/auth/login":
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": "fixture-token", "subsonicToken": "sub-token", "subsonicSalt": "sub-salt"})
+		case "/api/library/":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 1, "name": "Managed", "path": "/music-managed", "defaultNewUsers": true},
+				{"id": 2, "name": "Unmanaged", "path": "/music-unmanaged", "defaultNewUsers": false},
+			})
+		case "/rest/getMusicFolders.view":
+			_ = json.NewEncoder(w).Encode(map[string]any{"subsonic-response": map[string]any{"status": "ok", "musicFolders": map[string]any{"musicFolder": []map[string]any{{"id": 1}, {"id": 2}}}}})
+		default:
 			http.NotFound(w, r)
-			return
 		}
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Fatal(err)
-		}
-		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 	navidrome := Navidrome{BaseURL: server.URL, AdminPassword: "navidrome-secret", HTTP: server.Client()}
@@ -30,14 +44,30 @@ func TestNavidromeCreatesFirstAdministrator(t *testing.T) {
 }
 
 func TestNavidromeAdoptsExistingAdministrator(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "a user already exists", http.StatusForbidden)
+	libraryReads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/auth/createAdmin":
+			http.Error(w, "a user already exists", http.StatusForbidden)
+		case "/auth/login":
+			_ = json.NewEncoder(w).Encode(map[string]string{"token": "fixture-token", "subsonicToken": "sub-token", "subsonicSalt": "sub-salt"})
+		case "/api/library/":
+			libraryReads++
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"id": 1, "name": "Managed", "path": "/music-managed", "defaultNewUsers": true},
+				{"id": 2, "name": "Unmanaged", "path": "/music-unmanaged", "defaultNewUsers": false},
+			})
+		case "/rest/getMusicFolders.view":
+			_ = json.NewEncoder(w).Encode(map[string]any{"subsonic-response": map[string]any{"status": "ok", "musicFolders": map[string]any{"musicFolder": []map[string]any{{"id": 1}, {"id": 2}}}}})
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer server.Close()
 	navidrome := Navidrome{BaseURL: server.URL, AdminPassword: "navidrome-secret", HTTP: server.Client()}
 	outcome, err := navidrome.Apply(context.Background())
-	if err != nil || outcome.Changed {
-		t.Fatalf("outcome=%+v err=%v", outcome, err)
+	if err != nil || outcome.Changed || libraryReads != 1 {
+		t.Fatalf("outcome=%+v libraryReads=%d err=%v", outcome, libraryReads, err)
 	}
 }
 
