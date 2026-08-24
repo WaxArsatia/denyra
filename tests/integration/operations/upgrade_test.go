@@ -88,7 +88,7 @@ func prepareSnapshotFixture(t *testing.T, f *managementFixture) {
 	if err := os.WriteFile(filepath.Join(f.home, "data", "state", "gateway", "sentinel"), []byte("state"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-f.writeExecutable("docker", `#!/bin/sh
+	f.writeExecutable("docker", `#!/bin/sh
 case "$*" in
   *" config") echo "services: {}" ;;
   *" ps -q "*)
@@ -140,6 +140,232 @@ printf '%s\n' "$snapshot"`
 	}
 	lines := strings.Split(text, "\n")
 	return lines[len(lines)-1], text, nil
+}
+
+func TestUpdateOrderBuildsBeforeStop(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	out, err := f.updateCommand("").CombinedOutput()
+	if err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	assertOrderedFragments(t, f.log(), []string{
+		"git diff --quiet --ignore-submodules --",
+		"git diff --cached --quiet --ignore-submodules --",
+		"compose.yaml config",
+		"inspect --format {{.Image}} cid-acquisition-gateway",
+		"git fetch origin main",
+		"git merge --ff-only origin/main",
+		" pull --policy always slskd sftpgo restic",
+		" build --pull",
+		" stop",
+		" up -d --remove-orphans --wait --wait-timeout 1",
+		" ps",
+	})
+	env := readFile(t, filepath.Join(f.home, "config", "denyra.env"))
+	if !strings.Contains(env, "DENYRA_GIT_COMMIT="+strings.Repeat("b", 40)+"\n") {
+		t.Fatalf("active commit not updated:\n%s", env)
+	}
+}
+
+func TestDirtyTreeStopsUpdateBeforeFetch(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	out, err := f.updateCommand("dirty").CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "tracked source files have local changes") {
+		t.Fatalf("err=%v output=%q", err, out)
+	}
+	if strings.Contains(f.log(), "git fetch") || strings.Contains(f.log(), " stop") {
+		t.Fatalf("dirty update progressed:\n%s", f.log())
+	}
+}
+
+func TestBuildFailureLeavesOldStackRunningAndRetryDeploysCandidate(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	out, err := f.updateCommand("build").CombinedOutput()
+	if err == nil {
+		t.Fatalf("build failure succeeded: %s", out)
+	}
+	if strings.Contains(f.log(), " stop") {
+		t.Fatalf("build failure stopped stack:\n%s", f.log())
+	}
+	if env := readFile(t, filepath.Join(f.home, "config", "denyra.env")); !strings.Contains(env, "DENYRA_GIT_COMMIT="+strings.Repeat("a", 40)+"\n") {
+		t.Fatalf("build failure changed active commit:\n%s", env)
+	}
+	if err := os.WriteFile(f.logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err = f.updateCommand("").CombinedOutput()
+	if err != nil || strings.Contains(string(out), "already current") {
+		t.Fatalf("retry err=%v output=%q", err, out)
+	}
+	if !strings.Contains(f.log(), " build --pull") || !strings.Contains(f.log(), " stop") {
+		t.Fatalf("retry did not deploy candidate:\n%s", f.log())
+	}
+}
+
+func TestAutomaticRollbackRestoresStateAndPriorImages(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	out, err := f.updateCommand("smoke").CombinedOutput()
+	if err == nil {
+		t.Fatalf("unhealthy update succeeded: %s", out)
+	}
+	if got := strings.TrimSpace(readFile(t, filepath.Join(f.home, "data", "state", "gateway", "sentinel"))); got != "old" {
+		t.Fatalf("restored state=%q", got)
+	}
+	log := f.log()
+	if !strings.Contains(log, "prior-compose.yaml") || !strings.Contains(log, "prior-images.yaml") {
+		t.Fatalf("rollback did not use exact prior model:\n%s", log)
+	}
+}
+
+func TestInterruptedUpdateUsesAutomaticRollback(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	out, err := f.updateCommand("interrupt").CombinedOutput()
+	if err == nil {
+		t.Fatalf("interrupted update succeeded: %s", out)
+	}
+	if !strings.Contains(f.log(), "prior-images.yaml") {
+		t.Fatalf("interrupt did not start prior images:\n%s", f.log())
+	}
+}
+
+func TestRollbackRequiresConfirmationAndRestoresSuccessfulSnapshot(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	if out, err := f.updateCommand("").CombinedOutput(); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	if err := os.WriteFile(f.logPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cancel := f.command("rollback")
+	cancel.Stdin = strings.NewReader("n\n")
+	if out, err := cancel.CombinedOutput(); err != nil || !strings.Contains(string(out), "rollback cancelled") {
+		t.Fatalf("cancel err=%v output=%q", err, out)
+	}
+	if strings.Contains(f.log(), "prior-images.yaml") {
+		t.Fatalf("cancel started prior images:\n%s", f.log())
+	}
+	confirm := f.command("rollback")
+	confirm.Stdin = strings.NewReader("yes\n")
+	confirm.Env = append(confirm.Env, "DENYRA_WAIT_SECONDS=1")
+	if out, err := confirm.CombinedOutput(); err != nil {
+		t.Fatalf("rollback: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(readFile(t, filepath.Join(f.home, "data", "state", "gateway", "sentinel"))); got != "old" {
+		t.Fatalf("restored state=%q", got)
+	}
+}
+
+func TestRollbackRejectsMissingPriorImage(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	if out, err := f.updateCommand("").CombinedOutput(); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	cmd := f.command("rollback")
+	cmd.Stdin = strings.NewReader("y\n")
+	cmd.Env = append(cmd.Env, "DENYRA_TEST_UPDATE_FAILURE=missing-image")
+	out, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(out), "prior image missing: lidarr") {
+		t.Fatalf("err=%v output=%q", err, out)
+	}
+}
+
+func prepareUpdateFixture(t *testing.T, f *managementFixture) {
+	t.Helper()
+	prepareSnapshotFixture(t, f)
+	oldCommit := strings.Repeat("a", 40)
+	env := "DENYRA_HOME=" + f.home + "\nDENYRA_CONFIG_DIR=" + filepath.Join(f.home, "config") +
+		"\nDENYRA_SECRETS_DIR=" + filepath.Join(f.home, "secrets") + "\nDENYRA_DATA_ROOT=" + filepath.Join(f.home, "data") +
+		"\nDENYRA_IMAGE_TAG=" + strings.Repeat("a", 12) + "\nDENYRA_GIT_COMMIT=" + oldCommit + "\n"
+	if err := os.WriteFile(filepath.Join(f.home, "config", "denyra.env"), []byte(env), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.home, "data", "state", "gateway", "sentinel"), []byte("old\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	f.writeExecutable("git", `#!/bin/sh
+printf 'git %s\n' "$*" >> "$DENYRA_TEST_LOG"
+case "$*" in
+  "diff --quiet --ignore-submodules --") [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != dirty ] ;;
+  "diff --cached --quiet --ignore-submodules --") exit 0 ;;
+  "symbolic-ref --quiet --short HEAD") echo main ;;
+  "fetch origin main") exit 0 ;;
+  "merge --ff-only origin/main") exit 0 ;;
+  "rev-parse HEAD") printf '%040d\n' 0 | tr 0 b ;;
+  *) exit 2 ;;
+esac
+`)
+	f.writeExecutable("docker", `#!/bin/sh
+printf '%s\n' "$*" >> "$DENYRA_TEST_LOG"
+case "$*" in
+  *" config") echo "services: {}" ;;
+  *" ps -q "*)
+    for service do :; done
+    echo "cid-$service"
+    ;;
+  "inspect --format {{.Image}} "*)
+    for service do :; done
+    service=${service#cid-}
+    case "$service" in
+      acquisition-gateway) char=a ;; media-pipeline) char=b ;; lidarr) char=c ;;
+      slskd) char=d ;; sftpgo) char=e ;; navidrome) char=f ;;
+    esac
+    printf 'sha256:'; printf '%064d\n' 0 | tr 0 "$char"
+    ;;
+  "image inspect sha256:"*)
+    if [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = missing-image ] && printf '%s' "$*" | grep -q 'cccccccc'; then
+      exit 1
+    fi
+    exit 0
+    ;;
+  *" pull --policy always slskd sftpgo restic") [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != pull ] ;;
+  *" build --pull") [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != build ] ;;
+  *" stop") exit 0 ;;
+  *" up -d --remove-orphans --wait --wait-timeout "*)
+    if printf '%s' "$*" | grep -q 'prior-images.yaml'; then
+      exit 0
+    fi
+    if [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = interrupt ]; then
+      kill -TERM "$PPID"
+      sleep 1
+    fi
+    mkdir -p "$DENYRA_DATA_ROOT/state/gateway"
+    printf 'candidate\n' > "$DENYRA_DATA_ROOT/state/gateway/sentinel"
+    ;;
+  *" exec -T acquisition-gateway "*)
+    [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != smoke ] || printf '%s' "$*" | grep -q 'prior-images.yaml'
+    ;;
+  *" exec -T "*) exit 0 ;;
+  *" ps") exit 0 ;;
+  *) exit 0 ;;
+esac
+`)
+}
+
+func (f *managementFixture) updateCommand(failure string) *exec.Cmd {
+	f.t.Helper()
+	cmd := f.command("update")
+	cmd.Env = append(cmd.Env,
+		"DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"),
+		"DENYRA_WAIT_SECONDS=1",
+		"DENYRA_TEST_UPDATE_FAILURE="+failure,
+	)
+	return cmd
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
 }
 
 func TestUpgradeRollbackBranchUsesExactMigrationLedger(t *testing.T) {

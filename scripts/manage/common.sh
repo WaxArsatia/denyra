@@ -100,6 +100,39 @@ denyra_compose() {
   docker compose --project-name "$denyra_project_name" --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$repo_root/deploy/compose.yaml" "$@"
 }
 
+denyra_compose_snapshot() {
+  denyra_compose_snapshot_path=$1
+  shift
+  docker compose --project-name "${DENYRA_PROJECT_NAME:-denyra}" \
+    -f "$denyra_compose_snapshot_path/prior-compose.yaml" \
+    -f "$denyra_compose_snapshot_path/prior-images.yaml" "$@"
+}
+
+denyra_set_release_env() {
+  denyra_release_commit=$1
+  denyra_release_tag=$2
+  denyra_release_refresh=$3
+  denyra_release_temporary=$DENYRA_CONFIG_DIR/denyra.env.tmp.$$
+  if ! awk -v commit="$denyra_release_commit" -v tag="$denyra_release_tag" -v refresh="$denyra_release_refresh" '
+    BEGIN { commit_seen=0; tag_seen=0; refresh_seen=0 }
+    /^DENYRA_GIT_COMMIT=/ { print "DENYRA_GIT_COMMIT=" commit; commit_seen++; next }
+    /^DENYRA_IMAGE_TAG=/ { print "DENYRA_IMAGE_TAG=" tag; tag_seen++; next }
+    /^DENYRA_RELEASE_REFRESH=/ { print "DENYRA_RELEASE_REFRESH=" refresh; refresh_seen++; next }
+    { print }
+    END {
+      if (commit_seen != 1 || tag_seen != 1 || refresh_seen > 1) exit 42
+      if (refresh_seen == 0) print "DENYRA_RELEASE_REFRESH=" refresh
+    }
+  ' "$DENYRA_CONFIG_DIR/denyra.env" > "$denyra_release_temporary"; then
+    rm -f "$denyra_release_temporary"
+    return 1
+  fi
+  if ! chmod 0640 "$denyra_release_temporary" || ! mv "$denyra_release_temporary" "$DENYRA_CONFIG_DIR/denyra.env"; then
+    rm -f "$denyra_release_temporary"
+    return 1
+  fi
+}
+
 denyra_unavailable() {
   denyra_die "command unavailable in this checkout"
 }

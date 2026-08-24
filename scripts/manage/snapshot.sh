@@ -33,7 +33,13 @@ denyra_snapshot_prepare() {
   mkdir "$denyra_snapshot_pending"
   chmod 0700 "$denyra_snapshot_pending"
 
-  denyra_compose config | denyra_atomic_file "$denyra_snapshot_pending/prior-compose.yaml" 0600
+  denyra_snapshot_compose_temporary=$denyra_snapshot_pending/prior-compose.yaml.tmp
+  if ! denyra_compose config > "$denyra_snapshot_compose_temporary"; then
+    rm -rf -- "$denyra_snapshot_pending"
+    denyra_die "could not render prior compose model"
+  fi
+  chmod 0600 "$denyra_snapshot_compose_temporary"
+  mv "$denyra_snapshot_compose_temporary" "$denyra_snapshot_pending/prior-compose.yaml"
   denyra_snapshot_images_temporary=$denyra_snapshot_pending/prior-images.yaml.tmp
   printf 'services:\n' > "$denyra_snapshot_images_temporary"
   chmod 0600 "$denyra_snapshot_images_temporary"
