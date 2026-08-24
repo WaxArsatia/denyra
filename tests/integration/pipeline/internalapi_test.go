@@ -89,3 +89,55 @@ func TestPipelineInternalWinnerUsesOptimisticRevision(t *testing.T) {
 		t.Fatalf("winner state=%+v err=%v", stored, err)
 	}
 }
+
+func TestPipelineInternalWinnerAcceptsRecordedApprovedRevisionAfterPendingTransition(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	candidate := createPersistedCandidate(t, repository, now)
+	if _, err := db.Exec(`UPDATE candidates SET state='ARBITRATION_PENDING',state_revision=8 WHERE candidate_id=?`, candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	service := application.HandoffService{Store: repository, LocalConfigSnapshotID: "config-1", Now: func() time.Time { return now }}
+	handler, _ := (internalapi.API{Service: service, BodyLimit: 4096, Bearer: []byte("secret")}).Handler()
+	directive := contracts.CandidateWinner{RequestID: "winner-approved-revision", JobID: "job-1", CandidateID: candidate.ID, ConfigSnapshotID: "config-1", StateRevision: 7, WinnerLockedAt: now, Reason: "quality winner"}
+	payload, _ := json.Marshal(directive)
+	request := httptest.NewRequest(http.MethodPost, "/internal/candidates/"+candidate.ID+"/winner", bytes.NewReader(payload))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "winner-approved-revision-key")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("winner=%d %s", response.Code, response.Body.String())
+	}
+	stored, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil || stored.State != domain.StateImportReady || stored.StateRevision != 9 {
+		t.Fatalf("winner state=%+v err=%v", stored, err)
+	}
+}
+
+func TestPipelineInternalSupersedeAcceptsRecordedApprovedRevisionAfterPendingTransition(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	candidate := createPersistedCandidate(t, repository, now)
+	if _, err := db.Exec(`UPDATE candidates SET state='ARBITRATION_PENDING',state_revision=8 WHERE candidate_id=?`, candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	service := application.HandoffService{Store: repository, LocalConfigSnapshotID: "config-1", Now: func() time.Time { return now }}
+	handler, _ := (internalapi.API{Service: service, BodyLimit: 4096, Bearer: []byte("secret")}).Handler()
+	directive := contracts.CandidateSuperseded{RequestID: "supersede-approved-revision", JobID: "job-1", CandidateID: candidate.ID, ConfigSnapshotID: "config-1", WinnerCandidateID: "candidate-winner", Reason: "SUPERSEDED", SupersededAt: now, StateRevision: 7}
+	payload, _ := json.Marshal(directive)
+	request := httptest.NewRequest(http.MethodPost, "/internal/candidates/"+candidate.ID+"/supersede", bytes.NewReader(payload))
+	request.Header.Set("Authorization", "Bearer secret")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "supersede-approved-revision-key")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("supersede=%d %s", response.Code, response.Body.String())
+	}
+	stored, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil || stored.State != domain.StateSuperseded || stored.StateRevision != 9 {
+		t.Fatalf("superseded state=%+v err=%v", stored, err)
+	}
+}

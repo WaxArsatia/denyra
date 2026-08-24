@@ -114,11 +114,20 @@ func (r *Repositories) ApplyCandidateDirective(ctx context.Context, key, operati
 		if candidate.GatewayJobID != jobID || candidate.ConfigSnapshotID != configSnapshotID {
 			return contracts.ErrIdempotencyConflict
 		}
-		event, err := candidate.Transition(expected, to, actor, reason, at)
+		transitionRevision := expected
+		if (operation == "WINNER_LOCKED" || operation == "SUPERSEDED") &&
+			candidate.State == domain.StateArbitrationPending &&
+			expected < ^uint64(0) && candidate.StateRevision == expected+1 {
+			// The approval callback records the APPROVED revision. After the
+			// gateway accepts that callback, the pipeline advances exactly once
+			// to ARBITRATION_PENDING before the asynchronous directive arrives.
+			transitionRevision = candidate.StateRevision
+		}
+		event, err := candidate.Transition(transitionRevision, to, actor, reason, at)
 		if err != nil {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE candidates SET state=?,state_revision=?,updated_at=? WHERE candidate_id=? AND state_revision=?`, candidate.State, candidate.StateRevision, formatTime(candidate.UpdatedAt), candidate.ID, expected)
+		result, err := tx.ExecContext(ctx, `UPDATE candidates SET state=?,state_revision=?,updated_at=? WHERE candidate_id=? AND state_revision=?`, candidate.State, candidate.StateRevision, formatTime(candidate.UpdatedAt), candidate.ID, transitionRevision)
 		if err != nil {
 			return err
 		}

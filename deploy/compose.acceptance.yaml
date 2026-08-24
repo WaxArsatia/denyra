@@ -1,6 +1,6 @@
 services:
   acceptance-fixture:
-    image: docker.io/denyra/media-pipeline:local@sha256:ecd2be635ea7b76fde9eb76815f22700a046853690ef65e558f380c59e19ae4e
+    image: docker.io/denyra/media-pipeline:local@sha256:4cf825e4e810fa2668c4aaef967114fd713e96462d0023833f29f74030763daa
     platform: linux/amd64
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     read_only: true

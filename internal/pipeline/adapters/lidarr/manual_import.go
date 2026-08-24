@@ -65,9 +65,6 @@ type manualUpdate struct {
 
 func (m ManualImporter) Prepare(ctx context.Context, approvedPath, releaseMBID, downloadID string, expectedFLAC int) (domain.LidarrImportPlan, error) {
 	query := url.Values{"folder": {approvedPath}, "filterExistingFiles": {"true"}, "replaceExistingFiles": {"true"}}
-	if downloadID != "" {
-		query.Set("downloadId", downloadID)
-	}
 	var resources []manualResource
 	if err := m.Client.Get(ctx, "/api/v1/manualimport", query, &resources); err != nil {
 		return domain.LidarrImportPlan{}, err
@@ -124,6 +121,15 @@ func (m ManualImporter) Prepare(ctx context.Context, approvedPath, releaseMBID, 
 }
 
 func (m ManualImporter) Submit(ctx context.Context, plan domain.LidarrImportPlan) error {
-	var accepted []manualResource
-	return m.Client.Post(ctx, "/api/v1/manualimport", plan.RequestBody, &accepted)
+	command, err := json.Marshal(struct {
+		Name                 string          `json:"name"`
+		Files                json.RawMessage `json:"files"`
+		ImportMode           string          `json:"importMode"`
+		ReplaceExistingFiles bool            `json:"replaceExistingFiles"`
+	}{Name: "ManualImport", Files: plan.RequestBody, ImportMode: "move", ReplaceExistingFiles: true})
+	if err != nil {
+		return err
+	}
+	var accepted map[string]any
+	return m.Client.Post(ctx, "/api/v1/command", command, &accepted)
 }

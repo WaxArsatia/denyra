@@ -44,6 +44,10 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/config/mediamanagement":
 			_, _ = writer.Write([]byte(`{"importExtraFiles":true,"extraFileExtensions":"lrc,nfo"}`))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/manualimport":
+			if request.URL.Query().Has("downloadId") {
+				_, _ = writer.Write([]byte(`[]`))
+				return
+			}
 			folder := request.URL.Query().Get("folder")
 			_, _ = writer.Write([]byte(`[{
                   "id":7,"path":"` + filepath.ToSlash(filepath.Join(folder, "01.flac")) + `","name":"01.flac",
@@ -58,13 +62,25 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 			_, _ = writer.Write([]byte(`{"page":1,"records":[]}`))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/queue":
 			_, _ = writer.Write([]byte(`{"page":1,"records":[]}`))
-		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/manualimport":
+		case request.Method == http.MethodPost && request.URL.Path == "/api/v1/command":
 			postCount++
 			if !store.hasIntent() {
 				t.Error("Manual Import effect occurred before durable intent")
 			}
-			writer.WriteHeader(http.StatusAccepted)
-			_, _ = writer.Write([]byte(`[]`))
+			var command struct {
+				Name                 string            `json:"name"`
+				Files                []json.RawMessage `json:"files"`
+				ImportMode           string            `json:"importMode"`
+				ReplaceExistingFiles bool              `json:"replaceExistingFiles"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&command); err != nil {
+				t.Error(err)
+			}
+			if command.Name != "ManualImport" || command.ImportMode != "move" || !command.ReplaceExistingFiles || len(command.Files) != 1 {
+				t.Errorf("manual import command = %+v", command)
+			}
+			writer.WriteHeader(http.StatusCreated)
+			_, _ = writer.Write([]byte(`{"id":42,"name":"ManualImport","status":"queued"}`))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/trackfile":
 			_ = json.NewEncoder(writer).Encode([]map[string]any{{"id": 20, "path": finalTrackPath, "trackIds": []int{12}}})
 		default:
