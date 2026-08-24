@@ -71,16 +71,18 @@ func (c *Client) EnsureLibraries(ctx context.Context) (managedID, unmanagedID in
 			if err != nil {
 				return 0, 0, false, err
 			}
+			changed = true
 		} else {
 			managed = legacy
-			managed.Name = managedName
-			managed.Path = managedPath
-			managed.DefaultNewUsers = true
-			if err := c.updateLibrary(ctx, managed); err != nil {
-				return 0, 0, false, err
+			if managed.Name != managedName || !managed.DefaultNewUsers {
+				managed.Name = managedName
+				managed.DefaultNewUsers = true
+				if err := c.updateLibrary(ctx, managed); err != nil {
+					return 0, 0, false, err
+				}
+				changed = true
 			}
 		}
-		changed = true
 	} else if managed.Name != managedName || !managed.DefaultNewUsers {
 		managed.Name = managedName
 		managed.DefaultNewUsers = true

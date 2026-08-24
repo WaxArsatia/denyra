@@ -11,6 +11,15 @@ import (
 
 func TestNavidromeCompatibleReadOnlyConfiguration(t *testing.T) {
 	root := repositoryRoot(t)
+	compose, err := os.ReadFile(filepath.Join(root, "deploy/compose.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"target: /music", "target: /music-managed", "target: /music-unmanaged"} {
+		if !strings.Contains(string(compose), target) {
+			t.Errorf("Navidrome compatibility mount missing %q", target)
+		}
+	}
 	data, err := os.ReadFile(filepath.Join(root, "deploy/config/navidrome.toml"))
 	if err != nil {
 		t.Fatal(err)

@@ -62,10 +62,14 @@ func TestClientReconcilesLibrariesAndUsesTokenAuthentication(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 				t.Fatal(err)
 			}
-			if got.ID != 1 || got.Name != "Managed" || got.Path != "/music-managed" || !got.DefaultNewUsers {
+			if got.ID != 1 || got.Name != "Managed" || got.Path != "/music" || !got.DefaultNewUsers {
 				t.Fatalf("managed update=%+v", got)
 			}
-			libraries[0] = got
+			for index := range libraries {
+				if libraries[index].ID == got.ID {
+					libraries[index] = got
+				}
+			}
 			writeJSON(t, w, got)
 		case "/rest/getMusicFolders.view":
 			requireSubsonicToken(t, r.URL.Query())

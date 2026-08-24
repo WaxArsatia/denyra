@@ -240,6 +240,10 @@ services:
     volumes:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/library
+        target: /music
+        read_only: true
+      - type: bind
+        source: ${DENYRA_DATA_ROOT:-/data}/library
         target: /music-managed
         read_only: true
       - type: bind
