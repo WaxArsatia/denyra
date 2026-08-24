@@ -6,6 +6,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/media-pipeline ./cmd/media-pipeline \
+    && CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/denyra-reconcile ./cmd/denyra-reconcile \
     && CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/denyra-restore-check ./cmd/denyra-restore-check \
     && CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/denyra-acceptance-fixture ./cmd/denyra-acceptance-fixture
 
@@ -18,6 +19,7 @@ RUN test -n "$DENYRA_RELEASE_REFRESH" \
     && python -m pip install --no-cache-dir 'beets>=2,<3' \
     && python -m pip check
 COPY --from=go-builder /out/media-pipeline /app/media-pipeline
+COPY --from=go-builder /out/denyra-reconcile /app/denyra-reconcile
 COPY --from=go-builder /out/denyra-restore-check /app/denyra-restore-check
 COPY --from=go-builder /out/denyra-acceptance-fixture /app/denyra-acceptance-fixture
 ARG DENYRA_GIT_COMMIT=unknown

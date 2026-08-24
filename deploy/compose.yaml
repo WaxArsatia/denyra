@@ -88,6 +88,41 @@ services:
       test: ["CMD", "/app/media-pipeline", "healthcheck", "--address", "127.0.0.1:8081"]
     restart: unless-stopped
 
+  reconciler:
+    image: denyra/media-pipeline:${DENYRA_IMAGE_TAG:-local}
+    profiles: ["setup"]
+    entrypoint: ["/app/denyra-reconcile"]
+    command:
+      - --lidarr-url
+      - http://lidarr:8686
+      - --lidarr-api-key-file
+      - /run/secrets/lidarr_api_key
+      - --slskd-url
+      - http://slskd:5030
+      - --slskd-api-key-file
+      - /run/secrets/slskd_api_key
+      - --sftpgo-url
+      - http://sftpgo:8080
+      - --sftpgo-admin-file
+      - /run/secrets/sftpgo_admin
+      - --sftpgo-upload-file
+      - /run/secrets/sftpgo_upload
+      - --navidrome-url
+      - http://navidrome:4533
+      - --navidrome-admin-file
+      - /run/secrets/navidrome_admin
+    networks:
+      denyra-acquisition: {}
+      denyra-import: {}
+      denyra-upload: {}
+      denyra-playback: {}
+    secrets:
+      - lidarr_api_key
+      - slskd_api_key
+      - sftpgo_admin
+      - sftpgo_upload
+      - navidrome_admin
+
   lidarr:
     image: denyra/lidarr:${DENYRA_IMAGE_TAG:-local}
     build:
