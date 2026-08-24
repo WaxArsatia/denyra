@@ -26,8 +26,9 @@ templ MigrationBatchBody(page MigrationPage) {
 				if item.State == "EXACT_MATCH" {
 					<input form="confirm-migrations" type="checkbox" name="item_id" value={ item.ID } aria-label={ "Confirm " + item.Album }/>
 				}
-			</td><td>{ item.AlbumArtist }</td><td>{ item.Album }</td><td><span class={ "status " + StateClass(item.State) }>{ MigrationStateLabel(item.State) }</span></td><td class="mono">{ item.CandidateMBID }</td><td class="wrap">{ item.Error }
+			</td><td>{ item.AlbumArtist }</td><td>{ item.Album }</td><td><span class={ "status " + StateClass(item.State) }>{ MigrationStateLabel(item.State) }</span></td><td class="mono">{ item.CandidateMBID }</td><td class="wrap">
 				if item.State == "FAILED_RETRYABLE" {
+					{ item.Error }
 					<form method="post" action={ templ.SafeURL("/migration-items/" + item.ID + "/retry") }><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="batch_id" value={ page.Detail.ID }/><input type="hidden" name="state_revision" value={ fmt.Sprint(item.Revision) }/><button type="submit">Retry</button></form>
 				}
 			</td></tr>

@@ -151,6 +151,15 @@ func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *
 		if _, err := db.Exec(`UPDATE migration_items SET state=?,state_revision=2,resume_state=NULLIF(?,''),approved_release_mbid=NULLIF(?,'') WHERE id=?`, states[item.UnmanagedCandidateID], resume, mbid, item.ID); err != nil {
 			t.Fatal(err)
 		}
+		if item.UnmanagedCandidateID == "ui-none" || item.UnmanagedCandidateID == "ui-error" {
+			message := "stale-transient-error"
+			if item.UnmanagedCandidateID == "ui-error" {
+				message = "active-transient-error"
+			}
+			if _, err := db.Exec(`INSERT INTO migration_item_errors(id,item_id,state,error_text,occurred_at) VALUES(?,?,?,?,?)`, "error-"+item.ID, item.ID, domain.MigrationFailedRetryable, message, now.Format(time.RFC3339Nano)); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	bundle, _ := assets.New()
 	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
@@ -199,6 +208,9 @@ func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *
 		if !strings.Contains(detail.Body.String(), label) {
 			t.Fatalf("batch detail missing %q: %s", label, detail.Body.String())
 		}
+	}
+	if strings.Contains(detail.Body.String(), "stale-transient-error") || !strings.Contains(detail.Body.String(), "active-transient-error") {
+		t.Fatalf("batch detail exposed stale error or hid active error: %s", detail.Body.String())
 	}
 	if strings.Count(detail.Body.String(), `name="item_id"`) != 1 || !strings.Contains(detail.Body.String(), `name="confirm_migrations"`) {
 		t.Fatalf("confirmation form exposed non-exact items: %s", detail.Body.String())
