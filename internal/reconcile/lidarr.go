@@ -16,6 +16,7 @@ import (
 const (
 	standardTrackFormat  = "{Album Title} ({Release Year})/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
 	multiDiscTrackFormat = "{Album Title} ({Release Year})/{Medium Format} {medium:00}/{Artist Name} - {Album Title} - {track:00} - {Track Title}"
+	lidarrErrorBodyLimit = 16 << 10
 )
 
 type Lidarr struct {
@@ -77,7 +78,35 @@ func (l Lidarr) ensureRootFolder(ctx context.Context) (bool, error) {
 			return false, nil
 		}
 	}
-	return true, l.send(ctx, http.MethodPost, "/api/v1/rootfolder", map[string]any{"path": "/data/library"})
+	qualityProfileID, err := l.profileID(ctx, "/api/v1/qualityprofile", "Lossless")
+	if err != nil {
+		return false, err
+	}
+	metadataProfileID, err := l.profileID(ctx, "/api/v1/metadataprofile", "Standard")
+	if err != nil {
+		return false, err
+	}
+	payload := map[string]any{
+		"name": "Denyra Library", "path": "/data/library",
+		"defaultQualityProfileId": qualityProfileID, "defaultMetadataProfileId": metadataProfileID,
+	}
+	return true, l.send(ctx, http.MethodPost, "/api/v1/rootfolder", payload)
+}
+
+func (l Lidarr) profileID(ctx context.Context, path, name string) (int, error) {
+	var profiles []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := l.get(ctx, path, &profiles); err != nil {
+		return 0, err
+	}
+	for _, profile := range profiles {
+		if profile.ID > 0 && strings.EqualFold(profile.Name, name) {
+			return profile.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("Lidarr profile %q is unavailable at %s", name, path)
 }
 
 func (l Lidarr) reconcileSingleton(ctx context.Context, path string, mutate func(map[string]any) bool) (bool, error) {
@@ -274,7 +303,11 @@ func (l Lidarr) request(ctx context.Context, method, path string, payload any, t
 	defer response.Body.Close()
 	limited := io.LimitReader(response.Body, 8<<20)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		contents, _ := io.ReadAll(io.LimitReader(limited, lidarrErrorBodyLimit))
 		_, _ = io.Copy(io.Discard, limited)
+		if detail := strings.TrimSpace(string(contents)); detail != "" {
+			return fmt.Errorf("Lidarr %s %s returned %s: %s", method, path, response.Status, detail)
+		}
 		return fmt.Errorf("Lidarr %s %s returned %s", method, path, response.Status)
 	}
 	if target == nil {

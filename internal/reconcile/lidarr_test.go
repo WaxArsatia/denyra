@@ -13,23 +13,33 @@ import (
 )
 
 type lidarrFixture struct {
-	t               *testing.T
-	server          *httptest.Server
-	mu              sync.Mutex
-	mutations       int
-	roots           []map[string]any
-	singletons      map[string]map[string]any
-	metadata        []map[string]any
-	downloadClients []map[string]any
-	indexers        []map[string]any
-	downloadSchemas []map[string]any
-	indexerSchemas  []map[string]any
+	t                *testing.T
+	server           *httptest.Server
+	mu               sync.Mutex
+	mutations        int
+	roots            []map[string]any
+	qualityProfiles  []map[string]any
+	metadataProfiles []map[string]any
+	singletons       map[string]map[string]any
+	metadata         []map[string]any
+	downloadClients  []map[string]any
+	indexers         []map[string]any
+	downloadSchemas  []map[string]any
+	indexerSchemas   []map[string]any
 }
 
 func newLidarrFixture(t *testing.T) *lidarrFixture {
 	t.Helper()
 	f := &lidarrFixture{
 		t: t,
+		qualityProfiles: []map[string]any{
+			{"id": 1, "name": "Any", "upgradeAllowed": false, "cutoff": 0, "items": []any{}, "minFormatScore": 0, "cutoffFormatScore": 0, "formatItems": []any{}},
+			{"id": 2, "name": "Lossless", "upgradeAllowed": false, "cutoff": 0, "items": []any{}, "minFormatScore": 0, "cutoffFormatScore": 0, "formatItems": []any{}},
+		},
+		metadataProfiles: []map[string]any{
+			{"id": 1, "name": "Standard", "primaryAlbumTypes": []any{}, "secondaryAlbumTypes": []any{}, "releaseStatuses": []any{}},
+			{"id": 2, "name": "None", "primaryAlbumTypes": []any{}, "secondaryAlbumTypes": []any{}, "releaseStatuses": []any{}},
+		},
 		singletons: map[string]map[string]any{
 			"/api/v1/config/downloadclient":  {"id": 1, "enableCompletedDownloadHandling": true},
 			"/api/v1/config/mediamanagement": {"id": 1, "importExtraFiles": false, "extraFileExtensions": "lrc", "recycleBinCleanupDays": 31},
@@ -78,6 +88,10 @@ func (f *lidarrFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/rootfolder":
 			response = f.roots
+		case "/api/v1/qualityprofile":
+			response = f.qualityProfiles
+		case "/api/v1/metadataprofile":
+			response = f.metadataProfiles
 		case "/api/v1/metadata":
 			response = f.metadata
 		case "/api/v1/downloadclient":
@@ -110,6 +124,10 @@ func (f *lidarrFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mutations++
 	switch {
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/rootfolder":
+		if textValue(payload["name"]) == "" || number(payload["defaultQualityProfileId"]) <= 0 || number(payload["defaultMetadataProfileId"]) <= 0 {
+			http.Error(w, "root folder requires name and default profiles", http.StatusBadRequest)
+			return
+		}
 		payload["id"] = 1
 		f.roots = append(f.roots, payload)
 	case r.Method == http.MethodPost && r.URL.Path == "/api/v1/downloadclient":
@@ -164,7 +182,7 @@ func TestLidarrApplyCreatesOwnedContractAndIsIdempotent(t *testing.T) {
 		t.Fatalf("rerun outcome=%+v err=%v mutations=%d->%d", outcome, err, firstMutations, f.mutations)
 	}
 
-	if len(f.roots) != 1 || f.roots[0]["path"] != "/data/library" {
+	if len(f.roots) != 1 || f.roots[0]["path"] != "/data/library" || f.roots[0]["name"] != "Denyra Library" || number(f.roots[0]["defaultQualityProfileId"]) != 2 || number(f.roots[0]["defaultMetadataProfileId"]) != 1 {
 		t.Errorf("roots=%v", f.roots)
 	}
 	if got := f.singletons["/api/v1/config/downloadclient"]["enableCompletedDownloadHandling"]; got != false {
@@ -200,6 +218,23 @@ func TestLidarrRejectsIncompleteSlskdSchema(t *testing.T) {
 	_, err := lidarr.Apply(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "Lidarr Slskd schema lacks field repairConfiguration") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLidarrErrorIncludesBoundedResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("validation detail\n" + strings.Repeat("x", 100_000) + "unbounded-tail"))
+	}))
+	t.Cleanup(server.Close)
+
+	lidarr := Lidarr{BaseURL: server.URL, APIKey: "lidarr-secret", HTTP: server.Client()}
+	err := lidarr.send(context.Background(), http.MethodPost, "/api/v1/rootfolder", map[string]any{"path": "/data/library"})
+	if err == nil || !strings.Contains(err.Error(), "validation detail") {
+		t.Fatalf("err=%v", err)
+	}
+	if strings.Contains(err.Error(), "unbounded-tail") || len(err.Error()) > 17<<10 {
+		t.Fatalf("error body was not bounded: length=%d", len(err.Error()))
 	}
 }
 
