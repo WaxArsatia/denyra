@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,6 +45,8 @@ type SearchResult struct {
 	Releases []domain.CanonicalRelease
 	Evidence []Evidence
 }
+
+const searchRequestAttempts = 2
 
 type Client struct {
 	BaseURL       string
@@ -143,8 +146,8 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 		if err := addID(id); err != nil {
 			return result, fmt.Errorf("tagged release MBID: %w", err)
 		}
-		release, evidence, err := c.LookupRelease(ctx, id)
-		result.Evidence = append(result.Evidence, evidence)
+		release, evidence, err := c.lookupSearchRelease(ctx, id)
+		result.Evidence = append(result.Evidence, evidence...)
 		if err != nil {
 			return result, err
 		}
@@ -152,8 +155,8 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 	}
 
 	for _, barcode := range sortedUnique(input.Barcodes) {
-		body, evidence, err := c.requestJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"barcode:" + barcode}})
-		result.Evidence = append(result.Evidence, evidence)
+		body, evidence, err := c.requestSearchJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"barcode:" + barcode}})
+		result.Evidence = append(result.Evidence, evidence...)
 		if err != nil {
 			return result, err
 		}
@@ -176,8 +179,8 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 	}
 
 	for _, isrc := range sortedUnique(input.ISRCs) {
-		body, evidence, err := c.requestJSON(ctx, "/ws/2/recording", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"isrc:" + isrc}})
-		result.Evidence = append(result.Evidence, evidence)
+		body, evidence, err := c.requestSearchJSON(ctx, "/ws/2/recording", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {"isrc:" + isrc}})
+		result.Evidence = append(result.Evidence, evidence...)
 		if err != nil {
 			return result, err
 		}
@@ -197,8 +200,8 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 			if err != nil {
 				return result, fmt.Errorf("recording search MBID: %w", err)
 			}
-			body, evidence, err := c.requestJSON(ctx, "/ws/2/recording/"+recordingID, url.Values{"fmt": {"json"}, "inc": {"releases"}})
-			result.Evidence = append(result.Evidence, evidence)
+			body, evidence, err := c.requestSearchJSON(ctx, "/ws/2/recording/"+recordingID, url.Values{"fmt": {"json"}, "inc": {"releases"}})
+			result.Evidence = append(result.Evidence, evidence...)
 			if err != nil {
 				return result, err
 			}
@@ -224,8 +227,8 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 			terms = append(terms, "date:"+value)
 		}
 		terms = append(terms, fmt.Sprintf("tracks:%d", input.TrackCount))
-		body, evidence, err := c.requestJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {strings.Join(terms, " AND ")}})
-		result.Evidence = append(result.Evidence, evidence)
+		body, evidence, err := c.requestSearchJSON(ctx, "/ws/2/release", url.Values{"fmt": {"json"}, "limit": {"10"}, "query": {strings.Join(terms, " AND ")}})
+		result.Evidence = append(result.Evidence, evidence...)
 		if err != nil {
 			return result, err
 		}
@@ -250,10 +253,10 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 	for _, id := range ids {
 		release, exists := releases[id]
 		if !exists {
-			var evidence Evidence
+			var evidence []Evidence
 			var err error
-			release, evidence, err = c.LookupRelease(ctx, id)
-			result.Evidence = append(result.Evidence, evidence)
+			release, evidence, err = c.lookupSearchRelease(ctx, id)
+			result.Evidence = append(result.Evidence, evidence...)
 			if err != nil {
 				return result, err
 			}
@@ -261,6 +264,38 @@ func (c *Client) SearchReleases(ctx context.Context, input SearchInput) (SearchR
 		result.Releases = append(result.Releases, release)
 	}
 	return result, nil
+}
+
+func (c *Client) lookupSearchRelease(ctx context.Context, releaseID string) (domain.CanonicalRelease, []Evidence, error) {
+	evidence := make([]Evidence, 0, searchRequestAttempts)
+	for attempt := 0; attempt < searchRequestAttempts; attempt++ {
+		release, observation, err := c.LookupRelease(ctx, releaseID)
+		evidence = append(evidence, observation)
+		if err == nil {
+			return release, evidence, nil
+		}
+		var retryable *RetryableError
+		if !errors.As(err, &retryable) || attempt+1 == searchRequestAttempts {
+			return domain.CanonicalRelease{}, evidence, err
+		}
+	}
+	return domain.CanonicalRelease{}, evidence, fmt.Errorf("MusicBrainz release lookup attempts exhausted")
+}
+
+func (c *Client) requestSearchJSON(ctx context.Context, path string, query url.Values) ([]byte, []Evidence, error) {
+	evidence := make([]Evidence, 0, searchRequestAttempts)
+	for attempt := 0; attempt < searchRequestAttempts; attempt++ {
+		body, observation, err := c.requestJSON(ctx, path, query)
+		evidence = append(evidence, observation)
+		if err == nil {
+			return body, evidence, nil
+		}
+		var retryable *RetryableError
+		if !errors.As(err, &retryable) || attempt+1 == searchRequestAttempts {
+			return nil, evidence, err
+		}
+	}
+	return nil, evidence, fmt.Errorf("MusicBrainz search attempts exhausted")
 }
 
 func (c *Client) requestJSON(ctx context.Context, path string, query url.Values) ([]byte, Evidence, error) {

@@ -69,6 +69,70 @@ func TestSearchReleasesUsesIdentifierThenMetadataOrderAndDeduplicates(t *testing
 	}
 }
 
+func TestSearchReleasesRetriesTransientRequestAndKeepsEvidence(t *testing.T) {
+	t.Parallel()
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			http.Error(w, `{"error":"server busy"}`, http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(`{"releases":[]}`))
+	}))
+	defer server.Close()
+
+	client := &musicbrainz.Client{
+		BaseURL: server.URL, UserAgent: "Denyra/test (admin@example.invalid)",
+		HTTP: server.Client(), RateInterval: time.Nanosecond, ResponseLimit: 1 << 20,
+	}
+	result, err := client.SearchReleases(context.Background(), musicbrainz.SearchInput{Barcodes: []string{"3617385291670"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if len(result.Evidence) != 2 || result.Evidence[0].StatusCode != http.StatusServiceUnavailable || result.Evidence[1].StatusCode != http.StatusOK {
+		t.Fatalf("evidence=%+v, want preserved 503 then 200", result.Evidence)
+	}
+}
+
+func TestSearchReleasesRetriesTransientReleaseLookupAndKeepsEvidence(t *testing.T) {
+	t.Parallel()
+	releaseID := "11111111-1111-1111-1111-111111111111"
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			http.Error(w, `{"error":"server busy"}`, http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(fullReleaseJSON(releaseID)))
+	}))
+	defer server.Close()
+
+	client := &musicbrainz.Client{
+		BaseURL: server.URL, UserAgent: "Denyra/test (admin@example.invalid)",
+		HTTP: server.Client(), RateInterval: time.Nanosecond, ResponseLimit: 1 << 20,
+	}
+	result, err := client.SearchReleases(context.Background(), musicbrainz.SearchInput{TaggedReleaseMBIDs: []string{releaseID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Releases) != 1 || result.Releases[0].ReleaseMBID != releaseID {
+		t.Fatalf("releases=%+v, want %s", result.Releases, releaseID)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if len(result.Evidence) != 2 || result.Evidence[0].StatusCode != http.StatusServiceUnavailable || result.Evidence[1].StatusCode != http.StatusOK {
+		t.Fatalf("evidence=%+v, want preserved 503 then 200", result.Evidence)
+	}
+}
+
 func fullReleaseJSON(id string) string {
 	return fmt.Sprintf(`{"id":%q,"title":"OFF GUARD","date":"2024","status":"Official","release-group":{"id":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"},"artist-credit":[{"name":"Kaleb J","artist":{"id":"cccccccc-cccc-cccc-cccc-cccccccccccc","name":"Kaleb J"}}],"media":[{"position":1,"track-count":1,"tracks":[{"id":"dddddddd-dddd-dddd-dddd-dddddddddddd","title":"Track","number":"1","position":1,"length":1000,"recording":{"id":"eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee","title":"Track","length":1000,"isrcs":["IDABC2600001"]}}]}]}`, id)
 }
