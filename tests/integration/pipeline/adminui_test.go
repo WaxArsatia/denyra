@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/config"
+	"github.com/waxarsatia/denyra/internal/contracts"
 	denyrafs "github.com/waxarsatia/denyra/internal/pipeline/adapters/filesystem"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/handlers"
@@ -272,6 +273,57 @@ func TestAdminAcquisitionIndexAndDetailAreStructuredAndBounded(t *testing.T) {
 	}
 	if strings.Contains(detail.Body.String(), `<code>{"job":`) || strings.Contains(detail.Body.String(), "provider-stderr") || !strings.Contains(detail.Body.String(), "redacted provider failure") {
 		t.Fatalf("acquisition detail exposed opaque/raw evidence: %s", detail.Body.String())
+	}
+}
+
+func TestAdminShellHealthUsesTruthfulReadinessAndOnlyDegradedDependencies(t *testing.T) {
+	tests := map[string]struct {
+		health func() contracts.Health
+		want   []string
+		avoid  []string
+	}{
+		"unknown": {want: []string{"health unknown", "blocked"}, avoid: []string{"Degraded dependencies:"}},
+		"healthy": {health: func() contracts.Health {
+			return contracts.Health{Live: true, Ready: true, Dependencies: []contracts.DependencyHealth{{Name: "database", State: contracts.DependencyOK, Local: true}}}
+		}, want: []string{">ready<", "status ok"}, avoid: []string{"Degraded dependencies:", "database"}},
+		"remote degraded": {health: func() contracts.Health {
+			return contracts.Health{Live: true, Ready: true, Dependencies: []contracts.DependencyHealth{{Name: "database", State: contracts.DependencyOK, Local: true}, {Name: "musicbrainz", State: contracts.DependencyDegraded}}}
+		}, want: []string{">degraded<", "status review", "Degraded dependencies: musicbrainz"}, avoid: []string{"Degraded dependencies: database"}},
+		"locally unready": {health: func() contracts.Health {
+			return contracts.Health{Live: true, Ready: false, Dependencies: []contracts.DependencyHealth{{Name: "database", State: contracts.DependencyFailed, Local: true}, {Name: "musicbrainz", State: contracts.DependencyOK}}}
+		}, want: []string{"not ready", "status blocked", "Degraded dependencies: database"}, avoid: []string{"Degraded dependencies: musicbrainz"}},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			db, repository, now := pipelineRepositories(t)
+			defer db.Close()
+			if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+				t.Fatal(err)
+			}
+			bundle, _ := assets.New()
+			auth := application.AuthService{Repository: repository, AbsoluteExpiry: time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+			handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, Assets: bundle, Health: test.health})
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, csrf := loginAdmin(t, handler)
+			request := httptest.NewRequest(http.MethodGet, "/reviews", nil)
+			request.AddCookie(session)
+			request.AddCookie(csrf)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			body := response.Body.String()
+			for _, want := range test.want {
+				if !strings.Contains(body, want) {
+					t.Fatalf("health page missing %q: %s", want, body)
+				}
+			}
+			for _, avoid := range test.avoid {
+				if strings.Contains(body, avoid) {
+					t.Fatalf("health page unexpectedly contains %q: %s", avoid, body)
+				}
+			}
+		})
 	}
 }
 

@@ -11,13 +11,14 @@ import (
 )
 
 type Shell struct {
-	Deployment     string
-	ConfigSnapshot string
-	Readiness      string
-	ReadinessClass string
-	Username       string
-	CSRFToken      string
-	Assets         assets.Paths
+	Deployment           string
+	ConfigSnapshot       string
+	Readiness            string
+	ReadinessClass       string
+	DegradedDependencies []string
+	Username             string
+	CSRFToken            string
+	Assets               assets.Paths
 }
 
 type ReviewsPage struct {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/a-h/templ"
+	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/assets"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/middleware"
 	"github.com/waxarsatia/denyra/internal/pipeline/adminui/views"
@@ -30,6 +31,7 @@ type Dependencies struct {
 	NotifyMigrationBatch func(string)
 	Assets               *assets.Bundle
 	ConfigSnapshot       string
+	Health               func() contracts.Health
 }
 
 type Console struct{ dependencies Dependencies }
@@ -86,7 +88,25 @@ func (c Console) shell(r *http.Request) views.Shell {
 	if cookie, err := r.Cookie(middleware.CSRFCookie); err == nil {
 		csrf = cookie.Value
 	}
-	return views.Shell{Deployment: "Denyra", ConfigSnapshot: c.dependencies.ConfigSnapshot, Readiness: "local ready", ReadinessClass: "ok", Username: principal.Username, CSRFToken: csrf, Assets: c.dependencies.Assets.Paths}
+	readiness, readinessClass := "health unknown", "blocked"
+	var degraded []string
+	if c.dependencies.Health != nil {
+		snapshot := c.dependencies.Health()
+		for _, dependency := range snapshot.Dependencies {
+			if dependency.State != contracts.DependencyOK {
+				degraded = append(degraded, dependency.Name)
+			}
+		}
+		switch {
+		case !snapshot.Ready:
+			readiness, readinessClass = "not ready", "blocked"
+		case len(degraded) > 0:
+			readiness, readinessClass = "degraded", "review"
+		default:
+			readiness, readinessClass = "ready", "ok"
+		}
+	}
+	return views.Shell{Deployment: "Denyra", ConfigSnapshot: c.dependencies.ConfigSnapshot, Readiness: readiness, ReadinessClass: readinessClass, DegradedDependencies: degraded, Username: principal.Username, CSRFToken: csrf, Assets: c.dependencies.Assets.Paths}
 }
 
 func (c Console) reviews(w http.ResponseWriter, r *http.Request) {

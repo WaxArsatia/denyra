@@ -193,7 +193,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				UploadingRoot: prepared.Config.Filesystem.IncomingUploading, IncomingRoot: prepared.Config.Filesystem.IncomingManual,
 				Policy: prepared.Config.Uploads,
 			}
-			return handlers.New(handlers.Dependencies{Auth: auth, LoginThrottle: loginThrottle, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
+			return handlers.New(handlers.Dependencies{Auth: auth, LoginThrottle: loginThrottle, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]), Health: prepared.Health.Snapshot,
 				Acquisition:     gatewayClient,
 				MigrationReader: repositories, MigrationChecks: migrationChecks, Migrations: migrationService, NotifyMigrationBatch: runtime.NotifyMigrationBatch,
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},

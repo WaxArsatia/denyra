@@ -1,5 +1,7 @@
 package views
 
+import "strings"
+
 templ Icon(shell Shell, name string) {
 	<svg class="icon" aria-hidden="true"><use href={ shell.Assets.Icons + "#" + name }></use></svg>
 }
@@ -36,7 +38,12 @@ templ Layout(title string, active string, shell Shell, content templ.Component) 
 					<a href="/sessions" aria-current={ templ.KV("page", active == "sessions") }>@Icon(shell, "users-three") Sessions</a>
 					<a href="/account/password" aria-current={ templ.KV("page", active == "account") }>@Icon(shell, "shield-check") Account</a>
 				</nav>
-				<main id="main" class="content" tabindex="-1">@content</main>
+				<main id="main" class="content" tabindex="-1">
+					if len(shell.DegradedDependencies) > 0 {
+						<div class="notice" role="status">Degraded dependencies: { strings.Join(shell.DegradedDependencies, ", ") }</div>
+					}
+					@content
+				</main>
 			</div>
 		</body>
 	</html>
