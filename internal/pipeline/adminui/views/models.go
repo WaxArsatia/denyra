@@ -35,7 +35,7 @@ type ReviewPage struct {
 type IncomingPage struct {
 	Shell             Shell
 	Items             []application.SubmissionSummary
-	UploadSessions    []domain.UploadSession
+	UploadSessions    []application.UploadSessionSummary
 	UploadConcurrency int
 	Next              string
 	Error             string

@@ -82,6 +82,13 @@ type SessionSummary struct {
 	Current   bool
 }
 
+type UploadSessionSummary struct {
+	ID, SubmissionID, Status string
+	Revision                 uint64
+	FileCount, CompleteCount int
+	UpdatedAt                time.Time
+}
+
 type UnmanagedSummary struct {
 	CandidateID string
 	AlbumArtist string

@@ -61,32 +61,33 @@ func (r *Repositories) UploadSession(ctx context.Context, id string) (domain.Upl
 	return session, rows.Err()
 }
 
-func (r *Repositories) UploadSessions(ctx context.Context, actor string) ([]domain.UploadSession, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT id FROM upload_sessions WHERE actor=? AND status<>'DELETED' ORDER BY updated_at DESC,id`, actor)
+func (r *Repositories) UploadSessionSummaries(ctx context.Context, actor string, limit int) ([]application.UploadSessionSummary, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	rows, err := r.DB.QueryContext(ctx, `SELECT s.id,s.submission_id,s.status,s.state_revision,COUNT(e.id),COALESCE(SUM(CASE WHEN e.status='COMPLETE' THEN 1 ELSE 0 END),0),s.updated_at
+		FROM upload_sessions s LEFT JOIN upload_entries e ON e.session_id=s.id
+		WHERE s.actor=? AND s.status<>'DELETED'
+		GROUP BY s.id,s.submission_id,s.status,s.state_revision,s.updated_at
+		ORDER BY s.updated_at DESC,s.id DESC LIMIT ?`, actor, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	result := make([]application.UploadSessionSummary, 0, limit)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var summary application.UploadSessionSummary
+		var updated string
+		if err := rows.Scan(&summary.ID, &summary.SubmissionID, &summary.Status, &summary.Revision, &summary.FileCount, &summary.CompleteCount, &updated); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	result := make([]domain.UploadSession, 0, len(ids))
-	for _, id := range ids {
-		session, err := r.UploadSession(ctx, id)
+		summary.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, session)
+		result = append(result, summary)
 	}
-	return result, nil
+	return result, rows.Err()
 }
 
 func (r *Repositories) CompleteUploadEntry(ctx context.Context, sessionID, entryID string, at time.Time) error {

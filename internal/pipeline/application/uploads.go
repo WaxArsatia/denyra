@@ -23,7 +23,7 @@ var (
 type UploadStore interface {
 	CreateUploadSession(context.Context, domain.UploadSession) error
 	UploadSession(context.Context, string) (domain.UploadSession, error)
-	UploadSessions(context.Context, string) ([]domain.UploadSession, error)
+	UploadSessionSummaries(context.Context, string, int) ([]UploadSessionSummary, error)
 	CompleteUploadEntry(context.Context, string, string, time.Time) error
 	FinalizeUploadSession(context.Context, string, string, []byte, time.Time) error
 	DeleteUploadSession(context.Context, string, time.Time) error
@@ -153,11 +153,11 @@ func (s UploadService) Session(ctx context.Context, actor, sessionID string) (do
 	return s.ownedSession(ctx, actor, sessionID)
 }
 
-func (s UploadService) Sessions(ctx context.Context, actor string) ([]domain.UploadSession, error) {
+func (s UploadService) Sessions(ctx context.Context, actor string) ([]UploadSessionSummary, error) {
 	if strings.TrimSpace(actor) == "" {
 		return nil, ErrUploadForbidden
 	}
-	return s.Store.UploadSessions(ctx, actor)
+	return s.Store.UploadSessionSummaries(ctx, actor, 100)
 }
 
 func (s UploadService) ownedSession(ctx context.Context, actor, sessionID string) (domain.UploadSession, error) {

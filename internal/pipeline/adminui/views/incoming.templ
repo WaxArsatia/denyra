@@ -21,7 +21,7 @@ templ IncomingContent(page IncomingPage) {
 			if len(page.UploadSessions) > 0 {
 				<div class="table-wrap"><table><caption>Browser upload sessions</caption><thead><tr><th>Session</th><th>Files</th><th>Status</th><th>Action</th></tr></thead><tbody>
 					for _, session := range page.UploadSessions {
-						<tr data-upload-session={ session.ID }><td class="mono">{ session.ID }</td><td class="mono">{ fmt.Sprint(len(session.Files)) }</td><td><span class="status">{ session.Status }</span></td><td class="actions">
+						<tr data-upload-session={ session.ID }><td class="mono">{ session.ID }</td><td class="mono">{ fmt.Sprintf("%d/%d", session.CompleteCount, session.FileCount) }</td><td><span class="status">{ session.Status }</span></td><td class="actions">
 							if session.Status == "OPEN" {
 								<button type="button" data-upload-resume={ session.ID }>Resume</button>
 								<button type="button" class="danger" data-upload-delete={ session.ID }>Delete</button>

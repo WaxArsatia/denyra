@@ -127,9 +127,9 @@ func IncomingContent(page IncomingPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var7 string
-				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprint(len(session.Files)))
+				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d/%d", session.CompleteCount, session.FileCount))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/pipeline/adminui/views/incoming.templ`, Line: 24, Col: 130}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/pipeline/adminui/views/incoming.templ`, Line: 24, Col: 162}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -142,7 +142,7 @@ func IncomingContent(page IncomingPage) templ.Component {
 				var templ_7745c5c3_Var8 string
 				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(session.Status)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/pipeline/adminui/views/incoming.templ`, Line: 24, Col: 178}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/pipeline/adminui/views/incoming.templ`, Line: 24, Col: 210}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 				if templ_7745c5c3_Err != nil {

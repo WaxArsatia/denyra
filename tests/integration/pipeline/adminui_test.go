@@ -93,6 +93,14 @@ func TestAdminUIStreamsFolderUploadWithCSRFAndDeclaredSizeLimit(t *testing.T) {
 	if putResponse.Code != http.StatusOK {
 		t.Fatalf("put=%d %s", putResponse.Code, putResponse.Body.String())
 	}
+	summaryRequest := httptest.NewRequest(http.MethodGet, "/incoming", nil)
+	summaryRequest.AddCookie(sessionCookie)
+	summaryRequest.AddCookie(csrfCookie)
+	summaryResponse := httptest.NewRecorder()
+	handler.ServeHTTP(summaryResponse, summaryRequest)
+	if summaryResponse.Code != http.StatusOK || !strings.Contains(summaryResponse.Body.String(), upload.ID) || !strings.Contains(summaryResponse.Body.String(), "1/1") {
+		t.Fatalf("upload summary=%d %s", summaryResponse.Code, summaryResponse.Body.String())
+	}
 	finalize := authenticatedMutation(http.MethodPost, "/upload-sessions/"+upload.ID+"/finalize", nil, sessionCookie, csrfCookie)
 	finalized := httptest.NewRecorder()
 	handler.ServeHTTP(finalized, finalize)

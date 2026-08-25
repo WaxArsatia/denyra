@@ -98,12 +98,21 @@ func (s *memoryUploadStore) UploadSession(_ context.Context, id string) (domain.
 	return session, nil
 }
 
-func (s *memoryUploadStore) UploadSessions(_ context.Context, actor string) ([]domain.UploadSession, error) {
-	var result []domain.UploadSession
+func (s *memoryUploadStore) UploadSessionSummaries(_ context.Context, actor string, limit int) ([]application.UploadSessionSummary, error) {
+	var result []application.UploadSessionSummary
 	for _, session := range s.sessions {
 		if session.Actor == actor {
-			result = append(result, session)
+			complete := 0
+			for _, file := range session.Files {
+				if file.Status == domain.UploadEntryComplete {
+					complete++
+				}
+			}
+			result = append(result, application.UploadSessionSummary{ID: session.ID, SubmissionID: session.SubmissionID, Status: session.Status, Revision: session.Revision, FileCount: len(session.Files), CompleteCount: complete, UpdatedAt: session.UpdatedAt})
 		}
+	}
+	if len(result) > limit {
+		result = result[:limit]
 	}
 	return result, nil
 }
