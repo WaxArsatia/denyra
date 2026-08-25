@@ -3,7 +3,6 @@ package sqlite_test
 import (
 	"context"
 	"database/sql"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -86,76 +85,6 @@ func TestConcurrentWritersCompleteWithinBusyTimeout(t *testing.T) {
 		if err != nil {
 			t.Fatalf("concurrent insert: %v", err)
 		}
-	}
-}
-
-func TestOnlineBackupProducesReadableIndependentDatabase(t *testing.T) {
-	t.Parallel()
-	db := openTestDB(t)
-	if _, err := db.Exec("CREATE TABLE evidence (value TEXT); INSERT INTO evidence(value) VALUES ('preserved')"); err != nil {
-		t.Fatalf("seed source: %v", err)
-	}
-	target := filepath.Join(t.TempDir(), "backup.db")
-	if err := sqlite.Backup(context.Background(), db, target); err != nil {
-		t.Fatalf("Backup: %v", err)
-	}
-	backup, err := sql.Open("sqlite3", target)
-	if err != nil {
-		t.Fatalf("open backup: %v", err)
-	}
-	defer backup.Close()
-	var value string
-	if err := backup.QueryRow("SELECT value FROM evidence").Scan(&value); err != nil {
-		t.Fatalf("read backup: %v", err)
-	}
-	if value != "preserved" {
-		t.Fatalf("backup value = %q", value)
-	}
-}
-
-func TestOnlineBackupRejectsSourcePath(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "source.db")
-	db, err := sqlite.Open(context.Background(), path, sqlite.Options{BusyTimeout: time.Second, MaxOpenConns: 2})
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer db.Close()
-	if err := sqlite.Backup(context.Background(), db, path); err == nil {
-		t.Fatal("Backup accepted source as destination")
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("source database disappeared: %v", err)
-	}
-}
-
-func TestValidateBackupTargetRejectsTraversalExistingAndSymlinkedParents(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	if err := sqlite.ValidateBackupTarget(root, filepath.Join(root, "new.db")); err != nil {
-		t.Fatalf("valid target rejected: %v", err)
-	}
-	existing := filepath.Join(root, "existing.db")
-	if err := os.WriteFile(existing, nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlite.ValidateBackupTarget(root, existing); err == nil {
-		t.Fatal("existing target accepted")
-	}
-	if err := sqlite.ValidateBackupTarget(root, filepath.Join(filepath.Dir(root), "outside.db")); err == nil {
-		t.Fatal("target outside root accepted")
-	}
-	realParent := filepath.Join(root, "real")
-	if err := os.Mkdir(realParent, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	symlinkParent := filepath.Join(root, "linked")
-	if err := os.Symlink(realParent, symlinkParent); err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlite.ValidateBackupTarget(root, filepath.Join(symlinkParent, "linked.db")); err == nil {
-		t.Fatal("symlinked backup parent accepted")
 	}
 }
 

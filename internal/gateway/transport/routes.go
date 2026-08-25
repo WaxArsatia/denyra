@@ -11,12 +11,11 @@ import (
 )
 
 type Routes struct {
-	Quality    QualityCallbackAPI
-	Store      *persistence.Repositories
-	BodyLimit  int64
-	Bearer     []byte
-	BackupRoot string
-	Notify     func()
+	Quality   QualityCallbackAPI
+	Store     *persistence.Repositories
+	BodyLimit int64
+	Bearer    []byte
+	Notify    func()
 }
 
 func (routes Routes) Handler() (http.Handler, error) {
@@ -32,17 +31,12 @@ func (routes Routes) Handler() (http.Handler, error) {
 	private := http.NewServeMux()
 	private.HandleFunc("GET /internal/acquisitions/{jobID}", routes.evidence)
 	private.HandleFunc("POST /internal/events/lidarr", routes.lidarrEvent)
-	if routes.BackupRoot != "" {
-		private.HandleFunc("POST /internal/maintenance", routes.maintenance)
-		private.HandleFunc("POST /internal/maintenance/backup", routes.onlineBackup)
-	}
+	private.HandleFunc("POST /internal/maintenance", routes.maintenance)
 	mux.Handle("/internal/acquisitions/", httpx.RequestID(httpx.BearerAuth(routes.Bearer, private)))
 	mux.Handle("/internal/events/lidarr", httpx.RequestID(httpx.BearerAuth(routes.Bearer, httpx.LimitBody(routes.BodyLimit, httpx.RequireJSON(private)))))
-	if routes.BackupRoot != "" {
-		maintenance := httpx.RequestID(httpx.BearerAuth(routes.Bearer, httpx.LimitBody(routes.BodyLimit, httpx.RequireJSON(private))))
-		mux.Handle("/internal/maintenance", maintenance)
-		mux.Handle("/internal/maintenance/", maintenance)
-	}
+	maintenance := httpx.RequestID(httpx.BearerAuth(routes.Bearer, httpx.LimitBody(routes.BodyLimit, httpx.RequireJSON(private))))
+	mux.Handle("/internal/maintenance", maintenance)
+	mux.Handle("/internal/maintenance/", maintenance)
 	return mux, nil
 }
 

@@ -32,7 +32,6 @@ type Config struct {
 	Sessions    SessionConfig     `toml:"sessions" json:"sessions"`
 	Scanners    ScannerConfig     `toml:"scanners" json:"scanners"`
 	Storage     StorageConfig     `toml:"storage" json:"storage"`
-	Backup      BackupConfig      `toml:"backup" json:"backup"`
 	Concurrency ConcurrencyConfig `toml:"concurrency" json:"concurrency"`
 	Uploads     UploadConfig      `toml:"uploads" json:"uploads"`
 	Services    ServicesConfig    `toml:"services" json:"services"`
@@ -141,12 +140,6 @@ type ScannerConfig struct {
 type StorageConfig struct {
 	MinimumFreeBytes   int64   `toml:"minimum_free_bytes" json:"minimum_free_bytes"`
 	MinimumFreePercent float64 `toml:"minimum_free_percent" json:"minimum_free_percent"`
-}
-
-type BackupConfig struct {
-	Daily   int `toml:"daily" json:"daily"`
-	Weekly  int `toml:"weekly" json:"weekly"`
-	Monthly int `toml:"monthly" json:"monthly"`
 }
 
 type ConcurrencyConfig struct {

@@ -15,7 +15,7 @@ import (
 	"github.com/waxarsatia/denyra/migrations"
 )
 
-func TestPipelineMaintenancePersistsAdmissionAndCreatesOnlineBackup(t *testing.T) {
+func TestPipelineMaintenancePersistsAdmissionAndBackupRouteIsAbsent(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "pipeline.db")
 	db, err := denysqlite.Open(context.Background(), databasePath, denysqlite.Options{BusyTimeout: time.Second, MaxOpenConns: 4})
 	if err != nil {
@@ -30,8 +30,7 @@ func TestPipelineMaintenancePersistsAdmissionAndCreatesOnlineBackup(t *testing.T
 		t.Fatal(err)
 	}
 	gate := &application.AdmissionGate{DataRoot: t.TempDir(), MinimumFreeBytes: 1, MinimumFreePercent: 0}
-	backupRoot := t.TempDir()
-	handler, err := (internalapi.API{BodyLimit: 4096, Bearer: []byte("secret"), DB: db, Admission: gate, BackupRoot: backupRoot}).Handler()
+	handler, err := (internalapi.API{BodyLimit: 4096, Bearer: []byte("secret"), DB: db, Admission: gate}).Handler()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +49,10 @@ func TestPipelineMaintenancePersistsAdmissionAndCreatesOnlineBackup(t *testing.T
 		t.Fatalf("persisted maintenance = %d err=%v", enabled, err)
 	}
 
-	target := filepath.Join(backupRoot, "pipeline-backup.db")
-	backup := pipelineRequest("/internal/maintenance/backup", `{"target":"`+target+`"}`)
+	backup := pipelineRequest("/internal/maintenance/backup", `{"target":"/tmp/retired.db"}`)
 	backupResponse := httptest.NewRecorder()
 	handler.ServeHTTP(backupResponse, backup)
-	if backupResponse.Code != http.StatusCreated {
+	if backupResponse.Code != http.StatusNotFound {
 		t.Fatalf("backup status = %d body=%s", backupResponse.Code, backupResponse.Body.String())
 	}
 }

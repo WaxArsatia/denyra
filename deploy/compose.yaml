@@ -35,9 +35,6 @@ services:
       - type: bind
         source: ${DENYRA_DATA_ROOT:-/data}/state/gateway
         target: /data/state/gateway
-      - type: bind
-        source: ${DENYRA_DATA_ROOT:-/data}/backups
-        target: /data/backups
     networks:
       denyra-control: {}
       denyra-acquisition: {}
@@ -281,28 +278,6 @@ services:
       test: ["CMD", "/app/navidrome", "--version"]
     restart: unless-stopped
 
-  restic:
-    image: restic/restic:latest
-    profiles: ["backup"]
-    environment:
-      RESTIC_REPOSITORY: /repository
-      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
-    secrets:
-      - restic_password
-    volumes:
-      - type: bind
-        source: ${DENYRA_HOME:-/srv/denyra}
-        target: /source
-        read_only: true
-      - type: bind
-        source: ${DENYRA_DATA_ROOT:-/srv/denyra/data}/backups
-        target: /workspace
-        read_only: true
-      - type: bind
-        source: ${DENYRA_RESTIC_REPOSITORY_PATH:-/mnt/denyra-restic}
-        target: /repository
-    network_mode: none
-
 configs:
   gateway_config:
     file: ${DENYRA_CONFIG_DIR:-./config}/gateway.toml
@@ -342,9 +317,6 @@ secrets:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_username
   soulseek_password:
     file: ${DENYRA_SECRETS_DIR:-./secrets}/soulseek_password
-  restic_password:
-    file: ${DENYRA_SECRETS_DIR:-./secrets}/restic_password
-
 networks:
   denyra-control:
     internal: true

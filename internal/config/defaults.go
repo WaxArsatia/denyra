@@ -78,7 +78,6 @@ func Defaults() Config {
 			MinimumFreeBytes:   20 * 1024 * 1024 * 1024,
 			MinimumFreePercent: 5,
 		},
-		Backup:      BackupConfig{Daily: 7, Weekly: 4, Monthly: 12},
 		Concurrency: ConcurrencyConfig{Acquisition: 2, Validation: 2, Import: 1, MigrationCheck: 3},
 		Uploads:     UploadConfig{MaxFileBytes: 8 << 30, MaxSessionBytes: 100 << 30, MaxEntries: 1_000, BrowserConcurrency: 3, ImageMaxBytes: 20 << 20, ImageMaxPixels: 40_000_000},
 		Services:    ServicesConfig{LidarrURL: "http://lidarr:8686", GatewayURL: "http://acquisition-gateway:8081", PipelineURL: "http://media-pipeline:8081", NavidromeURL: "http://navidrome:4533", MusicBrainzURL: "https://musicbrainz.org", LRCLIBURL: "https://lrclib.net", SpotifyOEmbedURL: "https://open.spotify.com", CoverArtURL: "https://coverartarchive.org"},

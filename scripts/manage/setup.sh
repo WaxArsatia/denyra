@@ -124,8 +124,8 @@ denyra_setup() {
     sudo install -d -m 0750 -o "$denyra_setup_uid" -g "$denyra_setup_gid" "$DENYRA_HOME"
   fi
   chmod 0750 "$DENYRA_HOME"
-  mkdir -p "$DENYRA_CONFIG_DIR" "$DENYRA_SECRETS_DIR" "$DENYRA_DATA_ROOT" "$DENYRA_UPDATES_DIR"
-  chmod 0750 "$DENYRA_CONFIG_DIR" "$DENYRA_DATA_ROOT" "$DENYRA_UPDATES_DIR"
+  mkdir -p "$DENYRA_CONFIG_DIR" "$DENYRA_SECRETS_DIR" "$DENYRA_DATA_ROOT"
+  chmod 0750 "$DENYRA_CONFIG_DIR" "$DENYRA_DATA_ROOT"
   chmod 0700 "$DENYRA_SECRETS_DIR"
   denyra_lock
 
@@ -136,7 +136,7 @@ denyra_setup() {
 
   for denyra_setup_generated_secret in \
     internal_bearer audit_key bootstrap_admin navidrome_admin \
-    sftpgo_admin sftpgo_upload slskd_api_key slskd_web_password restic_password
+    sftpgo_admin sftpgo_upload slskd_api_key slskd_web_password
   do
     denyra_setup_copy_secret "$denyra_setup_generated_secret"
     denyra_secret "$denyra_setup_generated_secret" 32

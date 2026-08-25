@@ -19,7 +19,6 @@ type API struct {
 	NotifyManualDiscovery func()
 	DB                    *sql.DB
 	Admission             *application.AdmissionGate
-	BackupRoot            string
 }
 
 func (a API) Handler() (http.Handler, error) {
@@ -33,9 +32,8 @@ func (a API) Handler() (http.Handler, error) {
 	mux.HandleFunc("POST /internal/candidates/{candidateID}/supersede", a.supersede)
 	mux.HandleFunc("POST /internal/candidates/{candidateID}/cancel", a.cancel)
 	mux.HandleFunc("POST /internal/events/manual-discovery", a.manualDiscovery)
-	if a.DB != nil && a.Admission != nil && a.BackupRoot != "" {
+	if a.DB != nil && a.Admission != nil {
 		mux.HandleFunc("POST /internal/maintenance", a.maintenance)
-		mux.HandleFunc("POST /internal/maintenance/backup", a.onlineBackup)
 	}
 	return httpx.RequestID(httpx.BearerAuth(a.Bearer, httpx.LimitBody(a.BodyLimit, httpx.RequireJSON(mux)))), nil
 }

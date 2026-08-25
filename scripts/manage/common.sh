@@ -16,10 +16,8 @@ Commands:
   restart     Restart all services
   status      Show service status
   logs        Show recent service logs
-  update      Update images and restart safely
-  rollback    Restore the previous release
+  update      Update images and converge forward
   credentials Show generated credentials
-  backup      Create a backup
 EOF
 }
 
@@ -68,8 +66,7 @@ denyra_context() {
     case "$DENYRA_COMPOSE_OVERRIDE" in /*) ;; *) denyra_die "DENYRA_COMPOSE_OVERRIDE must be an absolute path" ;; esac
   fi
 
-  DENYRA_UPDATES_DIR=$DENYRA_HOME/updates
-  export DENYRA_HOME DENYRA_CONFIG_DIR DENYRA_SECRETS_DIR DENYRA_DATA_ROOT DENYRA_UPDATES_DIR DENYRA_PROJECT_NAME DENYRA_COMPOSE_OVERRIDE
+  export DENYRA_HOME DENYRA_CONFIG_DIR DENYRA_SECRETS_DIR DENYRA_DATA_ROOT DENYRA_PROJECT_NAME DENYRA_COMPOSE_OVERRIDE
 }
 
 denyra_lock() {
@@ -116,14 +113,6 @@ denyra_compose() {
     return
   fi
   docker compose --project-name "$denyra_project_name" --env-file "$DENYRA_CONFIG_DIR/denyra.env" -f "$repo_root/deploy/compose.yaml" "$@"
-}
-
-denyra_compose_snapshot() {
-  denyra_compose_snapshot_path=$1
-  shift
-  docker compose --project-name "${DENYRA_PROJECT_NAME:-denyra}" \
-    -f "$denyra_compose_snapshot_path/prior-compose.yaml" \
-    -f "$denyra_compose_snapshot_path/prior-images.yaml" "$@"
 }
 
 denyra_start_dependencies() {

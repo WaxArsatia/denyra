@@ -167,7 +167,6 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"body limit":         {toml: "[http]\ninternal_body_limit = 0\n"},
 		"database conns":     {toml: "[database]\nmax_open_conns = 0\n"},
 		"concurrency":        {toml: "[concurrency]\nacquisition = 3\n"},
-		"backup retention":   {toml: "[backup]\ndaily = 0\n"},
 		"validation timeout": {toml: "[validation]\nffprobe_timeout = \"0s\"\n"},
 	}
 	for name, test := range tests {

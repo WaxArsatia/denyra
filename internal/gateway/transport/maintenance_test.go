@@ -16,13 +16,11 @@ import (
 	"github.com/waxarsatia/denyra/migrations"
 )
 
-func TestMaintenanceRequiresAuthenticationAndOnlineBackupRequiresMaintenance(t *testing.T) {
+func TestMaintenanceRequiresAuthenticationAndBackupRouteIsAbsent(t *testing.T) {
 	db := migratedGatewayDB(t)
-	backupRoot := t.TempDir()
 	routes := transport.Routes{
 		Quality: transport.QualityCallbackAPI{BodyLimit: 4096, Bearer: []byte("secret")},
 		Store:   persistence.New(db, time.Now), BodyLimit: 4096, Bearer: []byte("secret"),
-		BackupRoot: backupRoot,
 	}
 	handler, err := routes.Handler()
 	if err != nil {
@@ -35,28 +33,19 @@ func TestMaintenanceRequiresAuthenticationAndOnlineBackupRequiresMaintenance(t *
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
 	}
 
-	target := filepath.Join(backupRoot, "gateway-backup.db")
-	before := authenticatedJSONRequest(http.MethodPost, "/internal/maintenance/backup", `{"target":"`+target+`"}`)
-	beforeResponse := httptest.NewRecorder()
-	handler.ServeHTTP(beforeResponse, before)
-	if beforeResponse.Code != http.StatusConflict {
-		t.Fatalf("backup before maintenance status = %d body=%s", beforeResponse.Code, beforeResponse.Body.String())
-	}
-
-	enable := authenticatedJSONRequest(http.MethodPost, "/internal/maintenance", `{"enabled":true,"reason":"deterministic backup"}`)
+	enable := authenticatedJSONRequest(http.MethodPost, "/internal/maintenance", `{"enabled":true,"reason":"operator pause"}`)
 	enableResponse := httptest.NewRecorder()
 	handler.ServeHTTP(enableResponse, enable)
 	if enableResponse.Code != http.StatusOK || !bytes.Contains(enableResponse.Body.Bytes(), []byte(`"safe":true`)) {
 		t.Fatalf("enable status = %d body=%s", enableResponse.Code, enableResponse.Body.String())
 	}
 
-	backup := authenticatedJSONRequest(http.MethodPost, "/internal/maintenance/backup", `{"target":"`+target+`"}`)
+	backup := authenticatedJSONRequest(http.MethodPost, "/internal/maintenance/backup", `{"target":"/tmp/retired.db"}`)
 	backupResponse := httptest.NewRecorder()
 	handler.ServeHTTP(backupResponse, backup)
-	if backupResponse.Code != http.StatusCreated {
+	if backupResponse.Code != http.StatusNotFound {
 		t.Fatalf("backup status = %d body=%s", backupResponse.Code, backupResponse.Body.String())
 	}
-	assertSQLiteIntegrity(t, target)
 }
 
 func migratedGatewayDB(t *testing.T) *sql.DB {
@@ -81,20 +70,4 @@ func authenticatedJSONRequest(method, target, body string) *http.Request {
 	request.Header.Set("Authorization", "Bearer secret")
 	request.Header.Set("Content-Type", "application/json")
 	return request
-}
-
-func assertSQLiteIntegrity(t *testing.T, path string) {
-	t.Helper()
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	var result string
-	if err := db.QueryRow("PRAGMA integrity_check").Scan(&result); err != nil {
-		t.Fatal(err)
-	}
-	if result != "ok" {
-		t.Fatalf("integrity_check = %q", result)
-	}
 }

@@ -33,7 +33,7 @@ func StartCompose(t *testing.T) Compose {
 	root := t.TempDir()
 	for _, relative := range []string{
 		"downloads/slskd", "downloads/slskd/incomplete", "downloads/spotiflac", "downloads/other", "incoming/manual", "incoming/uploading",
-		"processing/work", "processing/approved", "quarantine", "library", "library-unmanaged", "backups",
+		"processing/work", "processing/approved", "quarantine", "library", "library-unmanaged",
 		"state/gateway", "state/pipeline", "state/lidarr", "state/slskd", "state/sftpgo",
 		"state/navidrome", "cache/navidrome", "secrets", "acceptance",
 	} {
@@ -48,7 +48,6 @@ func StartCompose(t *testing.T) Compose {
 		"sftpgo_upload": "acceptance-sftpgo-upload", "slskd_api_key": "acceptance-slskd-key",
 		"slskd_web_password": "acceptance-slskd-password",
 		"soulseek_username":  "acceptance-disabled", "soulseek_password": "acceptance-disabled",
-		"restic_password": "acceptance-restic-password",
 	} {
 		if err := os.WriteFile(filepath.Join(root, "secrets", name), []byte(value), 0o600); err != nil {
 			t.Fatal(err)

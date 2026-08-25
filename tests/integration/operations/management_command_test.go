@@ -144,6 +144,25 @@ func TestUnknownCommandReturnsUsage(t *testing.T) {
 	}
 }
 
+func TestManagementRetiredLifecycleCommandsReturnUsage(t *testing.T) {
+	f := newManagementFixture(t)
+	for _, command := range []string{"backup", "restore", "rollback", "snapshot"} {
+		t.Run(command, func(t *testing.T) {
+			cmd := f.command(command)
+			out, err := cmd.CombinedOutput()
+			if err == nil || cmd.ProcessState.ExitCode() != 2 || !strings.Contains(string(out), "usage:") {
+				t.Fatalf("command=%s exit=%v err=%v output=%q", command, cmd.ProcessState, err, out)
+			}
+		})
+	}
+	help := f.run("--help")
+	for _, retired := range []string{"backup", "restore", "rollback", "snapshot"} {
+		if strings.Contains(help, retired) {
+			t.Errorf("help still exposes %q:\n%s", retired, help)
+		}
+	}
+}
+
 func TestDeploymentRootValidation(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -211,7 +230,6 @@ var setupSecretNames = []string{
 	"sftpgo_upload",
 	"slskd_api_key",
 	"slskd_web_password",
-	"restic_password",
 	"soulseek_username",
 	"soulseek_password",
 }
@@ -540,4 +558,13 @@ func assertOrderedFragments(t *testing.T, text string, fragments []string) {
 		}
 		position += next + len(fragment)
 	}
+}
+
+func readText(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(content)
 }

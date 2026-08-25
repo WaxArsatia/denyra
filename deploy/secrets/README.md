@@ -13,7 +13,6 @@ slskd_api_key
 slskd_web_password
 soulseek_username
 soulseek_password
-restic_password
 ```
 
 The setup command generates values with the host CSPRNG and adopts existing,

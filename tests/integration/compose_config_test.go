@@ -15,6 +15,7 @@ import (
 type composeDocument struct {
 	Services map[string]composeService `json:"services"`
 	Networks map[string]composeNetwork `json:"networks"`
+	Secrets  map[string]any            `json:"secrets"`
 }
 
 type composeService struct {
@@ -260,6 +261,23 @@ func TestComposeUsesServiceDNSAndCompatibleTags(t *testing.T) {
 	for _, name := range []string{"acquisition-gateway", "media-pipeline", "lidarr", "navidrome"} {
 		if len(document.Services[name].Build) == 0 {
 			t.Errorf("custom service %s has no Compose build definition", name)
+		}
+	}
+}
+
+func TestComposeOmitsRetiredBackupSurface(t *testing.T) {
+	document := renderCompose(t)
+	if _, ok := document.Services["restic"]; ok {
+		t.Fatal("Compose still exposes restic service")
+	}
+	if _, ok := document.Secrets["restic_password"]; ok {
+		t.Fatal("Compose still exposes restic_password secret")
+	}
+	for name, service := range document.Services {
+		for _, volume := range service.Volumes {
+			if volume.Target == "/data/backups" {
+				t.Errorf("service %s still mounts /data/backups", name)
+			}
 		}
 	}
 }

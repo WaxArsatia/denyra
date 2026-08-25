@@ -208,7 +208,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				domain.SourceSlskd: prepared.Config.Filesystem.DownloadsSlskd, domain.SourceSpotiFLAC: prepared.Config.Filesystem.DownloadsSpotiFLAC,
 				domain.SourceOther: prepared.Config.Filesystem.DownloadsOther,
 			}, OnAccepted: runtime.NotifyCandidate}
-			return (internalapi.API{Service: service, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), NotifyManualDiscovery: runtime.NotifyManualDiscovery, DB: prepared.DB, Admission: runtime.Worker.Admission, BackupRoot: filepath.Join(prepared.Config.Filesystem.DataRoot, "backups")}).Handler()
+			return (internalapi.API{Service: service, BodyLimit: prepared.Config.HTTP.InternalBodyLimit, Bearer: []byte(prepared.Config.Secrets.InternalBearer.Value), NotifyManualDiscovery: runtime.NotifyManualDiscovery, DB: prepared.DB, Admission: runtime.Worker.Admission}).Handler()
 		},
 	})
 }

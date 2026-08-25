@@ -77,9 +77,6 @@ func (c Config) Validate() error {
 	if c.Uploads.MaxFileBytes <= 0 || c.Uploads.MaxSessionBytes <= 0 || c.Uploads.MaxSessionBytes < c.Uploads.MaxFileBytes || c.Uploads.MaxEntries <= 0 || c.Uploads.BrowserConcurrency <= 0 || c.Uploads.ImageMaxBytes <= 0 || c.Uploads.ImageMaxPixels <= 0 {
 		return fmt.Errorf("upload limits, entry counts, concurrency, and image limits must be positive, with session bytes at least file bytes")
 	}
-	if c.Backup.Daily <= 0 || c.Backup.Weekly <= 0 || c.Backup.Monthly <= 0 {
-		return fmt.Errorf("backup retention values must be positive")
-	}
 	for name, value := range map[string]string{"services.lidarr_url": c.Services.LidarrURL, "services.gateway_url": c.Services.GatewayURL, "services.pipeline_url": c.Services.PipelineURL, "services.navidrome_url": c.Services.NavidromeURL, "services.musicbrainz_url": c.Services.MusicBrainzURL, "services.lrclib_url": c.Services.LRCLIBURL, "services.spotify_oembed_url": c.Services.SpotifyOEmbedURL, "services.cover_art_url": c.Services.CoverArtURL} {
 		if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
 			return fmt.Errorf("%s must be an HTTP URL", name)

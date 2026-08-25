@@ -49,8 +49,7 @@ for path in \
 	state/slskd \
 	state/sftpgo \
 	state/navidrome \
-	cache/navidrome \
-	backups
+	cache/navidrome
 do
 	path=$target/$path
 	mkdir -p -- "$path"
