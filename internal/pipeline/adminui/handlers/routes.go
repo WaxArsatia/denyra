@@ -212,7 +212,7 @@ func (c Console) sessions(w http.ResponseWriter, r *http.Request) {
 	c.render(w, r, views.Sessions(page), views.SessionsContent(page))
 }
 func (c Console) account(w http.ResponseWriter, r *http.Request) {
-	page := views.AccountPage{Shell: c.shell(r)}
+	page := views.AccountPage{Shell: c.shell(r), Changed: r.URL.Query().Get("changed") == "1"}
 	c.render(w, r, views.Account(page), views.AccountContent(page))
 }
 func (c Console) acquisition(w http.ResponseWriter, r *http.Request) {

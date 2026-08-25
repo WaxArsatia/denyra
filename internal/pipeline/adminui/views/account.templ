@@ -3,6 +3,9 @@ package views
 templ Account(page AccountPage) { @Layout("Account", "account", page.Shell, AccountContent(page)) }
 	templ AccountContent(page AccountPage) {
 	<section id="account-fragment"><h1>Account security</h1>
+	if page.Changed {
+		<p class="notice" role="status">Password changed. Other sessions were revoked.</p>
+	}
 	if page.Error!="" {
 		<p class="notice error" role="alert">{ page.Error }</p>
 	}

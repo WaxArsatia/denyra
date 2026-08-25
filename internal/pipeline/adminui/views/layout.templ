@@ -30,13 +30,13 @@ templ Layout(title string, active string, shell Shell, content templ.Component) 
 			</header>
 			<div class="shell">
 				<nav aria-label="Admin">
-					<a href="/incoming" aria-current={ templ.KV("page", active == "incoming") }>@Icon(shell, "tray") Incoming</a>
-					<a href="/acquisitions" aria-current={ templ.KV("page", active == "acquisitions") }>@Icon(shell, "clock-counter-clockwise") Acquisitions</a>
-					<a href="/unmanaged" aria-current={ templ.KV("page", active == "unmanaged") }>@Icon(shell, "tray") Unmanaged</a>
-					<a href="/reviews" aria-current={ templ.KV("page", active == "reviews") }>@Icon(shell, "warning-circle") Reviews</a>
-					<a href="/audit" aria-current={ templ.KV("page", active == "audit") }>@Icon(shell, "clock-counter-clockwise") Audit</a>
-					<a href="/sessions" aria-current={ templ.KV("page", active == "sessions") }>@Icon(shell, "users-three") Sessions</a>
-					<a href="/account/password" aria-current={ templ.KV("page", active == "account") }>@Icon(shell, "shield-check") Account</a>
+					<a href="/incoming" if active == "incoming" { aria-current="page" }>@Icon(shell, "tray") Incoming</a>
+					<a href="/acquisitions" if active == "acquisitions" { aria-current="page" }>@Icon(shell, "clock-counter-clockwise") Acquisitions</a>
+					<a href="/unmanaged" if active == "unmanaged" { aria-current="page" }>@Icon(shell, "tray") Unmanaged</a>
+					<a href="/reviews" if active == "reviews" { aria-current="page" }>@Icon(shell, "warning-circle") Reviews</a>
+					<a href="/audit" if active == "audit" { aria-current="page" }>@Icon(shell, "clock-counter-clockwise") Audit</a>
+					<a href="/sessions" if active == "sessions" { aria-current="page" }>@Icon(shell, "users-three") Sessions</a>
+					<a href="/account/password" if active == "account" { aria-current="page" }>@Icon(shell, "shield-check") Account</a>
 				</nav>
 				<main id="main" class="content" tabindex="-1">
 					if len(shell.DegradedDependencies) > 0 {

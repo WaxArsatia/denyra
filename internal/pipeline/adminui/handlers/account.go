@@ -26,11 +26,11 @@ func (h Account) ChangePassword(writer http.ResponseWriter, request *http.Reques
 			http.Error(writer, "authentication failed", http.StatusUnauthorized)
 			return
 		}
-		http.Error(writer, err.Error(), http.StatusBadRequest)
+		http.Error(writer, "password change failed", http.StatusBadRequest)
 		return
 	}
 	middleware.SetCookies(writer, credentials)
-	http.Redirect(writer, request, "/account", http.StatusSeeOther)
+	http.Redirect(writer, request, "/account/password?changed=1", http.StatusSeeOther)
 }
 
 func (h Account) Logout(writer http.ResponseWriter, request *http.Request) {

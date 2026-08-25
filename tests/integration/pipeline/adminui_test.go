@@ -716,6 +716,69 @@ func TestAdminUIRetryMoveFailureKeepsCandidateQuarantined(t *testing.T) {
 	}
 }
 
+func TestAdminNavigationAndAccountFeedback(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := assets.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, Assets: bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "/reviews", nil)
+	pageRequest.AddCookie(session)
+	page := httptest.NewRecorder()
+	handler.ServeHTTP(page, pageRequest)
+	body := page.Body.String()
+	if page.Code != http.StatusOK || strings.Count(body, `aria-current="page"`) != 1 {
+		t.Fatalf("active navigation count=%d status=%d body=%s", strings.Count(body, `aria-current="page"`), page.Code, body)
+	}
+	if strings.Contains(body, `{page true}`) || strings.Contains(body, `{page false}`) || strings.Count(body, "aria-current=") != 1 {
+		t.Fatalf("invalid inactive navigation attributes: %s", body)
+	}
+
+	form := url.Values{
+		"_csrf":            {csrf.Value},
+		"current_password": {"password123"},
+		"new_password":     {"new-password-123"},
+	}
+	change := authenticatedMutation(http.MethodPost, "/account/password", strings.NewReader(form.Encode()), session, csrf)
+	change.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	changed := httptest.NewRecorder()
+	handler.ServeHTTP(changed, change)
+	if changed.Code != http.StatusSeeOther || changed.Header().Get("Location") != "/account/password?changed=1" {
+		t.Fatalf("password redirect=%d location=%q body=%s", changed.Code, changed.Header().Get("Location"), changed.Body.String())
+	}
+	var rotatedSession, rotatedCSRF *http.Cookie
+	for _, cookie := range changed.Result().Cookies() {
+		switch cookie.Name {
+		case middleware.SessionCookie:
+			rotatedSession = cookie
+		case middleware.CSRFCookie:
+			rotatedCSRF = cookie
+		}
+	}
+	if rotatedSession == nil || rotatedCSRF == nil {
+		t.Fatal("password change did not rotate authentication cookies")
+	}
+	successRequest := httptest.NewRequest(http.MethodGet, "/account/password?changed=1", nil)
+	successRequest.AddCookie(rotatedSession)
+	successRequest.AddCookie(rotatedCSRF)
+	success := httptest.NewRecorder()
+	handler.ServeHTTP(success, successRequest)
+	if success.Code != http.StatusOK || !strings.Contains(success.Body.String(), "Password changed") {
+		t.Fatalf("password feedback=%d body=%s", success.Code, success.Body.String())
+	}
+}
+
 func loginAdmin(t *testing.T, handler http.Handler) (*http.Cookie, *http.Cookie) {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("username=admin&password=password123"))

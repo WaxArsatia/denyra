@@ -72,8 +72,9 @@ type AcquisitionsPage struct {
 	Degraded bool
 }
 type AccountPage struct {
-	Shell Shell
-	Error string
+	Shell   Shell
+	Error   string
+	Changed bool
 }
 type UnmanagedPage struct {
 	Shell                      Shell
