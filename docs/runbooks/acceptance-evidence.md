@@ -28,3 +28,23 @@ The default test uses local fixtures and never contacts MusicBrainz, Spotify, or
 `make live-compatibility` is an optional read-only schema smoke. Set `DENYRA_LIVE_MUSICBRAINZ_RELEASE_MBID`, `DENYRA_LIVE_LIDARR_URL`, `DENYRA_LIVE_LIDARR_API_KEY_FILE`, and `DENYRA_LIVE_NAVIDROME_PASSWORD_FILE` first. Optional URL and username overrides use the `DENYRA_LIVE_` prefix. The smoke logs in to Navidrome, reads libraries and scan status, reads Lidarr roots and profiles, and performs MusicBrainz search and lookup. It does not add, update, import, search Lidarr, or delete anything.
 
 Acceptance evidence includes HTTP request counts, Manual Import command counts, and SHA-256 manifests for both library roots. The lost-ack fixture records one Manual Import even when the same request is observed again.
+
+## Production acceptance on 2026-08-25
+
+The forward-only release at commit `e4f1ce7` was accepted on the production host at `2026-08-25T10:39:26Z`.
+
+- all six Compose services were running and healthy after cutover
+- the Managed library contained 39 FLAC files, the Unmanaged library contained zero FLAC files, and 96 state files remained in place after cleanup
+- Tulus releases Gajah, Manusia, and Monokrom reached `IMPORTED`; Lidarr reported 9, 10, and 10 track files respectively and zero Wanted/Missing tracks for those releases
+- Navidrome indexed the same 9, 10, and 10 tracks for the accepted releases
+- Tenxi fallback acquisition reached `FALLBACK_RETRYABLE_ERROR` after four bounded SpotiFLAC operational attempts; its next retry remained scheduled instead of being misclassified as no candidate
+- the admin `/reviews`, `/acquisitions`, `/unmanaged`, and account-success requests returned HTTP 200 in 2-5 ms; acquisition detail rendered the timeline, attempts, candidates, and audit sections without raw secret markers
+- readiness stayed locally ready and truthfully reported MusicBrainz and LRCLIB as degraded because no successful observation was available
+- server-side accessibility checks found exactly one valid `aria-current="page"` marker on each accepted admin route
+
+Cleanup permanently removed only `/srv/denyra/updates`, `/srv/denyra/data/backups`, and `/srv/denyra/secrets/restic_password`. Eleven unreferenced historical Denyra images and the unreferenced legacy Restic image were removed after checking every container image ID. No global Docker prune was used. The active library, state, unresolved downloads, processing work, quarantine evidence, and images used by other Compose projects were preserved.
+
+Two acceptance exceptions remain visible rather than being hidden:
+
+- a second acquisition request can enter `ARBITRATING` or `PRIMARY_ACTIVE` after the first request hands off but before its import is reconciled; the winner lock still prevents two candidates from being imported, but pre-import request coalescing needs a separate correction
+- exact browser acceptance was not completed because the requested Chrome DevTools session was unavailable; the authenticated admin acceptance above is server-side evidence and must not be treated as visual browser evidence
