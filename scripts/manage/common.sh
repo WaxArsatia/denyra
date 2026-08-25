@@ -94,6 +94,14 @@ denyra_atomic_file() {
   fi
 }
 
+denyra_validate_commit() {
+  denyra_commit_value=$1
+  [ "${#denyra_commit_value}" -eq 40 ] || denyra_die "deployment commit must contain 40 lowercase hexadecimal characters"
+  case "$denyra_commit_value" in
+    *[!0-9a-f]*) denyra_die "deployment commit must contain 40 lowercase hexadecimal characters" ;;
+  esac
+}
+
 denyra_secret() {
   denyra_secret_name=$1
   denyra_secret_bytes=${2:-32}

@@ -26,5 +26,6 @@ ENV DENYRA_GIT_COMMIT=$DENYRA_GIT_COMMIT \
     HOME=/tmp \
     XDG_CONFIG_HOME=/tmp/.config
 LABEL org.opencontainers.image.title="Denyra Media Pipeline"
+LABEL io.denyra.project="denyra"
 USER 1000:1000
 ENTRYPOINT ["/app/media-pipeline"]

@@ -78,7 +78,7 @@ func TestInterruptedUpdateConvergesForward(t *testing.T) {
 	if err := os.WriteFile(f.logPath, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	retry := f.updateCommand("")
+	retry := f.updateCommand("unhealthy")
 	retry.Env = append(retry.Env, "DENYRA_TEST_START_MARKER="+marker)
 	out, err := retry.CombinedOutput()
 	if err != nil || strings.Contains(string(out), "already current") {
@@ -104,6 +104,24 @@ func TestForwardUpdateEqualCommitReconcilesUnhealthyStack(t *testing.T) {
 		t.Fatalf("equal commit did not reconcile stack:\n%s", f.log())
 	}
 	assertProtectedTrees(t, before)
+}
+
+func TestImageCleanupRemovesOnlyUnreferencedDenyraImages(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareForwardUpdateFixture(t, f, false)
+	out, err := f.updateCommand("image-cleanup").CombinedOutput()
+	if err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	log := f.log()
+	if !strings.Contains(log, "image rm sha256:old-denyra") {
+		t.Fatalf("unreferenced Denyra image retained:\n%s", log)
+	}
+	for _, forbidden := range []string{"image rm sha256:running-denyra", "image rm sha256:external", "image rm --force", "image prune", "system prune"} {
+		if strings.Contains(log, forbidden) {
+			t.Fatalf("unsafe image cleanup %q:\n%s", forbidden, log)
+		}
+	}
 }
 
 func prepareForwardUpdateFixture(t *testing.T, f *managementFixture, equalHead bool) map[string]protectedFile {
@@ -168,6 +186,7 @@ case "$*" in
   *" pull --policy always slskd sftpgo restic"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != pull ] ;;
   *" build --pull"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != build ] ;;
   *" ps -q "*) for service do :; done; echo "cid-$service" ;;
+  "inspect --format {{.Image}} running-container") printf 'sha256:running-denyra\n' ;;
   "inspect --format {{.Image}} "*) echo "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" ;;
   *" ps --format json"*)
     [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != unhealthy ] && printf '[{"Service":"acquisition-gateway","Health":"healthy","State":"running"}]\n'
@@ -180,7 +199,12 @@ case "$*" in
     ;;
   *" exec -T acquisition-gateway "*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != smoke ] ;;
   *" exec -T "*) exit 0 ;;
-  "image ls "*|"image rm "*|"inspect "*) exit 0 ;;
+  "image ls --filter label=io.denyra.project=denyra --quiet")
+    [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = image-cleanup ] && printf 'sha256:old-denyra\nsha256:running-denyra\n'
+    ;;
+  "ps --quiet") [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = image-cleanup ] && printf 'running-container\n' ;;
+  "image rm "*) exit 0 ;;
+  "inspect "*) exit 0 ;;
   *) exit 0 ;;
 esac
 `)

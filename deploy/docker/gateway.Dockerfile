@@ -40,5 +40,6 @@ ENV DENYRA_GIT_COMMIT=$DENYRA_GIT_COMMIT \
     SPOTIFLAC_CACHE_DIR=/opt/spotiflac/runtime-home/.cache/spotiflac \
     SPOTIFLAC_REGISTRIES=" "
 LABEL org.opencontainers.image.title="Denyra Acquisition Gateway"
+LABEL io.denyra.project="denyra"
 USER 1000:1000
 ENTRYPOINT ["/app/acquisition-gateway"]

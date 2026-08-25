@@ -13,3 +13,4 @@ FROM lscr.io/linuxserver/lidarr:nightly
 COPY --from=plugin /plugin /defaults/denyra-plugins/Lidarr.Plugin.Slskd
 COPY deploy/docker/lidarr-install-plugin.sh /custom-cont-init.d/20-denyra-plugin
 LABEL org.opencontainers.image.title="Denyra Lidarr"
+LABEL io.denyra.project="denyra"
