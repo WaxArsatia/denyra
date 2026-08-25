@@ -67,9 +67,9 @@ type AccountPage struct {
 	Error string
 }
 type UnmanagedPage struct {
-	Shell                Shell
-	Items                []application.UnmanagedSummary
-	Query, Status, Error string
+	Shell                      Shell
+	Items                      []application.UnmanagedSummary
+	Query, Status, Next, Error string
 }
 type MigrationPage struct {
 	Shell  Shell

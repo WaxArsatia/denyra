@@ -1,5 +1,10 @@
 package views
 
+import (
+	"fmt"
+	"net/url"
+)
+
 templ Unmanaged(page UnmanagedPage) {
 	@Layout("Unmanaged", "unmanaged", page.Shell, UnmanagedContent(page))
 }
@@ -9,15 +14,18 @@ templ UnmanagedContent(page UnmanagedPage) {
 		if page.Error != "" {
 			<div class="notice error" role="alert">{ page.Error }</div>
 		}
-		<form class="actions filter-bar" method="get" action="/unmanaged"><label>Search <input name="q" value={ page.Query } placeholder="Artist or album"/></label><label>Status <select name="status"><option value="">All</option><option value="IMPORTED" selected?={ page.Status == "IMPORTED" }>Imported</option></select></label><button type="submit">Filter</button></form>
-		<form id="batch-check" method="post" action="/unmanaged/check"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="q" value={ page.Query }/><input type="hidden" name="status" value={ page.Status }/><div class="actions batch-actions"><label class="inline-check"><input type="checkbox" name="select_all" value="filtered"/> Select all filtered</label><button class="primary" type="submit">Check selected</button></div></form>
+		<form class="actions filter-bar" method="get" action="/unmanaged"><label>Starts with <input name="q" value={ page.Query } minlength="2" placeholder="Artist, album, ID, or folder"/></label><label>Status <select name="status"><option value="">All</option><option value="IMPORTED" selected?={ page.Status == "IMPORTED" }>Imported</option><option value="PREPARED" selected?={ page.Status == "PREPARED" }>Prepared</option><option value="IMPORTING" selected?={ page.Status == "IMPORTING" }>Importing</option><option value="REVIEW_REQUIRED" selected?={ page.Status == "REVIEW_REQUIRED" }>Review required</option></select></label><button type="submit">Filter</button></form>
+		<form id="batch-check" method="post" action="/unmanaged/check"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><div class="actions batch-actions"><button class="primary" type="submit">Check selected on this page</button></div></form>
 		<div class="table-wrap"><table><caption>Albums available for manual catalog checks</caption><thead><tr><th scope="col">Select</th><th scope="col">Album artist</th><th scope="col">Album</th><th scope="col">Year</th><th scope="col">State</th><th scope="col">Updated</th><th scope="col">Action</th></tr></thead><tbody>
 			for _, item := range page.Items {
-				<tr><td><input form="batch-check" type="checkbox" name="release_id" value={ item.CandidateID } aria-label={ "Select " + item.Album }/></td><td>{ item.AlbumArtist }</td><td>{ item.Album }</td><td>{ item.Year }</td><td><span class={ "status " + StateClass(item.State) }>{ item.State }</span></td><td><time>{ FormatTime(item.UpdatedAt) }</time></td><td><form method="post" action="/unmanaged/check"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="release_id" value={ item.CandidateID }/><button type="submit">Check now</button></form></td></tr>
+				<tr><td><input form="batch-check" type="checkbox" name="release_id" value={ item.CandidateID } aria-label={ "Select " + item.Album }/><input form="batch-check" type="hidden" name={ "state_revision_" + item.CandidateID } value={ fmt.Sprint(item.Revision) }/></td><td>{ item.AlbumArtist }</td><td>{ item.Album }</td><td>{ item.Year }</td><td><span class={ "status " + StateClass(item.State) }>{ item.State }</span></td><td><time>{ FormatTime(item.UpdatedAt) }</time></td><td><form method="post" action="/unmanaged/check"><input type="hidden" name="_csrf" value={ page.Shell.CSRFToken }/><input type="hidden" name="release_id" value={ item.CandidateID }/><input type="hidden" name={ "state_revision_" + item.CandidateID } value={ fmt.Sprint(item.Revision) }/><button type="submit">Check now</button></form></td></tr>
 			}
 		</tbody></table></div>
 		if len(page.Items) == 0 {
 			<p class="empty">No unmanaged albums match this filter.</p>
+		}
+		if page.Next != "" {
+			<p><a href={ templ.SafeURL("/unmanaged?q=" + url.QueryEscape(page.Query) + "&status=" + url.QueryEscape(page.Status) + "&cursor=" + url.QueryEscape(page.Next)) }>Next page</a></p>
 		}
 	</section>
 }

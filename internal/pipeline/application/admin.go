@@ -92,6 +92,11 @@ type UnmanagedSummary struct {
 	UpdatedAt   time.Time
 }
 
+type UnmanagedPage struct {
+	Items []UnmanagedSummary
+	Next  string
+}
+
 type MigrationItemSummary struct {
 	ID, ReleaseID, AlbumArtist, Album, State, CandidateMBID, Error string
 	Revision                                                       uint64
@@ -104,7 +109,7 @@ type MigrationBatchDetail struct {
 }
 
 type MigrationAdminReader interface {
-	UnmanagedSummaries(context.Context, UnmanagedFilter) ([]UnmanagedSummary, error)
+	UnmanagedSummaries(context.Context, UnmanagedFilter, int, string) ([]UnmanagedSummary, string, error)
 	MigrationBatchDetail(context.Context, string) (MigrationBatchDetail, error)
 }
 

@@ -3,8 +3,10 @@ package pipeline_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,83 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/pipeline/persistence"
 )
+
+func TestUnmanagedSummariesUseStableCursorAndIndexedSearch(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	ctx := context.Background()
+	for index := 0; index < 120; index++ {
+		candidateID := fmt.Sprintf("cursor-%03d", index)
+		pathBase := fmt.Sprintf("Album %03d", index)
+		if index == 18 {
+			pathBase = "Folder Needle"
+		}
+		candidate, err := domain.CreateCandidate(domain.NewCandidate{ID: candidateID, Source: domain.SourceManual, ReleaseDirectory: filepath.Join(t.TempDir(), "Artist", pathBase), ConfigSnapshotID: "config-1", AcquisitionEvidenceID: "manual:" + candidateID, Now: now})
+		if err != nil || repository.CreateCandidate(ctx, candidate) != nil {
+			t.Fatalf("candidate %s: %v", candidateID, err)
+		}
+		artist := "Shared Artist"
+		if index == 17 {
+			artist = "Needle Artist"
+		}
+		release := integrationMigrationRelease(candidateID, artist, fmt.Sprintf("Album %03d", index), candidate.ReleaseDirectory, "fingerprint-"+candidateID, now)
+		if err := repository.PutUnmanagedRelease(ctx, release, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`UPDATE unmanaged_releases SET status='PREPARED' WHERE candidate_id='cursor-119'`); err != nil {
+		t.Fatal(err)
+	}
+
+	first, next, err := repository.UnmanagedSummaries(ctx, application.UnmanagedFilter{}, 50, "")
+	if err != nil || len(first) != 50 || next == "" {
+		t.Fatalf("first page len=%d next=%q err=%v", len(first), next, err)
+	}
+	second, next2, err := repository.UnmanagedSummaries(ctx, application.UnmanagedFilter{}, 50, next)
+	if err != nil || len(second) != 50 || next2 == "" {
+		t.Fatalf("second page len=%d next=%q err=%v", len(second), next2, err)
+	}
+	seen := make(map[string]bool, 100)
+	for _, item := range append(first, second...) {
+		if seen[item.CandidateID] {
+			t.Fatalf("duplicate candidate across cursors: %s", item.CandidateID)
+		}
+		seen[item.CandidateID] = true
+	}
+
+	for name, filter := range map[string]application.UnmanagedFilter{
+		"artist": {Query: "needle"},
+		"album":  {Query: "album 017"},
+		"path":   {Query: "folder needle"},
+		"status": {Status: "PREPARED"},
+	} {
+		items, _, err := repository.UnmanagedSummaries(ctx, filter, 50, "")
+		if err != nil || len(items) != 1 || items[0].CandidateID != map[string]string{"artist": "cursor-017", "album": "cursor-017", "path": "cursor-018", "status": "cursor-119"}[name] {
+			t.Fatalf("%s search items=%+v err=%v", name, items, err)
+		}
+	}
+	if _, _, err := repository.UnmanagedSummaries(ctx, application.UnmanagedFilter{Query: "x"}, 50, ""); err == nil {
+		t.Fatal("one-character unmanaged search was accepted")
+	}
+
+	rows, err := db.Query(`EXPLAIN QUERY PLAN SELECT candidate_id FROM unmanaged_releases WHERE NOT EXISTS(SELECT 1 FROM migration_items mi WHERE mi.unmanaged_candidate_id=unmanaged_releases.candidate_id AND mi.state='MIGRATED') AND status=? ORDER BY updated_at DESC,candidate_id DESC LIMIT ?`, "IMPORTED", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan strings.Builder
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan.WriteString(detail)
+	}
+	if !strings.Contains(plan.String(), "unmanaged_status_updated") {
+		t.Fatalf("status page query plan does not use unmanaged_status_updated: %s", plan.String())
+	}
+}
 
 func TestMigrationFailureBeforeManualImportRestoresExactUnmanagedManifest(t *testing.T) {
 	scenario := newMigrationScenario(t, migrationImportModePrepareFailure)
@@ -110,7 +189,7 @@ func newMigrationScenario(t *testing.T, mode migrationImportMode) integrationMig
 	}
 	identity := exactMigrationIdentity{}
 	checks := application.MigrationCheckService{Store: repository, Identity: identity, Now: func() time.Time { return now }}
-	_, items, err := checks.CreateBatch(context.Background(), application.Selection{ReleaseIDs: []string{candidateID}}, "admin-1")
+	_, items, err := checks.CreateBatch(context.Background(), application.Selection{ReleaseIDs: []string{candidateID}, Revisions: migrationRevisions(candidateID)}, "admin-1")
 	if err != nil {
 		t.Fatal(err)
 	}

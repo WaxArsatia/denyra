@@ -18,9 +18,10 @@ type UnmanagedFilter struct {
 }
 
 type Selection struct {
-	ReleaseIDs []string        `json:"release_ids,omitempty"`
-	SelectAll  bool            `json:"select_all,omitempty"`
-	Filter     UnmanagedFilter `json:"filter,omitempty"`
+	ReleaseIDs []string          `json:"release_ids,omitempty"`
+	Revisions  map[string]uint64 `json:"state_revisions,omitempty"`
+	SelectAll  bool              `json:"select_all,omitempty"`
+	Filter     UnmanagedFilter   `json:"filter,omitempty"`
 }
 
 type MigrationIdentity interface {
@@ -28,7 +29,6 @@ type MigrationIdentity interface {
 }
 
 type MigrationCheckStore interface {
-	SelectUnmanaged(context.Context, UnmanagedFilter) ([]string, error)
 	PutMigrationBatch(context.Context, domain.MigrationBatch, []domain.MigrationItem) error
 	MigrationItem(context.Context, string) (domain.MigrationItem, error)
 	UnmanagedRelease(context.Context, string) (domain.UnmanagedRelease, error)
@@ -48,16 +48,14 @@ func (s MigrationCheckService) ResolveSelection(ctx context.Context, selection S
 	if selection.SelectAll && len(selection.ReleaseIDs) > 0 {
 		return nil, fmt.Errorf("select all and explicit release IDs are mutually exclusive")
 	}
-	var releaseIDs []string
 	if selection.SelectAll {
-		var err error
-		releaseIDs, err = s.Store.SelectUnmanaged(ctx, selection.Filter)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		releaseIDs = append([]string(nil), selection.ReleaseIDs...)
+		return nil, fmt.Errorf("select all is not supported; select at most 100 releases from the current page")
 	}
+	if len(selection.ReleaseIDs) > 100 {
+		return nil, fmt.Errorf("migration selection exceeds 100 releases")
+	}
+	var releaseIDs []string
+	releaseIDs = append([]string(nil), selection.ReleaseIDs...)
 	seen := make(map[string]bool, len(releaseIDs))
 	resolved := make([]string, 0, len(releaseIDs))
 	for _, releaseID := range releaseIDs {
@@ -65,6 +63,17 @@ func (s MigrationCheckService) ResolveSelection(ctx context.Context, selection S
 			return nil, err
 		}
 		if !seen[releaseID] {
+			expected, found := selection.Revisions[releaseID]
+			if !found {
+				return nil, fmt.Errorf("migration selection revision is required for %s", releaseID)
+			}
+			release, err := s.Store.UnmanagedRelease(ctx, releaseID)
+			if err != nil {
+				return nil, err
+			}
+			if release.StateRevision != expected {
+				return nil, fmt.Errorf("migration selection revision changed for %s", releaseID)
+			}
 			seen[releaseID] = true
 			resolved = append(resolved, releaseID)
 		}

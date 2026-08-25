@@ -54,11 +54,10 @@ func TestMigrationCheckBatchPersistsMixedOutcomesWithoutTouchingUnmanagedFiles(t
 	}
 
 	service := application.MigrationCheckService{Store: repository, Identity: integrationMigrationIdentity{}, Now: func() time.Time { return now }}
-	selected, err := service.ResolveSelection(context.Background(), application.Selection{SelectAll: true, Filter: application.UnmanagedFilter{Query: "Kaleb", Status: "IMPORTED"}})
-	if err != nil || !slices.Equal(selected, []string{"release-1", "release-3"}) {
-		t.Fatalf("filter selection=%v err=%v", selected, err)
+	if _, err := service.ResolveSelection(context.Background(), application.Selection{SelectAll: true}); err == nil {
+		t.Fatal("select-all was accepted")
 	}
-	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids}, "admin-1")
+	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids, Revisions: migrationRevisions(ids...)}, "admin-1")
 	if err != nil || len(items) != 4 {
 		t.Fatalf("batch=%+v items=%d err=%v", batch, len(items), err)
 	}
@@ -96,6 +95,14 @@ func TestMigrationCheckBatchPersistsMixedOutcomesWithoutTouchingUnmanagedFiles(t
 			t.Fatalf("read-only check changed %s: before=%v after=%v err=%v", id, before[id], [2]string{tree.Fingerprint, hash}, err)
 		}
 	}
+}
+
+func migrationRevisions(ids ...string) map[string]uint64 {
+	result := make(map[string]uint64, len(ids))
+	for _, id := range ids {
+		result[id] = 0
+	}
+	return result
 }
 
 type integrationMigrationIdentity struct{}

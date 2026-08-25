@@ -5,38 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 	"github.com/waxarsatia/denyra/internal/platform/ids"
 	denysqlite "github.com/waxarsatia/denyra/internal/platform/sqlite"
 )
-
-func (r *Repositories) SelectUnmanaged(ctx context.Context, filter application.UnmanagedFilter) ([]string, error) {
-	status := strings.ToUpper(strings.TrimSpace(filter.Status))
-	query := strings.ToLower(strings.TrimSpace(filter.Query))
-	like := "%" + query + "%"
-	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id FROM unmanaged_releases
-WHERE (?='' OR status=?) AND NOT EXISTS(SELECT 1 FROM migration_items mi WHERE mi.unmanaged_candidate_id=unmanaged_releases.candidate_id AND mi.state='MIGRATED') AND (?='' OR lower(candidate_id) LIKE ? OR lower(COALESCE(final_path,'')) LIKE ?
-OR lower(COALESCE(json_extract(approved_plan_json,'$.metadata.album_artist'),'')) LIKE ?
-OR lower(COALESCE(json_extract(approved_plan_json,'$.metadata.album'),'')) LIKE ?)
-ORDER BY candidate_id`, status, status, query, like, like, like, like)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []string
-	for rows.Next() {
-		var candidateID string
-		if err := rows.Scan(&candidateID); err != nil {
-			return nil, err
-		}
-		result = append(result, candidateID)
-	}
-	return result, rows.Err()
-}
 
 func (r *Repositories) PutMigrationBatch(ctx context.Context, batch domain.MigrationBatch, items []domain.MigrationItem) error {
 	if batch.ID == "" || batch.IdempotencyKey == "" || batch.Actor == "" || len(items) == 0 {

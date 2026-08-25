@@ -131,7 +131,7 @@ func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *
 		}
 	}
 	checks := application.MigrationCheckService{Store: repository, Identity: integrationMigrationIdentity{}, Now: func() time.Time { return now }}
-	batch, items, err := checks.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids}, "admin-1")
+	batch, items, err := checks.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids, Revisions: migrationRevisions(ids...)}, "admin-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,10 +174,10 @@ func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *
 	pageRequest.AddCookie(csrf)
 	page := httptest.NewRecorder()
 	handler.ServeHTTP(page, pageRequest)
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "ui-exact") || strings.Contains(page.Body.String(), "approved_release_mbid") {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "ui-exact") || !strings.Contains(page.Body.String(), "Starts with") || !strings.Contains(page.Body.String(), "state_revision_ui-exact") || strings.Contains(page.Body.String(), "Select all filtered") || strings.Contains(page.Body.String(), "approved_release_mbid") {
 		t.Fatalf("unmanaged page=%d %s", page.Code, page.Body.String())
 	}
-	checkForm := url.Values{"release_id": {"ui-exact"}, "q": {"Kaleb"}, "status": {"IMPORTED"}}
+	checkForm := url.Values{"release_id": {"ui-exact"}, "state_revision_ui-exact": {"0"}}
 	missingCSRF := httptest.NewRequest(http.MethodPost, "/unmanaged/check", strings.NewReader(checkForm.Encode()))
 	missingCSRF.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	missingCSRF.AddCookie(session)

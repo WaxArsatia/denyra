@@ -115,7 +115,7 @@ func TestMigrationPersistenceKeepsManualAuditAndRejectsStaleOrMutableEvidence(t 
 		t.Fatal(err)
 	}
 	service := application.MigrationCheckService{Store: repository, Identity: integrationMigrationIdentity{}, Now: func() time.Time { return now }}
-	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: []string{candidate.ID}}, "admin-1")
+	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: []string{candidate.ID}, Revisions: migrationRevisions(candidate.ID)}, "admin-1")
 	if err != nil {
 		t.Fatal(err)
 	}

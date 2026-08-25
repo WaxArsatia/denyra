@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
@@ -18,8 +20,18 @@ func (r *Repositories) PutUnmanagedRelease(ctx context.Context, release domain.U
 	if err != nil {
 		return err
 	}
-	result, err := r.DB.ExecContext(ctx, `INSERT INTO unmanaged_releases(candidate_id,approved_plan_json,evidence_json,state,state_revision,final_path,manifest_json,fingerprint,status,created_at,updated_at)
-		VALUES(?,?,?,?,?,NULLIF(?,''),?,NULLIF(?,''),?,?,?) ON CONFLICT(candidate_id) DO NOTHING`, release.CandidateID, plan, evidence, release.State, release.StateRevision, release.FinalPath, manifest, release.Fingerprint, release.Status, formatTime(at), formatTime(at))
+	year := strings.TrimSpace(release.Plan.Metadata.Date)
+	if len(year) > 4 {
+		year = year[:4]
+	}
+	albumArtist := strings.TrimSpace(release.Plan.Metadata.AlbumArtist)
+	albumTitle := strings.TrimSpace(release.Plan.Metadata.Album)
+	pathBase := ""
+	if release.FinalPath != "" {
+		pathBase = filepath.Base(filepath.Clean(release.FinalPath))
+	}
+	result, err := r.DB.ExecContext(ctx, `INSERT INTO unmanaged_releases(candidate_id,approved_plan_json,evidence_json,state,state_revision,final_path,manifest_json,fingerprint,status,created_at,updated_at,album_artist,album_title,release_year,album_artist_normalized,album_title_normalized,path_basename_normalized)
+		VALUES(?,?,?,?,?,NULLIF(?,''),?,NULLIF(?,''),?,?,?,?,?,?,?,?,?) ON CONFLICT(candidate_id) DO NOTHING`, release.CandidateID, plan, evidence, release.State, release.StateRevision, release.FinalPath, manifest, release.Fingerprint, release.Status, formatTime(at), formatTime(at), albumArtist, albumTitle, year, strings.ToLower(albumArtist), strings.ToLower(albumTitle), strings.ToLower(strings.TrimSpace(pathBase)))
 	if err != nil {
 		return fmt.Errorf("persist unmanaged release: %w", err)
 	}

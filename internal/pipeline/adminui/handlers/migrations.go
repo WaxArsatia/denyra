@@ -16,8 +16,8 @@ func (c Console) unmanaged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := application.UnmanagedFilter{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status")}
-	items, err := c.dependencies.MigrationReader.UnmanagedSummaries(r.Context(), filter)
-	page := views.UnmanagedPage{Shell: c.shell(r), Items: items, Query: filter.Query, Status: filter.Status}
+	items, next, err := c.dependencies.MigrationReader.UnmanagedSummaries(r.Context(), filter, 50, r.URL.Query().Get("cursor"))
+	page := views.UnmanagedPage{Shell: c.shell(r), Items: items, Query: filter.Query, Status: filter.Status, Next: next}
 	if err != nil {
 		page.Error = "Unable to load unmanaged releases."
 	}
@@ -30,8 +30,15 @@ func (c Console) checkUnmanaged(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid check form", http.StatusBadRequest)
 		return
 	}
-	selection := application.Selection{ReleaseIDs: r.Form["release_id"], Filter: application.UnmanagedFilter{Query: r.Form.Get("q"), Status: r.Form.Get("status")}}
-	selection.SelectAll = r.Form.Get("select_all") == "filtered"
+	selection := application.Selection{ReleaseIDs: r.Form["release_id"], Revisions: make(map[string]uint64)}
+	for _, id := range selection.ReleaseIDs {
+		revision, err := strconv.ParseUint(r.Form.Get("state_revision_"+id), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid unmanaged release revision", http.StatusBadRequest)
+			return
+		}
+		selection.Revisions[id] = revision
+	}
 	batch, _, err := c.dependencies.MigrationChecks.CreateBatch(r.Context(), selection, principal.UserID)
 	if err != nil {
 		http.Error(w, "catalog check could not be created", http.StatusBadRequest)

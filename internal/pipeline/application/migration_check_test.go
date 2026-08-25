@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"testing"
@@ -12,18 +13,22 @@ import (
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
-func TestMigrationCheckResolvesFilterAwareSelectionAndCreatesOnlyExplicitBatch(t *testing.T) {
+func TestMigrationCheckRequiresBoundedRevisionCheckedSelection(t *testing.T) {
 	store := newMigrationCheckStore()
-	store.selected = []string{"release-3", "release-1"}
+	store.releases["release-1"] = migrationRelease("release-1")
+	store.releases["release-3"] = migrationRelease("release-3")
 	service := application.MigrationCheckService{Store: store, Identity: migrationIdentity{}, Now: fixedMigrationTime}
-	ids, err := service.ResolveSelection(context.Background(), application.Selection{SelectAll: true, Filter: application.UnmanagedFilter{Query: "Kaleb", Status: "IMPORTED"}})
+	if _, err := service.ResolveSelection(context.Background(), application.Selection{SelectAll: true}); err == nil {
+		t.Fatal("select-all was accepted")
+	}
+	ids, err := service.ResolveSelection(context.Background(), application.Selection{ReleaseIDs: []string{"release-3", "release-1"}, Revisions: revisionMap("release-1", "release-3")})
 	if err != nil || !slices.Equal(ids, []string{"release-1", "release-3"}) {
 		t.Fatalf("ids=%v err=%v", ids, err)
 	}
-	if store.filter.Query != "Kaleb" || store.filter.Status != "IMPORTED" || len(store.batches) != 0 {
-		t.Fatalf("selection changed state or lost filter: filter=%+v batches=%d", store.filter, len(store.batches))
+	if len(store.batches) != 0 {
+		t.Fatalf("selection changed state: batches=%d", len(store.batches))
 	}
-	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids}, "admin-1")
+	batch, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids, Revisions: revisionMap(ids...)}, "admin-1")
 	if err != nil || batch.ID == "" || len(items) != 2 || len(store.batches) != 1 {
 		t.Fatalf("batch=%+v items=%+v err=%v", batch, items, err)
 	}
@@ -34,6 +39,27 @@ func TestMigrationCheckResolvesFilterAwareSelectionAndCreatesOnlyExplicitBatch(t
 	}
 }
 
+func TestMigrationCheckRejectsOversizedOrStaleSelection(t *testing.T) {
+	store := newMigrationCheckStore()
+	service := application.MigrationCheckService{Store: store}
+	ids := make([]string, 101)
+	for index := range ids {
+		ids[index] = fmt.Sprintf("release-%03d", index)
+	}
+	if _, err := service.ResolveSelection(context.Background(), application.Selection{ReleaseIDs: ids}); err == nil {
+		t.Fatal("selection larger than 100 was accepted")
+	}
+	store.releases["release-1"] = migrationRelease("release-1")
+	store.releases["release-1"] = func() domain.UnmanagedRelease {
+		release := store.releases["release-1"]
+		release.StateRevision = 2
+		return release
+	}()
+	if _, err := service.ResolveSelection(context.Background(), application.Selection{ReleaseIDs: []string{"release-1"}, Revisions: map[string]uint64{"release-1": 1}}); err == nil {
+		t.Fatal("stale unmanaged revision was accepted")
+	}
+}
+
 func TestMigrationCheckPersistsIndependentMixedOutcomesAndRetryState(t *testing.T) {
 	store := newMigrationCheckStore()
 	service := application.MigrationCheckService{Store: store, Identity: migrationIdentity{}, Now: fixedMigrationTime}
@@ -41,7 +67,10 @@ func TestMigrationCheckPersistsIndependentMixedOutcomesAndRetryState(t *testing.
 	for _, id := range ids {
 		store.releases[id] = migrationRelease(id)
 	}
-	_, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids}, "admin-1")
+	for _, id := range ids {
+		store.releases[id] = migrationRelease(id)
+	}
+	_, items, err := service.CreateBatch(context.Background(), application.Selection{ReleaseIDs: ids, Revisions: revisionMap(ids...)}, "admin-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,8 +125,6 @@ func (migrationIdentity) Decide(_ context.Context, plan domain.MetadataPlan, _ d
 }
 
 type migrationCheckStore struct {
-	selected []string
-	filter   application.UnmanagedFilter
 	batches  map[string]domain.MigrationBatch
 	items    map[string]domain.MigrationItem
 	releases map[string]domain.UnmanagedRelease
@@ -106,11 +133,6 @@ type migrationCheckStore struct {
 
 func newMigrationCheckStore() *migrationCheckStore {
 	return &migrationCheckStore{batches: map[string]domain.MigrationBatch{}, items: map[string]domain.MigrationItem{}, releases: map[string]domain.UnmanagedRelease{}}
-}
-
-func (s *migrationCheckStore) SelectUnmanaged(_ context.Context, filter application.UnmanagedFilter) ([]string, error) {
-	s.filter = filter
-	return append([]string(nil), s.selected...), nil
 }
 
 func (s *migrationCheckStore) PutMigrationBatch(_ context.Context, batch domain.MigrationBatch, items []domain.MigrationItem) error {
@@ -154,6 +176,14 @@ func migrationRelease(id string) domain.UnmanagedRelease {
 }
 
 func fixedMigrationTime() time.Time { return time.Date(2026, 8, 25, 2, 0, 0, 0, time.UTC) }
+
+func revisionMap(ids ...string) map[string]uint64 {
+	result := make(map[string]uint64, len(ids))
+	for _, id := range ids {
+		result[id] = 0
+	}
+	return result
+}
 
 func sortedMigrationItems(items map[string]domain.MigrationItem) []domain.MigrationItem {
 	result := make([]domain.MigrationItem, 0, len(items))

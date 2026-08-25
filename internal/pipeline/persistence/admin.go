@@ -3,33 +3,115 @@ package persistence
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
-func (r *Repositories) UnmanagedSummaries(ctx context.Context, filter application.UnmanagedFilter) ([]application.UnmanagedSummary, error) {
-	ids, err := r.SelectUnmanaged(ctx, filter)
-	if err != nil || len(ids) == 0 {
-		return nil, err
+func (r *Repositories) UnmanagedSummaries(ctx context.Context, filter application.UnmanagedFilter, limit int, cursor string) ([]application.UnmanagedSummary, string, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
 	}
-	result := make([]application.UnmanagedSummary, 0, len(ids))
-	for _, id := range ids {
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	if query != "" && utf8.RuneCountInString(query) < 2 {
+		return nil, "", fmt.Errorf("unmanaged search requires at least two characters")
+	}
+	status := strings.ToUpper(strings.TrimSpace(filter.Status))
+	cursorUpdated, cursorID, err := decodeUnmanagedCursor(cursor)
+	if err != nil {
+		return nil, "", err
+	}
+	prefix := escapeLikePrefix(query) + "%"
+	where := []string{"NOT EXISTS(SELECT 1 FROM migration_items mi WHERE mi.unmanaged_candidate_id=unmanaged_releases.candidate_id AND mi.state='MIGRATED')"}
+	arguments := make([]any, 0, 8)
+	if status != "" {
+		where = append(where, "status=?")
+		arguments = append(arguments, status)
+	}
+	if query != "" {
+		where = append(where, `(candidate_id LIKE ? ESCAPE '\' OR album_artist_normalized LIKE ? ESCAPE '\' OR album_title_normalized LIKE ? ESCAPE '\' OR path_basename_normalized LIKE ? ESCAPE '\')`)
+		arguments = append(arguments, prefix, prefix, prefix, prefix)
+	}
+	if cursorUpdated != "" {
+		where = append(where, "(updated_at<? OR (updated_at=? AND candidate_id<?))")
+		arguments = append(arguments, cursorUpdated, cursorUpdated, cursorID)
+	}
+	arguments = append(arguments, limit+1)
+	statement := `SELECT candidate_id,album_artist,album_title,release_year,status,state_revision,updated_at FROM unmanaged_releases WHERE ` + strings.Join(where, " AND ") + ` ORDER BY updated_at DESC,candidate_id DESC LIMIT ?`
+	rows, err := r.DB.QueryContext(ctx, statement, arguments...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+	result := make([]application.UnmanagedSummary, 0, limit+1)
+	for rows.Next() {
 		var item application.UnmanagedSummary
 		var updated string
-		err := r.DB.QueryRowContext(ctx, `SELECT candidate_id,COALESCE(json_extract(approved_plan_json,'$.metadata.album_artist'),''),COALESCE(json_extract(approved_plan_json,'$.metadata.album'),''),substr(COALESCE(json_extract(approved_plan_json,'$.metadata.date'),''),1,4),status,state_revision,updated_at FROM unmanaged_releases WHERE candidate_id=?`, id).
-			Scan(&item.CandidateID, &item.AlbumArtist, &item.Album, &item.Year, &item.State, &item.Revision, &updated)
-		if err != nil {
-			return nil, err
+		if err := rows.Scan(&item.CandidateID, &item.AlbumArtist, &item.Album, &item.Year, &item.State, &item.Revision, &updated); err != nil {
+			return nil, "", err
 		}
 		item.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		result = append(result, item)
 	}
-	return result, nil
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	next := ""
+	if len(result) > limit {
+		result = result[:limit]
+		last := result[len(result)-1]
+		next, err = encodeUnmanagedCursor(last.UpdatedAt, last.CandidateID)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+	return result, next, nil
+}
+
+type unmanagedCursor struct {
+	Updated string `json:"u"`
+	ID      string `json:"i"`
+}
+
+func encodeUnmanagedCursor(updated time.Time, id string) (string, error) {
+	payload, err := json.Marshal(unmanagedCursor{Updated: formatTime(updated), ID: id})
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(payload), nil
+}
+
+func decodeUnmanagedCursor(cursor string) (string, string, error) {
+	if cursor == "" {
+		return "", "", nil
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid unmanaged cursor")
+	}
+	var decoded unmanagedCursor
+	if err := json.Unmarshal(payload, &decoded); err != nil || decoded.Updated == "" || decoded.ID == "" {
+		return "", "", fmt.Errorf("invalid unmanaged cursor")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, decoded.Updated); err != nil {
+		return "", "", fmt.Errorf("invalid unmanaged cursor")
+	}
+	return decoded.Updated, decoded.ID, nil
+}
+
+func escapeLikePrefix(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `%`, `\%`)
+	return strings.ReplaceAll(value, `_`, `\_`)
 }
 
 func (r *Repositories) MigrationBatchDetail(ctx context.Context, batchID string) (application.MigrationBatchDetail, error) {
