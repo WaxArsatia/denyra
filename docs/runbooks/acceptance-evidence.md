@@ -44,7 +44,9 @@ The forward-only release at commit `e4f1ce7` was accepted on the production host
 
 Cleanup permanently removed only `/srv/denyra/updates`, `/srv/denyra/data/backups`, and `/srv/denyra/secrets/restic_password`. Eleven unreferenced historical Denyra images and the unreferenced legacy Restic image were removed after checking every container image ID. No global Docker prune was used. The active library, state, unresolved downloads, processing work, quarantine evidence, and images used by other Compose projects were preserved.
 
-Two acceptance exceptions remain visible rather than being hidden:
+Two exceptions were recorded during the initial acceptance:
 
 - a second acquisition request can enter `ARBITRATING` or `PRIMARY_ACTIVE` after the first request hands off but before its import is reconciled; the winner lock still prevents two candidates from being imported, but pre-import request coalescing needs a separate correction
 - exact browser acceptance was not completed because the requested Chrome DevTools session was unavailable; the authenticated admin acceptance above is server-side evidence and must not be treated as visual browser evidence
+
+The acquisition exception was resolved in production at commit `31dadd9`. A durable Wanted-cycle lock now coalesces the Lidarr album and MusicBrainz release-group identity through `HANDED_OFF`, closes only after a complete paginated Wanted/Missing snapshot no longer contains the target, and permits a later genuinely new missing cycle. Deployment reconciliation cancelled two legacy active duplicates. One legacy duplicate reached an idempotent imported handoff during the preceding cutover, without changing the verified 39-file library layout. No active duplicate keys remained afterward. Exact Chrome visual acceptance was removed from the required acceptance scope by operator decision.
