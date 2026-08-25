@@ -134,6 +134,9 @@ func TestImageCleanupRemovesOnlyUnreferencedDenyraImages(t *testing.T) {
 		t.Fatalf("update: %v\n%s", err, out)
 	}
 	log := f.log()
+	if !strings.Contains(log, "image ls --no-trunc --filter label=io.denyra.project=denyra --quiet") {
+		t.Fatalf("image cleanup did not request canonical image IDs:\n%s", log)
+	}
 	if !strings.Contains(log, "image rm sha256:old-denyra") {
 		t.Fatalf("unreferenced Denyra image retained:\n%s", log)
 	}
@@ -219,7 +222,7 @@ case "$*" in
     ;;
   *" exec -T acquisition-gateway "*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != smoke ] ;;
   *" exec -T "*) exit 0 ;;
-  "image ls --filter label=io.denyra.project=denyra --quiet")
+  "image ls --no-trunc --filter label=io.denyra.project=denyra --quiet")
     [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = image-cleanup ] && printf 'sha256:old-denyra\nsha256:running-denyra\n'
     ;;
   "ps --quiet") [ "${DENYRA_TEST_UPDATE_FAILURE:-}" = image-cleanup ] && printf 'running-container\n' ;;

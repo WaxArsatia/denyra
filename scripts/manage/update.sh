@@ -53,7 +53,7 @@ denyra_cleanup_images() {
     denyra_cleanup_image=$(docker inspect --format '{{.Image}}' "$denyra_cleanup_container" 2>/dev/null) || continue
     denyra_cleanup_running="$denyra_cleanup_running $denyra_cleanup_image "
   done
-  for denyra_cleanup_image in $(docker image ls --filter label=io.denyra.project=denyra --quiet 2>/dev/null); do
+  for denyra_cleanup_image in $(docker image ls --no-trunc --filter label=io.denyra.project=denyra --quiet 2>/dev/null); do
     case "$denyra_cleanup_running" in
       *" $denyra_cleanup_image "*) continue ;;
     esac
