@@ -11,9 +11,9 @@ import (
 const replacement = "[REDACTED]"
 
 var textSecrets = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+`),
-	regexp.MustCompile(`(?i)((?:password|token|session|csrf|api[_-]?key)\s*[=:]\s*)[^\s,;]+`),
-	regexp.MustCompile(`(?i)([?&](?:access_token|api_key|key|secret)=)[^&\s]+`),
+	regexp.MustCompile(`(?i)(authorization\s*:\s*(?:bearer|basic)\s+)(?:"[^"]*"|'[^']*'|[^\s,;&]+)`),
+	regexp.MustCompile(`(?i)((?:"?(?:password|token|session|csrf|api[_-]?key)"?)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&]+)`),
+	regexp.MustCompile(`(?i)([?&](?:access_token|api_key|key|secret|token|password)=)[^&\s]+`),
 }
 
 func Redact(value any, additionalKeys []string) any {

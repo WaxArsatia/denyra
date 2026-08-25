@@ -18,9 +18,15 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
+	"github.com/waxarsatia/denyra/internal/platform/logsafe"
 )
+
+const maxExecutionEvidenceBytes = 64 << 10
+
+const truncatedEvidenceMarker = "\n[TRUNCATED]"
 
 type LocatorResolver interface {
 	Resolve(context.Context, string, string) (string, error)
@@ -103,7 +109,8 @@ func (runner Runner) validateRequest(request RunRequest) error {
 	return nil
 }
 
-func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputURL, provider string) ProviderExecution {
+func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputURL, provider string) (sanitized ProviderExecution) {
+	defer func() { sanitized = sanitizeExecution(sanitized, runner.evidenceLimit()) }()
 	started := runner.now()
 	args := []string{
 		inputURL,
@@ -173,8 +180,8 @@ func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputU
 func (runner Runner) completedExecution(execution ProviderExecution, stdout, stderr *cappedBuffer, command *exec.Cmd, waitErr error, established bool, outputDirectory, jobID string) ProviderExecution {
 	completed := runner.now()
 	execution.CompletedAt = &completed
-	execution.Stdout = stdout.String()
-	execution.Stderr = stderr.String()
+	execution.Stdout = bufferEvidence(stdout)
+	execution.Stderr = bufferEvidence(stderr)
 	if command.ProcessState != nil {
 		execution.ExitCode = command.ProcessState.ExitCode()
 		execution.Signal = processSignal(command.ProcessState)
@@ -221,8 +228,8 @@ func (runner Runner) completedExecution(execution ProviderExecution, stdout, std
 func (runner Runner) failedExecution(execution ProviderExecution, stdout, stderr *cappedBuffer, class string, err error) ProviderExecution {
 	completed := runner.now()
 	execution.CompletedAt = &completed
-	execution.Stdout = stdout.String()
-	execution.Stderr = stderr.String()
+	execution.Stdout = bufferEvidence(stdout)
+	execution.Stderr = bufferEvidence(stderr)
 	execution.Outcome = domain.OutcomeRetryableError
 	execution.ErrorClass = class
 	execution.ErrorMessage = err.Error()
@@ -269,6 +276,53 @@ func (runner Runner) retryableResult(request RunRequest, class string, err error
 	}
 	result.Providers = []ProviderExecution{{Provider: provider, Outcome: domain.OutcomeRetryableError, StartedAt: now, CompletedAt: &now, ExitCode: -1, ErrorClass: class, ErrorMessage: err.Error()}}
 	return result
+}
+
+func sanitizeExecution(execution ProviderExecution, limit int) ProviderExecution {
+	for index := range execution.Command {
+		execution.Command[index] = boundedRedactedText(execution.Command[index], limit)
+	}
+	execution.ErrorMessage = boundedRedactedText(execution.ErrorMessage, limit)
+	execution.Stdout = boundedRedactedText(execution.Stdout, limit)
+	execution.Stderr = boundedRedactedText(execution.Stderr, limit)
+	for index := range execution.Output {
+		execution.Output[index].Path = boundedRedactedText(execution.Output[index].Path, limit)
+	}
+	return execution
+}
+
+func boundedRedactedText(value string, limit int) string {
+	value = logsafe.RedactText(value)
+	if limit <= 0 || limit > maxExecutionEvidenceBytes {
+		limit = maxExecutionEvidenceBytes
+	}
+	if len(value) <= limit {
+		return value
+	}
+	if limit <= len(truncatedEvidenceMarker) {
+		return truncatedEvidenceMarker[:limit]
+	}
+	contentLimit := limit - len(truncatedEvidenceMarker)
+	value = value[:contentLimit]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value + truncatedEvidenceMarker
+}
+
+func (runner Runner) evidenceLimit() int {
+	if runner.OutputLimit <= 0 || runner.OutputLimit > maxExecutionEvidenceBytes {
+		return maxExecutionEvidenceBytes
+	}
+	return int(runner.OutputLimit)
+}
+
+func bufferEvidence(buffer *cappedBuffer) string {
+	value := buffer.String()
+	if buffer.Truncated() {
+		value += truncatedEvidenceMarker
+	}
+	return value
 }
 
 func (runner Runner) noLocatorResult(request RunRequest) RunResult {

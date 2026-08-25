@@ -49,7 +49,7 @@ func Defaults() Config {
 			ProcessPollInterval:   Duration(250 * time.Millisecond),
 			ProcessTerminateGrace: Duration(5 * time.Second),
 			LeaseDuration:         Duration(15 * time.Minute),
-			ProcessOutputLimit:    4 << 20,
+			ProcessOutputLimit:    64 << 10,
 			MaxInlineTransitions:  8,
 			NoCandidateRetry:      Duration(24 * time.Hour),
 			PrimaryRetry:          []Duration{Duration(time.Minute), Duration(5 * time.Minute), Duration(15 * time.Minute), Duration(time.Hour), Duration(6 * time.Hour)},

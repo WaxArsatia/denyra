@@ -63,7 +63,7 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	if cfg.Acquisition.LidarrPageSize != 100 {
 		t.Fatalf("unexpected Lidarr page size: %d", cfg.Acquisition.LidarrPageSize)
 	}
-	if cfg.Acquisition.ProcessOutputLimit != 4<<20 {
+	if cfg.Acquisition.ProcessOutputLimit != 64<<10 {
 		t.Fatalf("unexpected process output limit: %d", cfg.Acquisition.ProcessOutputLimit)
 	}
 	if cfg.Acquisition.MaxInlineTransitions != 8 {
@@ -162,6 +162,7 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"replay attempts":    {toml: "[http]\ninternal_replay_attempts = 0\n"},
 		"page size":          {toml: "[acquisition]\nlidarr_page_size = 0\n"},
 		"process output":     {toml: "[acquisition]\nprocess_output_limit = 0\n"},
+		"process output max": {toml: "[acquisition]\nprocess_output_limit = 65537\n"},
 		"inline transitions": {toml: "[acquisition]\nmax_inline_transitions = 0\n"},
 		"lease duration":     {toml: "[acquisition]\nlease_duration = \"0s\"\n"},
 		"body limit":         {toml: "[http]\ninternal_body_limit = 0\n"},

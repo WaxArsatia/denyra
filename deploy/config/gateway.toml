@@ -25,6 +25,7 @@ gateway_path = "/data/state/gateway/denyra.db"
 lidarr_page_size = 100
 lease_duration = "15m"
 max_inline_transitions = 8
+process_output_limit = 65536
 
 [secrets.internal_bearer]
 source = "file"

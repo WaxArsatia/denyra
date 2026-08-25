@@ -56,6 +56,7 @@ type RunResult struct {
 func (result RunResult) DomainResults() []domain.ProviderResult {
 	values := make([]domain.ProviderResult, 0, len(result.Providers))
 	for _, provider := range result.Providers {
+		provider = sanitizeExecution(provider, maxExecutionEvidenceBytes)
 		evidence := provider.ErrorMessage
 		if evidence == "" {
 			evidence = string(provider.Outcome)

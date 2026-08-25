@@ -62,6 +62,9 @@ func (c Config) Validate() error {
 	if c.Acquisition.ProcessOutputLimit <= 0 {
 		return fmt.Errorf("acquisition.process_output_limit must be positive")
 	}
+	if c.Acquisition.ProcessOutputLimit > 64<<10 {
+		return fmt.Errorf("acquisition.process_output_limit must not exceed 65536 bytes")
+	}
 	if c.Acquisition.MaxInlineTransitions <= 0 {
 		return fmt.Errorf("acquisition.max_inline_transitions must be positive")
 	}

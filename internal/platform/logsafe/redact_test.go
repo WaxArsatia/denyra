@@ -29,8 +29,10 @@ func TestRedactRecursivelyRemovesSensitiveValues(t *testing.T) {
 
 func TestRedactTextMasksSubprocessCredentials(t *testing.T) {
 	t.Parallel()
-	got := logsafe.RedactText("request failed: Authorization: Bearer abc123 password=hunter2")
-	if strings.Contains(got, "abc123") || strings.Contains(got, "hunter2") {
-		t.Fatalf("RedactText leaked credential: %s", got)
+	got := logsafe.RedactText(`request failed: Authorization: Bearer abc123 password=hunter2 https://example.test/path?token=query-secret&api_key=query-key {"password": "hunter two"}`)
+	for _, secret := range []string{"abc123", "hunter2", "query-secret", "query-key", "hunter two"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("RedactText leaked credential %q: %s", secret, got)
+		}
 	}
 }
