@@ -19,10 +19,7 @@ type releaseSelectionRecord struct {
 }
 
 func (c Client) Wanted(ctx context.Context) ([]WantedAlbum, error) {
-	query := pageQuery(1, 1000)
-	query.Set("sortKey", "id")
-	query.Set("monitored", "true")
-	var payload struct {
+	type wantedPage struct {
 		Records []struct {
 			ID             int64                    `json:"id"`
 			ForeignAlbumID string                   `json:"foreignAlbumId"`
@@ -32,13 +29,24 @@ func (c Client) Wanted(ctx context.Context) ([]WantedAlbum, error) {
 		} `json:"records"`
 		TotalRecords int `json:"totalRecords"`
 	}
-	if err := c.Get(ctx, "/api/v1/wanted/missing", query, &payload); err != nil {
-		return nil, err
-	}
-	result := make([]WantedAlbum, 0, len(payload.Records))
-	for _, record := range payload.Records {
-		if record.Monitored {
-			result = append(result, WantedAlbum{AlbumID: record.ID, ReleaseGroupMBID: record.ForeignAlbumID, SelectedReleaseMBID: selectedReleaseMBID(record.ReleaseID, record.Releases), Monitored: true})
+	result := make([]WantedAlbum, 0)
+	received := 0
+	for page := 1; ; page++ {
+		query := pageQuery(page, 1000)
+		query.Set("sortKey", "id")
+		query.Set("monitored", "true")
+		var payload wantedPage
+		if err := c.Get(ctx, "/api/v1/wanted/missing", query, &payload); err != nil {
+			return nil, err
+		}
+		received += len(payload.Records)
+		for _, record := range payload.Records {
+			if record.Monitored {
+				result = append(result, WantedAlbum{AlbumID: record.ID, ReleaseGroupMBID: record.ForeignAlbumID, SelectedReleaseMBID: selectedReleaseMBID(record.ReleaseID, record.Releases), Monitored: true})
+			}
+		}
+		if len(payload.Records) == 0 || received >= payload.TotalRecords {
+			break
 		}
 	}
 	return result, nil

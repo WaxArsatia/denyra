@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/waxarsatia/denyra/internal/gateway/adapters/lidarr"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
+	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 	"github.com/waxarsatia/denyra/internal/platform/ids"
 	"time"
 )
@@ -14,6 +15,7 @@ type WantedStore interface {
 	FindActiveJob(context.Context, int64, string) (domain.Job, error)
 	CreateJob(context.Context, domain.Job) error
 	ReviseSelectedRelease(context.Context, string, uint64, string, time.Time) error
+	ReconcileWantedCycles(context.Context, []persistence.WantedKey, time.Time) (int, error)
 }
 type WantedDiscovery struct {
 	Lidarr interface {
@@ -33,7 +35,16 @@ func (s WantedDiscovery) Reconcile(ctx context.Context) (int, error) {
 	if s.Now != nil {
 		now = s.Now().UTC()
 	}
-	changed := 0
+	keys := make([]persistence.WantedKey, 0, len(albums))
+	for _, album := range albums {
+		if album.Monitored {
+			keys = append(keys, persistence.WantedKey{AlbumID: album.AlbumID, ReleaseGroupMBID: album.ReleaseGroupMBID})
+		}
+	}
+	changed, err := s.Store.ReconcileWantedCycles(ctx, keys, now)
+	if err != nil {
+		return 0, err
+	}
 	for _, album := range albums {
 		if !album.Monitored {
 			continue
@@ -50,6 +61,9 @@ func (s WantedDiscovery) Reconcile(ctx context.Context) (int, error) {
 			}
 			job.SelectedReleaseMBID = album.SelectedReleaseMBID
 			if err := s.Store.CreateJob(ctx, job); err != nil {
+				if _, concurrentErr := s.Store.FindActiveJob(ctx, album.AlbumID, album.ReleaseGroupMBID); concurrentErr == nil {
+					continue
+				}
 				return changed, err
 			}
 			changed++
@@ -58,7 +72,7 @@ func (s WantedDiscovery) Reconcile(ctx context.Context) (int, error) {
 		if err != nil {
 			return changed, err
 		}
-		if existing.SelectedReleaseMBID != album.SelectedReleaseMBID {
+		if existing.State != domain.StateHandedOff && existing.SelectedReleaseMBID != album.SelectedReleaseMBID {
 			if err := s.Store.ReviseSelectedRelease(ctx, existing.ID, existing.Revision, album.SelectedReleaseMBID, now); err != nil {
 				return changed, err
 			}

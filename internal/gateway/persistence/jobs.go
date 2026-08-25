@@ -11,15 +11,20 @@ import (
 )
 
 func (r *Repositories) CreateJob(ctx context.Context, job domain.Job) error {
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO acquisition_jobs(id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,next_retry_at,created_at,updated_at) VALUES(?,?,?,NULLIF(?,''),?,?,?,NULL,?,?)`, job.ID, job.LidarrAlbumID, job.ReleaseGroupMBID, job.SelectedReleaseMBID, job.ConfigSnapshotID, job.State, job.Revision, formatTime(job.CreatedAt), formatTime(job.UpdatedAt))
-	return err
+	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO acquisition_jobs(id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,next_retry_at,created_at,updated_at) VALUES(?,?,?,NULLIF(?,''),?,?,?,NULL,?,?)`, job.ID, job.LidarrAlbumID, job.ReleaseGroupMBID, job.SelectedReleaseMBID, job.ConfigSnapshotID, job.State, job.Revision, formatTime(job.CreatedAt), formatTime(job.UpdatedAt)); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO acquisition_wanted_cycles(job_id,lidarr_album_id,release_group_mbid,opened_at) VALUES(?,?,?,?)`, job.ID, job.LidarrAlbumID, job.ReleaseGroupMBID, formatTime(job.CreatedAt))
+		return err
+	})
 }
 func (r *Repositories) Job(ctx context.Context, id string) (domain.Job, error) {
 	return jobQuery(ctx, r.DB, id)
 }
 func (r *Repositories) FindActiveJob(ctx context.Context, albumID int64, releaseGroup string) (domain.Job, error) {
 	var id string
-	if err := r.DB.QueryRowContext(ctx, `SELECT id FROM acquisition_jobs WHERE lidarr_album_id=? AND release_group_mbid=? AND state NOT IN ('HANDED_OFF','CANCELLED')`, albumID, releaseGroup).Scan(&id); err != nil {
+	if err := r.DB.QueryRowContext(ctx, `SELECT job_id FROM acquisition_wanted_cycles WHERE lidarr_album_id=? AND release_group_mbid=? AND closed_at IS NULL`, albumID, releaseGroup).Scan(&id); err != nil {
 		return domain.Job{}, err
 	}
 	return r.Job(ctx, id)

@@ -2,7 +2,9 @@ package gateway_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -213,6 +215,135 @@ func TestWantedDiscoveryDeduplicatesAndRevisesSelectedRelease(t *testing.T) {
 	}
 	if transitions != 1 {
 		t.Fatalf("release revision audit transitions = %d", transitions)
+	}
+}
+
+func TestWantedDiscoveryKeepsHandedOffJobUntilWantedCycleCloses(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET state='HANDED_OFF',state_revision=1 WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	wanted := true
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/wanted/missing" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if wanted {
+			fmt.Fprintf(writer, `{"records":[{"id":42,"foreignAlbumId":%q,"releaseId":%q,"monitored":true}],"totalRecords":1}`, releaseGroupMBID, releaseMBID)
+			return
+		}
+		fmt.Fprint(writer, `{"records":[],"totalRecords":0}`)
+	}))
+	defer server.Close()
+	service := application.WantedDiscovery{
+		Lidarr:           lidarr.Client{BaseURL: server.URL, APIKey: "test-key", HTTP: server.Client(), ResponseLimit: 1 << 20},
+		Store:            repositories,
+		ConfigSnapshotID: "config-1",
+		Now:              func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 0 {
+		t.Fatalf("handoff reconcile=%d err=%v", changed, err)
+	}
+	coalesced, err := repositories.FindActiveJob(context.Background(), 42, releaseGroupMBID)
+	if err != nil || coalesced.ID != job.ID || coalesced.State != domain.StateHandedOff {
+		t.Fatalf("coalesced job=%+v err=%v", coalesced, err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM acquisition_jobs`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("jobs after handoff reconcile=%d err=%v", count, err)
+	}
+
+	wanted = false
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 0 {
+		t.Fatalf("cycle close reconcile=%d err=%v", changed, err)
+	}
+	if _, err := repositories.FindActiveJob(context.Background(), 42, releaseGroupMBID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("closed cycle lookup err=%v", err)
+	}
+
+	wanted = true
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 1 {
+		t.Fatalf("new cycle reconcile=%d err=%v", changed, err)
+	}
+	reopened, err := repositories.FindActiveJob(context.Background(), 42, releaseGroupMBID)
+	if err != nil || reopened.ID == job.ID || reopened.State != domain.StateDiscovered {
+		t.Fatalf("reopened job=%+v err=%v", reopened, err)
+	}
+}
+
+func TestWantedDiscoveryCancelsLegacyDuplicateBehindHandedOffJob(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	handedOff := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET state='HANDED_OFF',state_revision=1 WHERE id=?`, handedOff.ID); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := domain.NewJob("job-duplicate", 42, releaseGroupMBID, "config-1", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO acquisition_jobs(id,lidarr_album_id,release_group_mbid,selected_release_mbid,config_snapshot_id,state,state_revision,next_retry_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		duplicate.ID, duplicate.LidarrAlbumID, duplicate.ReleaseGroupMBID, releaseMBID, duplicate.ConfigSnapshotID, duplicate.State, duplicate.Revision, nil, duplicate.CreatedAt.Format(time.RFC3339Nano), duplicate.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(writer, `{"records":[{"id":42,"foreignAlbumId":%q,"releaseId":%q,"monitored":true}],"totalRecords":1}`, releaseGroupMBID, releaseMBID)
+	}))
+	defer server.Close()
+	service := application.WantedDiscovery{
+		Lidarr:           lidarr.Client{BaseURL: server.URL, APIKey: "test-key", HTTP: server.Client(), ResponseLimit: 1 << 20},
+		Store:            repositories,
+		ConfigSnapshotID: "config-1",
+		Now:              func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 1 {
+		t.Fatalf("legacy duplicate reconcile=%d err=%v", changed, err)
+	}
+	coalesced, err := repositories.FindActiveJob(context.Background(), 42, releaseGroupMBID)
+	if err != nil || coalesced.ID != handedOff.ID {
+		t.Fatalf("coalesced job=%+v err=%v", coalesced, err)
+	}
+	storedDuplicate, err := repositories.Job(context.Background(), duplicate.ID)
+	if err != nil || storedDuplicate.State != domain.StateCancelled {
+		t.Fatalf("duplicate job=%+v err=%v", storedDuplicate, err)
+	}
+}
+
+func TestWantedDiscoveryKeepsWinnerLockUntilDurableHandoff(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET state='WINNER_LOCKED',state_revision=1 WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(writer, `{"records":[],"totalRecords":0}`)
+	}))
+	defer server.Close()
+	service := application.WantedDiscovery{
+		Lidarr:           lidarr.Client{BaseURL: server.URL, APIKey: "test-key", HTTP: server.Client(), ResponseLimit: 1 << 20},
+		Store:            repositories,
+		ConfigSnapshotID: "config-1",
+		Now:              func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 0 {
+		t.Fatalf("winner reconcile=%d err=%v", changed, err)
+	}
+	stored, err := repositories.FindActiveJob(context.Background(), 42, releaseGroupMBID)
+	if err != nil || stored.ID != job.ID || stored.State != domain.StateWinnerLocked {
+		t.Fatalf("winner job=%+v err=%v", stored, err)
 	}
 }
 
