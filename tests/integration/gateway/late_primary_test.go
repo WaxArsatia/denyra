@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +90,63 @@ func TestLatePrimaryMonitorRejectsUnrelatedOrLateEvidence(t *testing.T) {
 				t.Fatalf("pending=%d", pending)
 			}
 		})
+	}
+}
+
+func TestLatePrimaryDurableCompletionReachesPipeline(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := prepareLatePrimaryJob(t, db, repositories, now)
+	root := t.TempDir()
+	downloadRoot := filepath.Join(root, "lidarr", "late-download")
+	track := filepath.Join(downloadRoot, "Artist - Album", "01 - Track.flac")
+	if err := os.MkdirAll(filepath.Dir(track), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("durable source remains\n")
+	if err := os.WriteFile(track, content, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	completedAt := now.Add(150 * time.Second)
+	if err := repositories.RecordSlskdCompletionEvent(context.Background(), persistence.SlskdCompletionEvent{
+		ID: "event-late-download", Version: 0, TransferID: "transfer-late-download", BatchID: "batch-late-download",
+		LocalFilename: track, RemoteFilename: "Artist\\Album\\01 - Track.flac", TransferState: "Completed, Succeeded",
+		Timestamp: completedAt, ReceivedAt: completedAt, Payload: []byte(`{"type":"DownloadFileComplete"}`), PayloadSHA256: strings.Repeat("d", 64),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reconcileAt := now.Add(10 * time.Minute)
+	monitor := latePrimaryMonitor(repositories, job, reconcileAt, []lidarr.HistoryRecord{matchingLateHistory(job, now.Add(2*time.Minute), 21)})
+	late, err := monitor.Reconcile(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	handoff := &recordingPrimaryCompletionHandoff{store: repositories, now: reconcileAt}
+	completion := application.PrimaryCompletionService{
+		Queue: fixedPrimaryCompletionQueue{}, Store: repositories, Handoff: handoff,
+		DownloadsRoot: root, PageSize: 100, EngineVersion: "0.26.0", StabilityInterval: 10 * time.Second,
+		Now: func() time.Time { return reconcileAt },
+	}
+	completed, err := completion.Reconcile(context.Background())
+	if err != nil || late != 1 || completed != 1 {
+		t.Fatalf("late=%d completed=%d err=%v", late, completed, err)
+	}
+	if again, err := completion.Reconcile(context.Background()); err != nil || again != 0 {
+		t.Fatalf("replayed completion=%d err=%v", again, err)
+	}
+	var candidates, accepted int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM candidates WHERE job_id=? AND source='slskd'`, job.ID).Scan(&candidates); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM external_effects WHERE job_id=? AND effect_type='PIPELINE_ACCEPT' AND status='ACKNOWLEDGED'`, job.ID).Scan(&accepted); err != nil {
+		t.Fatal(err)
+	}
+	if candidates != 1 || accepted != 1 {
+		t.Fatalf("candidates=%d accepted=%d", candidates, accepted)
+	}
+	if got, err := os.ReadFile(track); err != nil || string(got) != string(content) {
+		t.Fatalf("source changed=%q err=%v", got, err)
 	}
 }
 

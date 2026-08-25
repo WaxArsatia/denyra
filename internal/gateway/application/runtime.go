@@ -60,10 +60,16 @@ func (runtime *GatewayRuntime) Run(ctx context.Context) error {
 		case <-runtime.events:
 			_, _ = runtime.Discovery.Reconcile(ctx)
 			_, _ = runtime.LatePrimary.Reconcile(ctx)
+			if runtime.PrimaryCompletion != nil {
+				runtime.PrimaryCompletion.Notify()
+			}
 			runtime.Worker.Notify("")
 		case <-ticker.C:
 			_, _ = runtime.Discovery.Reconcile(ctx)
 			_, _ = runtime.LatePrimary.Reconcile(ctx)
+			if runtime.PrimaryCompletion != nil {
+				runtime.PrimaryCompletion.Notify()
+			}
 			runtime.Worker.Notify("")
 		}
 	}

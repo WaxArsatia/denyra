@@ -148,6 +148,15 @@ func newPrimaryPendingCandidate(job domain.Job, evidence []persistence.Correlati
 	if len(evidence) == 0 {
 		return persistence.PendingCandidate{}, fmt.Errorf("primary candidate requires correlation evidence")
 	}
+	createdAt := now.UTC()
+	for _, item := range evidence {
+		if item.ObservedAt.IsZero() || item.ObservedAt.After(createdAt) {
+			return persistence.PendingCandidate{}, fmt.Errorf("primary correlation evidence timestamp is invalid")
+		}
+		if item.ObservedAt.Before(createdAt) {
+			createdAt = item.ObservedAt.UTC()
+		}
+	}
 	id, err := persistence.NewCandidateID()
 	if err != nil {
 		return persistence.PendingCandidate{}, err
@@ -161,7 +170,7 @@ func newPrimaryPendingCandidate(job domain.Job, evidence []persistence.Correlati
 		return persistence.PendingCandidate{}, err
 	}
 	sum := sha256.Sum256(payload)
-	return persistence.PendingCandidate{ID: id, JobID: job.ID, Source: "slskd", SourceLocator: locator, DownloadID: evidence[0].DownloadID, Provenance: payload, ProvenanceSHA256: hex.EncodeToString(sum[:]), CreatedAt: now.UTC()}, nil
+	return persistence.PendingCandidate{ID: id, JobID: job.ID, Source: "slskd", SourceLocator: locator, DownloadID: evidence[0].DownloadID, Provenance: payload, ProvenanceSHA256: hex.EncodeToString(sum[:]), CreatedAt: createdAt}, nil
 }
 
 func correlationRequest(job domain.Job, search persistence.PrimarySearchContext) (domain.CorrelationRequest, error) {
