@@ -95,6 +95,9 @@ func TestDerivedDockerfilesFollowCompatibleChannels(t *testing.T) {
 		if !strings.Contains(text, "ARG DENYRA_RELEASE_REFRESH") {
 			t.Errorf("%s cannot refresh latest plugin assets", name)
 		}
+		if !strings.Contains(text, `io.denyra.project="denyra"`) {
+			t.Errorf("%s cannot participate in scoped Denyra image cleanup", name)
+		}
 	}
 }
 
