@@ -347,6 +347,47 @@ func TestWantedDiscoveryKeepsWinnerLockUntilDurableHandoff(t *testing.T) {
 	}
 }
 
+func TestWantedDiscoveryCancelsLegacyActiveJobAfterTargetLeavesWanted(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	handedOff := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET state='HANDED_OFF',state_revision=1 WHERE id=?`, handedOff.ID); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, err := domain.NewJob("job-duplicate-absent", 42, releaseGroupMBID, "config-1", now.Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO acquisition_jobs(id,lidarr_album_id,release_group_mbid,config_snapshot_id,state,state_revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)`,
+		duplicate.ID, duplicate.LidarrAlbumID, duplicate.ReleaseGroupMBID, duplicate.ConfigSnapshotID, duplicate.State, duplicate.Revision, duplicate.CreatedAt.Format(time.RFC3339Nano), duplicate.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(writer, `{"records":[],"totalRecords":0}`)
+	}))
+	defer server.Close()
+	service := application.WantedDiscovery{
+		Lidarr:           lidarr.Client{BaseURL: server.URL, APIKey: "test-key", HTTP: server.Client(), ResponseLimit: 1 << 20},
+		Store:            repositories,
+		ConfigSnapshotID: "config-1",
+		Now:              func() time.Time { return now.Add(time.Minute) },
+	}
+
+	if changed, err := service.Reconcile(context.Background()); err != nil || changed != 1 {
+		t.Fatalf("absent legacy reconcile=%d err=%v", changed, err)
+	}
+	storedDuplicate, err := repositories.Job(context.Background(), duplicate.ID)
+	if err != nil || storedDuplicate.State != domain.StateCancelled {
+		t.Fatalf("duplicate job=%+v err=%v", storedDuplicate, err)
+	}
+	storedHandoff, err := repositories.Job(context.Background(), handedOff.ID)
+	if err != nil || storedHandoff.State != domain.StateHandedOff {
+		t.Fatalf("handoff job=%+v err=%v", storedHandoff, err)
+	}
+}
+
 func TestWantedDiscoveryBackfillsMissingSelectedReleaseWithoutRestartingActiveAcquisition(t *testing.T) {
 	db, repositories, now := gatewayRepositories(t)
 	defer db.Close()

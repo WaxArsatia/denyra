@@ -48,6 +48,12 @@ func (r *Repositories) ReconcileWantedCycles(ctx context.Context, wanted []Wante
 			if !isWanted {
 				for _, item := range items {
 					if !item.CycleOpen {
+						if !item.HasCycle && !item.State.Terminal() && domain.CanTransition(item.State, domain.StateCancelled) {
+							if err := cancelWantedCycleJob(ctx, tx, item, "legacy acquisition target left Lidarr Wanted/Missing", at); err != nil {
+								return err
+							}
+							changed++
+						}
 						continue
 					}
 					if !item.State.Terminal() && !domain.CanTransition(item.State, domain.StateCancelled) {
