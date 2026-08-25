@@ -14,7 +14,7 @@ case "$command" in
     . "$repo_root/scripts/manage/setup.sh"
     denyra_setup "$@"
     ;;
-  update)
+  update|cleanup)
     [ -f "$repo_root/scripts/manage/$command.sh" ] || denyra_unavailable
     denyra_lock
     . "$repo_root/scripts/manage/$command.sh"

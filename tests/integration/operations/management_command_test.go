@@ -163,6 +163,113 @@ func TestManagementRetiredLifecycleCommandsReturnUsage(t *testing.T) {
 	}
 }
 
+func TestLegacyLifecycleCleanup(t *testing.T) {
+	t.Run("cancellation preserves exact targets and protected data", func(t *testing.T) {
+		f := newManagementFixture(t)
+		prepareLegacyTargets(t, f)
+		protected := filepath.Join(f.home, "data", "library", "keep.flac")
+		if err := os.MkdirAll(filepath.Dir(protected), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(protected, []byte("keep"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := f.command("cleanup", "legacy-lifecycle")
+		cmd.Env = append(cmd.Env, "DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"))
+		cmd.Stdin = strings.NewReader("no\n")
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "cleanup cancelled") {
+			t.Fatalf("cancel err=%v output=%q", err, out)
+		}
+		assertLegacyTargets(t, f, true)
+		if got := readFile(t, protected); got != "keep" {
+			t.Fatalf("protected media changed: %q", got)
+		}
+	})
+
+	t.Run("exact confirmation removes only legacy targets", func(t *testing.T) {
+		f := newManagementFixture(t)
+		prepareLegacyTargets(t, f)
+		cmd := f.command("cleanup", "legacy-lifecycle")
+		cmd.Env = append(cmd.Env, "DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"))
+		cmd.Stdin = strings.NewReader("DELETE\n")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("cleanup err=%v output=%q", err, out)
+		}
+		for _, want := range []string{filepath.Join(f.home, "updates"), filepath.Join(f.home, "data", "backups"), filepath.Join(f.home, "secrets", "restic_password")} {
+			if !strings.Contains(string(out), want) {
+				t.Errorf("cleanup output missing exact target %q: %s", want, out)
+			}
+		}
+		assertLegacyTargets(t, f, false)
+	})
+
+	t.Run("symlink target is rejected", func(t *testing.T) {
+		f := newManagementFixture(t)
+		if err := os.MkdirAll(filepath.Join(f.home, "data"), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(f.home, "secrets"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		outside := t.TempDir()
+		if err := os.Symlink(outside, filepath.Join(f.home, "updates")); err != nil {
+			t.Fatal(err)
+		}
+		cmd := f.command("cleanup", "legacy-lifecycle")
+		cmd.Env = append(cmd.Env, "DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"))
+		out, err := cmd.CombinedOutput()
+		if err == nil || !strings.Contains(string(out), "must not be a symlink") {
+			t.Fatalf("symlink err=%v output=%q", err, out)
+		}
+	})
+
+	t.Run("paths containing whitespace are handled literally", func(t *testing.T) {
+		f := newManagementFixture(t)
+		f.home = filepath.Join(t.TempDir(), "denyra home")
+		prepareLegacyTargets(t, f)
+		cmd := f.command("cleanup", "legacy-lifecycle")
+		cmd.Env = append(cmd.Env, "DENYRA_HOME="+f.home, "DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"))
+		cmd.Stdin = strings.NewReader("DELETE\n")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("whitespace cleanup err=%v output=%q", err, out)
+		}
+		assertLegacyTargets(t, f, false)
+	})
+}
+
+func prepareLegacyTargets(t *testing.T, f *managementFixture) {
+	t.Helper()
+	for _, directory := range []string{filepath.Join(f.home, "updates", "old"), filepath.Join(f.home, "data", "backups", "old"), filepath.Join(f.home, "secrets")} {
+		if err := os.MkdirAll(directory, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(f.home, "updates", "old", "metadata"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.home, "data", "backups", "old", "database"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.home, "secrets", "restic_password"), []byte("retired"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertLegacyTargets(t *testing.T, f *managementFixture, present bool) {
+	t.Helper()
+	for _, target := range []string{filepath.Join(f.home, "updates"), filepath.Join(f.home, "data", "backups"), filepath.Join(f.home, "secrets", "restic_password")} {
+		_, err := os.Lstat(target)
+		if present && err != nil {
+			t.Errorf("legacy target %s missing: %v", target, err)
+		}
+		if !present && !os.IsNotExist(err) {
+			t.Errorf("legacy target %s remains: %v", target, err)
+		}
+	}
+}
+
 func TestDeploymentRootValidation(t *testing.T) {
 	tests := []struct {
 		name     string

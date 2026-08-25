@@ -17,6 +17,7 @@ Commands:
   status      Show service status
   logs        Show recent service logs
   update      Update images and converge forward
+  cleanup     Remove confirmed local legacy lifecycle artifacts
   credentials Show generated credentials
 EOF
 }
