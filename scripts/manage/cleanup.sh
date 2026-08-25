@@ -36,6 +36,21 @@ denyra_cleanup_quote() {
   printf "'\n"
 }
 
+denyra_cleanup_remove() {
+  denyra_cleanup_remove_kind=$1
+  denyra_cleanup_remove_target=$2
+  case "$denyra_cleanup_remove_kind" in
+    directory) denyra_cleanup_remove_flags=-rf ;;
+    file) denyra_cleanup_remove_flags=-f ;;
+    *) denyra_die "invalid fixed cleanup removal kind" ;;
+  esac
+  if rm "$denyra_cleanup_remove_flags" -- "$denyra_cleanup_remove_target" 2>/dev/null; then
+    return 0
+  fi
+  command -v sudo >/dev/null 2>&1 || denyra_die "cleanup requires elevated permission for $denyra_cleanup_remove_target"
+  sudo -n rm "$denyra_cleanup_remove_flags" -- "$denyra_cleanup_remove_target" || denyra_die "cleanup requires non-interactive elevated permission for $denyra_cleanup_remove_target"
+}
+
 denyra_cleanup_legacy_lifecycle() {
   denyra_cleanup_validate_root "$DENYRA_HOME" DENYRA_HOME
   denyra_cleanup_validate_root "$DENYRA_DATA_ROOT" DENYRA_DATA_ROOT
@@ -83,15 +98,15 @@ denyra_cleanup_legacy_lifecycle() {
   for denyra_cleanup_item in $denyra_cleanup_targets; do
     case "$denyra_cleanup_item" in
       updates)
-        rm -rf -- "$denyra_cleanup_updates" || denyra_die "cleanup failed at $denyra_cleanup_updates; later targets remain"
+        denyra_cleanup_remove directory "$denyra_cleanup_updates"
         printf 'Removed %s\n' "$denyra_cleanup_updates"
         ;;
       backups)
-        rm -rf -- "$denyra_cleanup_backups" || denyra_die "cleanup failed at $denyra_cleanup_backups; later targets remain"
+        denyra_cleanup_remove directory "$denyra_cleanup_backups"
         printf 'Removed %s\n' "$denyra_cleanup_backups"
         ;;
       restic_password)
-        rm -f -- "$denyra_cleanup_restic" || denyra_die "cleanup failed at $denyra_cleanup_restic"
+        denyra_cleanup_remove file "$denyra_cleanup_restic"
         printf 'Removed %s\n' "$denyra_cleanup_restic"
         ;;
     esac

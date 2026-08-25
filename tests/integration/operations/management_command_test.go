@@ -276,6 +276,30 @@ func TestLegacyLifecycleCleanup(t *testing.T) {
 		assertLegacyTargets(t, f, false)
 	})
 
+	t.Run("validated root-owned artifacts use non-interactive sudo fallback", func(t *testing.T) {
+		f := newManagementFixture(t)
+		prepareLegacyTargets(t, f)
+		f.writeExecutable("rm", `#!/bin/sh
+exit 77
+`)
+		f.writeExecutable("sudo", `#!/bin/sh
+printf 'sudo %s\n' "$*" >> "$DENYRA_TEST_LOG"
+[ "$1" = -n ] && shift
+[ "$1" = rm ] && shift
+exec /bin/rm "$@"
+`)
+		cmd := f.command("cleanup", "legacy-lifecycle")
+		cmd.Env = append(cmd.Env, "DENYRA_DATA_ROOT="+filepath.Join(f.home, "data"))
+		cmd.Stdin = strings.NewReader("DELETE\n")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("privileged cleanup err=%v output=%q", err, out)
+		}
+		if strings.Count(f.log(), "sudo -n rm") != 3 {
+			t.Fatalf("privileged cleanup did not use fixed fallback targets:\n%s", f.log())
+		}
+		assertLegacyTargets(t, f, false)
+	})
+
 	t.Run("symlink target is rejected", func(t *testing.T) {
 		f := newManagementFixture(t)
 		if err := os.MkdirAll(filepath.Join(f.home, "data"), 0o750); err != nil {
