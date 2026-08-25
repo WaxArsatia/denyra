@@ -74,6 +74,7 @@ type UnmanagedPage struct {
 type MigrationPage struct {
 	Shell  Shell
 	Detail application.MigrationBatchDetail
+	Status application.MigrationBatchStatus
 	Error  string
 }
 
@@ -123,15 +124,6 @@ func MigrationStateLabel(state string) string {
 	default:
 		return state
 	}
-}
-
-func MigrationPolling(detail application.MigrationBatchDetail) bool {
-	for _, item := range detail.Items {
-		if item.State == "CHECK_PENDING" || item.State == "CHECKING" || item.State == "CONFIRMED" || item.State == "LIDARR_CATALOG_READY" || item.State == "IMPORT_SUBMITTED" || item.State == "RECONCILING" {
-			return true
-		}
-	}
-	return false
 }
 
 func Millis(value int64) string { return fmt.Sprintf("%d ms", value) }

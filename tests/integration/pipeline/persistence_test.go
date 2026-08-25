@@ -119,10 +119,25 @@ func TestMigrationPersistenceKeepsManualAuditAndRejectsStaleOrMutableEvidence(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	initialStatus, err := repository.MigrationBatchStatus(context.Background(), batch.ID)
+	if err != nil || initialStatus.Revision != 0 || initialStatus.Active != 1 || initialStatus.State != "RUNNING" {
+		t.Fatalf("initial migration status=%+v err=%v", initialStatus, err)
+	}
 	_, _ = service.CheckItem(context.Background(), items[0].ID)
 	item, err := repository.MigrationItem(context.Background(), items[0].ID)
 	if err != nil || item.State != domain.MigrationFailedRetryable {
 		t.Fatalf("item=%+v err=%v", item, err)
+	}
+	failedStatus, err := repository.MigrationBatchStatus(context.Background(), batch.ID)
+	if err != nil || failedStatus.Revision != 2 || failedStatus.Active != 0 || failedStatus.Completed != 0 || failedStatus.Failed != 1 || failedStatus.State != "COMPLETED" {
+		t.Fatalf("failed migration status=%+v err=%v", failedStatus, err)
+	}
+	if err := repository.SaveMigrationEvidence(context.Background(), item.ID, item.StateRevision, []byte(`{"phase":"failed"}`), now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	evidenceStatus, err := repository.MigrationBatchStatus(context.Background(), batch.ID)
+	if err != nil || evidenceStatus.Revision != 3 {
+		t.Fatalf("evidence migration status=%+v err=%v", evidenceStatus, err)
 	}
 	var audits int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action='MIGRATION_BATCH_CREATED' AND actor='admin-1' AND details_json LIKE ?`, "%"+batch.ID+"%").Scan(&audits); err != nil || audits != 1 {

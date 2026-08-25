@@ -27,6 +27,7 @@ type MigrationBatch struct {
 	Actor          string    `json:"actor"`
 	SelectionJSON  []byte    `json:"selection_json"`
 	Status         string    `json:"status"`
+	StateRevision  uint64    `json:"state_revision"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

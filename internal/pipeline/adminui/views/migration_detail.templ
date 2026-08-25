@@ -1,16 +1,27 @@
 package views
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
+)
 
 templ MigrationDetail(page MigrationPage) {
 	@Layout("Migration batch", "unmanaged", page.Shell, MigrationDetailContent(page))
 }
 
 templ MigrationDetailContent(page MigrationPage) {
-	if MigrationPolling(page.Detail) {
-		<section id="migration-content" hx-get={ templ.SafeURL("/migration-batches/" + page.Detail.ID) } hx-trigger="every 2s" hx-target="#migration-content" hx-swap="outerHTML">@MigrationBatchBody(page)</section>
+	<section id="migration-content" hx-get={ templ.SafeURL("/migration-batches/" + page.Detail.ID) } hx-trigger="migration-batch-changed from:body" hx-target="#migration-content" hx-swap="outerHTML">
+		@MigrationBatchBody(page)
+		@MigrationStatusFragment(page.Detail.ID, page.Status)
+	</section>
+}
+
+templ MigrationStatusFragment(batchID string, status application.MigrationBatchStatus) {
+	if status.Active > 0 {
+		<div id="migration-batch-status" class="muted" hx-get={ templ.SafeURL(fmt.Sprintf("/migration-batches/%s/status?revision=%d", batchID, status.Revision)) } hx-trigger="every 5s" hx-swap="outerHTML"><span>{ fmt.Sprintf("Active %d", status.Active) }</span> · <span>{ fmt.Sprintf("Completed %d", status.Completed) }</span> · <span>{ fmt.Sprintf("Failed %d", status.Failed) }</span></div>
 	} else {
-		<section id="migration-content">@MigrationBatchBody(page)</section>
+		<div id="migration-batch-status" class="muted"><span>{ fmt.Sprintf("Active %d", status.Active) }</span> · <span>{ fmt.Sprintf("Completed %d", status.Completed) }</span> · <span>{ fmt.Sprintf("Failed %d", status.Failed) }</span></div>
 	}
 }
 

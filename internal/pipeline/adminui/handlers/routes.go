@@ -54,6 +54,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("GET /unmanaged", console.unmanaged)
 	private.HandleFunc("POST /unmanaged/check", console.checkUnmanaged)
 	private.HandleFunc("GET /migration-batches/{batchID}", console.migrationBatch)
+	private.HandleFunc("GET /migration-batches/{batchID}/status", console.migrationBatchStatus)
 	private.HandleFunc("POST /migration-batches/{batchID}/confirm", console.confirmMigrations)
 	private.HandleFunc("POST /migration-items/{itemID}/retry", console.retryMigration)
 	private.HandleFunc("GET /incoming/{submissionID}/artwork", console.incomingArtwork)

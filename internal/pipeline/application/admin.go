@@ -111,13 +111,21 @@ type MigrationItemSummary struct {
 
 type MigrationBatchDetail struct {
 	ID, Actor, State     string
+	Revision             uint64
 	Items                []MigrationItemSummary
 	CreatedAt, UpdatedAt time.Time
+}
+
+type MigrationBatchStatus struct {
+	State                     string
+	Active, Completed, Failed int
+	Revision                  uint64
 }
 
 type MigrationAdminReader interface {
 	UnmanagedSummaries(context.Context, UnmanagedFilter, int, string) ([]UnmanagedSummary, string, error)
 	MigrationBatchDetail(context.Context, string) (MigrationBatchDetail, error)
+	MigrationBatchStatus(context.Context, string) (MigrationBatchStatus, error)
 }
 
 type AdminReader interface {

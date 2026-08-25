@@ -119,7 +119,7 @@ func (r *Repositories) MigrationBatchDetail(ctx context.Context, batchID string)
 	if err != nil {
 		return application.MigrationBatchDetail{}, err
 	}
-	detail := application.MigrationBatchDetail{ID: batch.ID, Actor: batch.Actor, State: batch.Status, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt}
+	detail := application.MigrationBatchDetail{ID: batch.ID, Actor: batch.Actor, State: batch.Status, Revision: batch.StateRevision, CreatedAt: batch.CreatedAt, UpdatedAt: batch.UpdatedAt}
 	rows, err := r.DB.QueryContext(ctx, `SELECT i.id,i.unmanaged_candidate_id,COALESCE(json_extract(u.approved_plan_json,'$.metadata.album_artist'),''),COALESCE(json_extract(u.approved_plan_json,'$.metadata.album'),''),i.state,COALESCE(i.approved_release_mbid,''),i.state_revision,COALESCE((SELECT error_text FROM migration_item_errors e WHERE e.item_id=i.id ORDER BY occurred_at DESC,id DESC LIMIT 1),'') FROM migration_items i JOIN unmanaged_releases u ON u.candidate_id=i.unmanaged_candidate_id WHERE i.batch_id=? ORDER BY i.unmanaged_candidate_id`, batchID)
 	if err != nil {
 		return detail, err
@@ -133,6 +133,17 @@ func (r *Repositories) MigrationBatchDetail(ctx context.Context, batchID string)
 		detail.Items = append(detail.Items, item)
 	}
 	return detail, rows.Err()
+}
+
+func (r *Repositories) MigrationBatchStatus(ctx context.Context, batchID string) (application.MigrationBatchStatus, error) {
+	var status application.MigrationBatchStatus
+	err := r.DB.QueryRowContext(ctx, `SELECT b.status,b.state_revision,
+		COALESCE(SUM(CASE WHEN i.state IN ('CHECK_PENDING','CHECKING','CONFIRMED','LIDARR_CATALOG_READY','IMPORT_SUBMITTED','RECONCILING') THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN i.state IN ('NO_MATCH','AMBIGUOUS','EXACT_MATCH','MIGRATED') THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN i.state='FAILED_RETRYABLE' THEN 1 ELSE 0 END),0)
+		FROM migration_batches b LEFT JOIN migration_items i ON i.batch_id=b.id WHERE b.id=? GROUP BY b.id,b.status,b.state_revision`, batchID).
+		Scan(&status.State, &status.Revision, &status.Active, &status.Completed, &status.Failed)
+	return status, err
 }
 
 func (r *Repositories) Reviews(ctx context.Context, limit int, cursor string) ([]application.ReviewSummary, string, error) {

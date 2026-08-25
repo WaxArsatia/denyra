@@ -48,8 +48,8 @@ VALUES(?,?,?,?,?,NULLIF(?,''),NULLIF(?,''),?,?,?,?,?,?)`, item.ID, item.BatchID,
 func (r *Repositories) MigrationBatch(ctx context.Context, batchID string) (domain.MigrationBatch, error) {
 	var result domain.MigrationBatch
 	var created, updated string
-	err := r.DB.QueryRowContext(ctx, `SELECT id,idempotency_key,actor,selection_json,status,created_at,updated_at FROM migration_batches WHERE id=?`, batchID).
-		Scan(&result.ID, &result.IdempotencyKey, &result.Actor, &result.SelectionJSON, &result.Status, &created, &updated)
+	err := r.DB.QueryRowContext(ctx, `SELECT id,idempotency_key,actor,selection_json,status,state_revision,created_at,updated_at FROM migration_batches WHERE id=?`, batchID).
+		Scan(&result.ID, &result.IdempotencyKey, &result.Actor, &result.SelectionJSON, &result.Status, &result.StateRevision, &created, &updated)
 	if err != nil {
 		return result, err
 	}
@@ -107,6 +107,9 @@ func (r *Repositories) ConfirmMigrationItem(ctx context.Context, itemID string, 
 		if rows, _ := result.RowsAffected(); rows != 1 {
 			return fmt.Errorf("migration confirmation revision changed")
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE migration_batches SET status='RUNNING',state_revision=state_revision+1,updated_at=? WHERE id=?`, formatTime(confirmed.UpdatedAt), item.BatchID); err != nil {
+			return err
+		}
 		details, _ := json.Marshal(map[string]any{"migration_item_id": itemID, "release_mbid": releaseMBID})
 		_, err = tx.ExecContext(ctx, `INSERT INTO audit_events(id,candidate_id,actor,action,reason,target_release_mbid,state_revision,details_json,occurred_at) VALUES(?,?,?,'MIGRATION_CONFIRMED','operator confirmed exact migration',?,?,?,?)`, auditID, item.UnmanagedCandidateID, actor, releaseMBID, confirmed.StateRevision, details, formatTime(at))
 		return err
@@ -127,6 +130,11 @@ func (r *Repositories) UpdateMigrationItem(ctx context.Context, itemID string, e
 		if rows, _ := result.RowsAffected(); rows != 1 {
 			return fmt.Errorf("migration item revision changed")
 		}
+		if _, err := tx.ExecContext(ctx, `UPDATE migration_batches SET status=CASE WHEN EXISTS(
+			SELECT 1 FROM migration_items WHERE batch_id=migration_batches.id AND state IN ('CHECK_PENDING','CHECKING','CONFIRMED','LIDARR_CATALOG_READY','IMPORT_SUBMITTED','RECONCILING')
+		) THEN 'RUNNING' ELSE 'COMPLETED' END,state_revision=state_revision+1,updated_at=? WHERE id=?`, formatTime(next.UpdatedAt), next.BatchID); err != nil {
+			return err
+		}
 		if failure != nil {
 			if failure.ItemID != itemID || failure.ID == "" || failure.Message == "" {
 				return fmt.Errorf("invalid migration item failure")
@@ -136,11 +144,7 @@ func (r *Repositories) UpdateMigrationItem(ctx context.Context, itemID string, e
 				return err
 			}
 		}
-		if next.State.CheckTerminal() {
-			_, err = tx.ExecContext(ctx, `UPDATE migration_batches SET status='COMPLETED',updated_at=? WHERE id=(SELECT batch_id FROM migration_items WHERE id=?)
-AND NOT EXISTS(SELECT 1 FROM migration_items WHERE batch_id=(SELECT batch_id FROM migration_items WHERE id=?) AND (state IN ('CHECK_PENDING','CHECKING') OR (state='FAILED_RETRYABLE' AND resume_state='CHECKING')))`, formatTime(next.UpdatedAt), itemID, itemID)
-		}
-		return err
+		return nil
 	})
 }
 
@@ -148,14 +152,17 @@ func (r *Repositories) SaveMigrationEvidence(ctx context.Context, itemID string,
 	if len(evidence) == 0 {
 		return fmt.Errorf("migration evidence is required")
 	}
-	result, err := r.DB.ExecContext(ctx, `UPDATE migration_items SET migration_evidence_json=?,updated_at=? WHERE id=? AND state_revision=?`, evidence, formatTime(at), itemID, expected)
-	if err != nil {
+	return denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `UPDATE migration_items SET migration_evidence_json=?,updated_at=? WHERE id=? AND state_revision=?`, evidence, formatTime(at), itemID, expected)
+		if err != nil {
+			return err
+		}
+		if rows, _ := result.RowsAffected(); rows != 1 {
+			return fmt.Errorf("migration item revision changed")
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE migration_batches SET state_revision=state_revision+1,updated_at=? WHERE id=(SELECT batch_id FROM migration_items WHERE id=?)`, formatTime(at), itemID)
 		return err
-	}
-	if rows, _ := result.RowsAffected(); rows != 1 {
-		return fmt.Errorf("migration item revision changed")
-	}
-	return nil
+	})
 }
 
 func (r *Repositories) MigrationItemErrors(ctx context.Context, batchID string) ([]domain.MigrationItemError, error) {

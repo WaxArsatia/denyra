@@ -60,8 +60,37 @@ func (c Console) migrationBatch(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	page := views.MigrationPage{Shell: c.shell(r), Detail: detail}
+	status, err := c.dependencies.MigrationReader.MigrationBatchStatus(r.Context(), r.PathValue("batchID"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	page := views.MigrationPage{Shell: c.shell(r), Detail: detail, Status: status}
 	c.render(w, r, views.MigrationDetail(page), views.MigrationDetailContent(page))
+}
+
+func (c Console) migrationBatchStatus(w http.ResponseWriter, r *http.Request) {
+	if c.dependencies.MigrationReader == nil {
+		http.NotFound(w, r)
+		return
+	}
+	revision, err := strconv.ParseUint(r.URL.Query().Get("revision"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid migration batch revision", http.StatusBadRequest)
+		return
+	}
+	status, err := c.dependencies.MigrationReader.MigrationBatchStatus(r.Context(), r.PathValue("batchID"))
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if status.Revision == revision {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("HX-Trigger", "migration-batch-changed")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = views.MigrationStatusFragment(r.PathValue("batchID"), status).Render(r.Context(), w)
 }
 
 func (c Console) confirmMigrations(w http.ResponseWriter, r *http.Request) {
