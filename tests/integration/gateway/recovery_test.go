@@ -524,6 +524,17 @@ func TestAcquisitionEvidenceRouteIsAuthenticatedReadOnlyAndEventFirst(t *testing
 	db, store, now := gatewayRepositories(t)
 	defer db.Close()
 	job := createJob(t, store, now)
+	attemptID, err := store.InsertAttempt(context.Background(), persistence.Attempt{ID: "attempt-admin", JobID: job.ID, Kind: "SPOTIFLAC", Number: 1, StartedAt: now, Details: []byte(`{"Command":["secret-command"],"Stderr":"legacy-stderr"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed := now.Add(time.Second)
+	if err := store.InsertProviderResult(context.Background(), persistence.ProviderEvidence{ID: "provider-admin", JobID: job.ID, AttemptID: attemptID, Provider: "tidal-web", Outcome: "RETRYABLE_ERROR", Evidence: []byte(`{"Provider":"tidal-web","ErrorClass":"PROCESS_EXIT","ErrorMessage":"password=visible-secret","Stderr":"legacy-provider-stderr"}`), EvidenceSHA256: strings.Repeat("a", 64), StartedAt: now, CompletedAt: &completed}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteAttempt(context.Background(), attemptID, "FALLBACK_RETRYABLE_ERROR", "OPERATIONAL", []byte(`{"Stderr":"legacy-attempt-stderr"}`), completed); err != nil {
+		t.Fatal(err)
+	}
 	notified := 0
 	quality := transport.QualityCallbackAPI{BodyLimit: 4096, Bearer: []byte("secret")}
 	handler, err := (transport.Routes{Quality: quality, Store: store, BodyLimit: 4096, Bearer: []byte("secret"), Notify: func() { notified++ }}).Handler()
@@ -536,11 +547,25 @@ func TestAcquisitionEvidenceRouteIsAuthenticatedReadOnlyAndEventFirst(t *testing
 	if response.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized evidence status=%d", response.Code)
 	}
+	listRequest := httptest.NewRequest(http.MethodGet, "/internal/acquisitions?limit=50&state=DISCOVERED", nil)
+	listRequest.Header.Set("Authorization", "Bearer secret")
+	listResponse := httptest.NewRecorder()
+	handler.ServeHTTP(listResponse, listRequest)
+	if listResponse.Code != http.StatusOK || !bytes.Contains(listResponse.Body.Bytes(), []byte(`"job_id":"job-1"`)) {
+		t.Fatalf("list status=%d body=%s", listResponse.Code, listResponse.Body.String())
+	}
+	invalidList := httptest.NewRequest(http.MethodGet, "/internal/acquisitions?cursor=invalid&state=UNKNOWN", nil)
+	invalidList.Header.Set("Authorization", "Bearer secret")
+	invalidListResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidListResponse, invalidList)
+	if invalidListResponse.Code != http.StatusBadRequest {
+		t.Fatalf("invalid list status=%d body=%s", invalidListResponse.Code, invalidListResponse.Body.String())
+	}
 	request = httptest.NewRequest(http.MethodGet, "/internal/acquisitions/"+job.ID, nil)
 	request.Header.Set("Authorization", "Bearer secret")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"state_revision":0`)) || response.Header().Get("Cache-Control") != "no-store" {
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"state_revision":0`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"message":"password=[REDACTED]"`)) || bytes.Contains(response.Body.Bytes(), []byte("visible-secret")) || bytes.Contains(response.Body.Bytes(), []byte("legacy-provider-stderr")) || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("evidence status=%d headers=%v body=%s", response.Code, response.Header(), response.Body.String())
 	}
 	event := httptest.NewRequest(http.MethodPost, "/internal/events/lidarr", strings.NewReader(`{"event_id":"lidarr-1"}`))

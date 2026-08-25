@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
@@ -29,15 +30,37 @@ func (routes Routes) Handler() (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/internal/candidates/", quality)
 	private := http.NewServeMux()
+	private.HandleFunc("GET /internal/acquisitions", routes.acquisitions)
 	private.HandleFunc("GET /internal/acquisitions/{jobID}", routes.evidence)
 	private.HandleFunc("POST /internal/events/lidarr", routes.lidarrEvent)
 	private.HandleFunc("POST /internal/maintenance", routes.maintenance)
-	mux.Handle("/internal/acquisitions/", httpx.RequestID(httpx.BearerAuth(routes.Bearer, private)))
+	acquisitions := httpx.RequestID(httpx.BearerAuth(routes.Bearer, private))
+	mux.Handle("/internal/acquisitions", acquisitions)
+	mux.Handle("/internal/acquisitions/", acquisitions)
 	mux.Handle("/internal/events/lidarr", httpx.RequestID(httpx.BearerAuth(routes.Bearer, httpx.LimitBody(routes.BodyLimit, httpx.RequireJSON(private)))))
 	maintenance := httpx.RequestID(httpx.BearerAuth(routes.Bearer, httpx.LimitBody(routes.BodyLimit, httpx.RequireJSON(private))))
 	mux.Handle("/internal/maintenance", maintenance)
 	mux.Handle("/internal/maintenance/", maintenance)
 	return mux, nil
+}
+
+func (routes Routes) acquisitions(writer http.ResponseWriter, request *http.Request) {
+	limit := 50
+	if raw := request.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			httpx.WriteError(writer, request, http.StatusBadRequest, "INVALID_PAGE", "invalid acquisition page limit")
+			return
+		}
+		limit = parsed
+	}
+	page, err := routes.Store.JobSummaries(request.Context(), limit, request.URL.Query().Get("cursor"), request.URL.Query().Get("state"))
+	if err != nil {
+		httpx.WriteError(writer, request, http.StatusBadRequest, "INVALID_PAGE", "invalid acquisition page")
+		return
+	}
+	writer.Header().Set("Cache-Control", "no-store")
+	httpx.WriteJSON(writer, http.StatusOK, page)
 }
 
 func (routes Routes) evidence(writer http.ResponseWriter, request *http.Request) {
