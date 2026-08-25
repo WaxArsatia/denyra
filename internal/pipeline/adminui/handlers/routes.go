@@ -273,6 +273,8 @@ func (c Console) reviewAction(w http.ResponseWriter, r *http.Request) {
 		err = c.dependencies.Reviews.Reject(r.Context(), r.PathValue("candidateID"), revision, principal.UserID, reason)
 	case "retry":
 		err = c.dependencies.Reviews.Retry(r.Context(), r.PathValue("candidateID"), revision, principal.UserID, reason)
+	case "retry-unmanaged":
+		err = c.dependencies.Reviews.RetryUnmanaged(r.Context(), r.PathValue("candidateID"), revision, principal.UserID, reason)
 	case "cancel":
 		err = c.dependencies.Reviews.Cancel(r.Context(), r.PathValue("candidateID"), revision, principal.UserID, reason)
 	default:

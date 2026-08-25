@@ -576,6 +576,85 @@ func TestAdminUIRetriesQuarantinedCandidate(t *testing.T) {
 	}
 }
 
+func TestAdminUIExposesAndRetriesUnmanagedReviewWithoutMovingFiles(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	candidate := createPersistedCandidate(t, repository, now)
+	if _, err := db.Exec(`UPDATE candidates SET state='UNMANAGED_REVIEW',state_revision=7,updated_at=? WHERE candidate_id=?`, now.Format(time.RFC3339Nano), candidate.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO state_transitions(id,candidate_id,actor,reason,previous_state,new_state,previous_revision,revision,occurred_at) VALUES('unmanaged-review',?,'pipeline-worker','unsupported embedded artwork','UNMANAGED_READY','UNMANAGED_REVIEW',6,7,?)`, candidate.ID, now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := assets.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	moved := false
+	handler, err := handlers.New(handlers.Dependencies{
+		Auth: auth, Reader: repository, Assets: bundle,
+		Reviews: application.ReviewDecisionService{
+			Store: repository,
+			Move:  func(string, string) error { moved = true; return errors.New("unmanaged retry must not move files") },
+			Now:   func() time.Time { return now.Add(time.Second) },
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+
+	queueRequest := httptest.NewRequest(http.MethodGet, "/reviews", nil)
+	queueRequest.AddCookie(session)
+	queue := httptest.NewRecorder()
+	handler.ServeHTTP(queue, queueRequest)
+	if queue.Code != http.StatusOK || !strings.Contains(queue.Body.String(), candidate.ID) || !strings.Contains(queue.Body.String(), "UNMANAGED_REVIEW") {
+		t.Fatalf("unmanaged queue=%d body=%s", queue.Code, queue.Body.String())
+	}
+
+	detailRequest := httptest.NewRequest(http.MethodGet, "/reviews/"+candidate.ID, nil)
+	detailRequest.AddCookie(session)
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, detailRequest)
+	body := detail.Body.String()
+	for _, want := range []string{"UNMANAGED_REVIEW", "unsupported embedded artwork", "Retry unmanaged import", "Reject", "Cancel"} {
+		if detail.Code != http.StatusOK || !strings.Contains(body, want) {
+			t.Fatalf("unmanaged detail missing %q: status=%d body=%s", want, detail.Code, body)
+		}
+	}
+	for _, unwanted := range []string{"Target MusicBrainz Release ID", "Approve release"} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("unmanaged detail exposed managed action %q: %s", unwanted, body)
+		}
+	}
+
+	form := url.Values{
+		"_csrf":          {csrf.Value},
+		"state_revision": {"7"},
+		"reason":         {"metadata corrected"},
+		"confirm":        {"yes"},
+	}
+	retry := authenticatedMutation(http.MethodPost, "/reviews/"+candidate.ID+"/retry-unmanaged", strings.NewReader(form.Encode()), session, csrf)
+	retry.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	retry.Header.Set("HX-Request", "true")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, retry)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unmanaged retry=%d body=%s", response.Code, response.Body.String())
+	}
+	updated, err := repository.Candidate(context.Background(), candidate.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved || updated.State != domain.StateUnmanagedReady || updated.StateRevision != 8 {
+		t.Fatalf("moved=%t state=%s revision=%d", moved, updated.State, updated.StateRevision)
+	}
+}
+
 func TestAdminUIRetryMoveFailureKeepsCandidateQuarantined(t *testing.T) {
 	db, repository, now := pipelineRepositories(t)
 	defer db.Close()

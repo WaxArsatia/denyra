@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -151,7 +152,7 @@ func (r *Repositories) Reviews(ctx context.Context, limit int, cursor string) ([
 		limit = 50
 	}
 	rows, err := r.DB.QueryContext(ctx, `SELECT candidate_id,source,state,state_revision,COALESCE(gateway_job_id,''),updated_at
-		FROM candidates WHERE state IN ('REVIEW_REQUIRED','QUARANTINED') AND (?='' OR updated_at<?)
+		FROM candidates WHERE state IN ('REVIEW_REQUIRED','QUARANTINED','UNMANAGED_REVIEW') AND (?='' OR updated_at<?)
 		ORDER BY updated_at DESC,candidate_id DESC LIMIT ?`, cursor, cursor, limit+1)
 	if err != nil {
 		return nil, "", err
@@ -192,6 +193,9 @@ func (r *Repositories) Review(ctx context.Context, candidateID string) (applicat
 		return application.ReviewDetail{}, err
 	}
 	detail := application.ReviewDetail{Summary: application.ReviewSummary{CandidateID: candidate.ID, Source: candidate.Source, State: candidate.State, Revision: candidate.StateRevision, JobID: candidate.GatewayJobID, UpdatedAt: candidate.UpdatedAt}}
+	if err := r.DB.QueryRowContext(ctx, `SELECT reason FROM state_transitions WHERE candidate_id=? ORDER BY revision DESC LIMIT 1`, candidateID).Scan(&detail.LatestReason); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return detail, err
+	}
 	rows, err := r.DB.QueryContext(ctx, `SELECT scope,subject,classification,code,CAST(evidence_json AS TEXT),created_at FROM validation_results WHERE candidate_id=? ORDER BY created_at,id`, candidateID)
 	if err != nil {
 		return detail, err

@@ -36,6 +36,28 @@ func (s ReviewDecisionService) Retry(ctx context.Context, candidateID string, ex
 	return s.returnToWork(ctx, candidateID, expected, actor, reason, "")
 }
 
+func (s ReviewDecisionService) RetryUnmanaged(ctx context.Context, candidateID string, expected uint64, actor, reason string) error {
+	if strings.TrimSpace(reason) == "" {
+		return fmt.Errorf("decision reason is required")
+	}
+	if s.Store == nil {
+		return fmt.Errorf("review service is not configured")
+	}
+	now := s.now()
+	candidate, err := s.Store.Candidate(ctx, candidateID)
+	if err != nil {
+		return err
+	}
+	if candidate.State != domain.StateUnmanagedReview {
+		return fmt.Errorf("candidate is not awaiting unmanaged review")
+	}
+	if _, err := candidate.Transition(expected, domain.StateUnmanagedReady, actor, reason, now); err != nil {
+		return err
+	}
+	_, err = s.Store.TransitionCandidate(ctx, candidateID, expected, domain.StateUnmanagedReady, actor, reason, "", now)
+	return err
+}
+
 func (s ReviewDecisionService) Reject(ctx context.Context, candidateID string, expected uint64, actor, reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		return fmt.Errorf("decision reason is required")

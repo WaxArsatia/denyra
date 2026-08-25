@@ -54,13 +54,14 @@ type MetadataEvidence struct {
 }
 
 type ReviewDetail struct {
-	Summary     ReviewSummary
-	ReleaseMBID string
-	Files       []EvidenceRow
-	Tracks      []TrackEvidence
-	Metadata    []MetadataEvidence
-	Enrichment  []EvidenceRow
-	History     []EvidenceRow
+	Summary      ReviewSummary
+	ReleaseMBID  string
+	LatestReason string
+	Files        []EvidenceRow
+	Tracks       []TrackEvidence
+	Metadata     []MetadataEvidence
+	Enrichment   []EvidenceRow
+	History      []EvidenceRow
 }
 
 type AuditSummary struct {
