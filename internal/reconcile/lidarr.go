@@ -50,6 +50,7 @@ func (l Lidarr) Apply(ctx context.Context) (Outcome, error) {
 			})
 		},
 		l.reconcileMetadata,
+		l.reconcileSlskdDelayProfile,
 		l.reconcileSlskdDownloadClient,
 		l.reconcileSlskdIndexer,
 	}
@@ -66,6 +67,38 @@ func (l Lidarr) Apply(ctx context.Context) (Outcome, error) {
 		message = "configuration updated"
 	}
 	return Outcome{Service: "lidarr", Changed: changed, Message: message}, nil
+}
+
+func (l Lidarr) reconcileSlskdDelayProfile(ctx context.Context) (bool, error) {
+	var profiles []map[string]any
+	if err := l.get(ctx, "/api/v1/delayprofile", &profiles); err != nil {
+		return false, err
+	}
+	for _, profile := range profiles {
+		if !strings.EqualFold(textValue(profile["name"]), "Default") {
+			continue
+		}
+		items, ok := profile["items"].([]any)
+		if !ok {
+			return false, fmt.Errorf("Lidarr default delay profile has no protocol items")
+		}
+		for _, raw := range items {
+			item, ok := raw.(map[string]any)
+			if !ok || textValue(item["protocol"]) != "SlskdDownloadProtocol" {
+				continue
+			}
+			if !setMapValue(item, "allowed", true) {
+				return false, nil
+			}
+			id, err := resourceID(profile)
+			if err != nil {
+				return false, err
+			}
+			return true, l.send(ctx, http.MethodPut, "/api/v1/delayprofile/"+id, profile)
+		}
+		return false, fmt.Errorf("Lidarr default delay profile lacks SlskdDownloadProtocol")
+	}
+	return false, fmt.Errorf("Lidarr default delay profile is unavailable")
 }
 
 func (l Lidarr) ensureRootFolder(ctx context.Context) (bool, error) {

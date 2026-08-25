@@ -117,7 +117,6 @@ func (runner Runner) runProvider(ctx context.Context, request RunRequest, inputU
 		"--post-action", "none",
 		"--no-lyrics",
 		"--no-enrich",
-		"--no-extensions-fallback",
 	}
 	execution := ProviderExecution{Provider: provider, StartedAt: started, Command: append([]string{runner.Runtime.Installation.EnginePath}, args...), ExitCode: -1}
 	stdout := newCappedBuffer(runner.OutputLimit)

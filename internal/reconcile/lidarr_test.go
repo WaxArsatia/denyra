@@ -22,6 +22,7 @@ type lidarrFixture struct {
 	metadataProfiles []map[string]any
 	singletons       map[string]map[string]any
 	metadata         []map[string]any
+	delayProfiles    []map[string]any
 	downloadClients  []map[string]any
 	indexers         []map[string]any
 	downloadSchemas  []map[string]any
@@ -52,6 +53,15 @@ func newLidarrFixture(t *testing.T) *lidarrFixture {
 				map[string]any{"name": "albumMetadata", "value": false},
 				map[string]any{"name": "artistImages", "value": false},
 				map[string]any{"name": "albumImages", "value": false},
+			},
+		}},
+		delayProfiles: []map[string]any{{
+			"id": 1, "name": "Default", "bypassIfHighestQuality": true, "bypassIfAboveCustomFormatScore": false,
+			"minimumCustomFormatScore": 0, "order": 2147483647, "tags": []any{},
+			"items": []any{
+				map[string]any{"name": "Usenet", "protocol": "UsenetDownloadProtocol", "allowed": true, "delay": 0},
+				map[string]any{"name": "Torrent", "protocol": "TorrentDownloadProtocol", "allowed": true, "delay": 0},
+				map[string]any{"name": "Slskd", "protocol": "SlskdDownloadProtocol", "allowed": false, "delay": 0},
 			},
 		}},
 		downloadClients: []map[string]any{{"id": 9, "name": "Existing client", "implementation": "Transmission", "unrelated": "keep"}},
@@ -94,6 +104,8 @@ func (f *lidarrFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			response = f.metadataProfiles
 		case "/api/v1/metadata":
 			response = f.metadata
+		case "/api/v1/delayprofile":
+			response = f.delayProfiles
 		case "/api/v1/downloadclient":
 			response = f.downloadClients
 		case "/api/v1/indexer":
@@ -138,6 +150,8 @@ func (f *lidarrFixture) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		f.indexers = append(f.indexers, payload)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/metadata/"):
 		f.metadata[0] = payload
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/delayprofile/"):
+		f.replaceByID(&f.delayProfiles, r.URL.Path, payload)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/downloadclient/"):
 		f.replaceByID(&f.downloadClients, r.URL.Path, payload)
 	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/v1/indexer/"):
@@ -244,6 +258,33 @@ func TestLidarrApplyEnablesSearchModesOnExistingSlskdIndexer(t *testing.T) {
 	})
 	if slskdIndexer["enableAutomaticSearch"] != true || slskdIndexer["enableInteractiveSearch"] != true {
 		t.Errorf("slskd indexer search modes=%v", slskdIndexer)
+	}
+}
+
+func TestLidarrApplyEnablesSlskdDownloadProtocol(t *testing.T) {
+	f := newLidarrFixture(t)
+	lidarr := Lidarr{BaseURL: f.server.URL, APIKey: "lidarr-secret", SlskdURL: "http://slskd:5030", SlskdAPIKey: "slskd-secret", HTTP: f.server.Client()}
+
+	if _, err := lidarr.Apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	items, ok := f.delayProfiles[0]["items"].([]any)
+	if !ok {
+		t.Fatalf("delay profile items=%T", f.delayProfiles[0]["items"])
+	}
+	for _, raw := range items {
+		item, _ := raw.(map[string]any)
+		switch item["protocol"] {
+		case "SlskdDownloadProtocol":
+			if item["allowed"] != true {
+				t.Fatalf("slskd delay profile item=%v", item)
+			}
+		case "UsenetDownloadProtocol", "TorrentDownloadProtocol":
+			if item["allowed"] != true {
+				t.Fatalf("unrelated delay profile item changed=%v", item)
+			}
+		}
 	}
 }
 
