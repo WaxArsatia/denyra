@@ -152,19 +152,23 @@ func (l Lidarr) reconcileSlskdDownloadClient(ctx context.Context) (bool, error) 
 		"host": "slskd", "port": float64(5030), "useSsl": false, "urlBase": "",
 		"apiKey": l.SlskdAPIKey, "repairConfiguration": false,
 	}
-	return l.reconcileSlskdResource(ctx, "/api/v1/downloadclient", "Denyra slskd", desired)
+	return l.reconcileSlskdResource(ctx, "/api/v1/downloadclient", "Denyra slskd", nil, desired)
 }
 
 func (l Lidarr) reconcileSlskdIndexer(ctx context.Context) (bool, error) {
+	desiredProperties := map[string]any{
+		"enableAutomaticSearch":   true,
+		"enableInteractiveSearch": true,
+	}
 	desired := map[string]any{
 		"baseUrl": strings.TrimRight(l.SlskdURL, "/") + "/", "apiKey": l.SlskdAPIKey,
 		"minimumPeerUploadSpeed": float64(0), "maximumPeerQueueLength": float64(0),
 		"allowIncompleteReleases": false, "verifyDurations": true,
 	}
-	return l.reconcileSlskdResource(ctx, "/api/v1/indexer", "Denyra slskd indexer", desired)
+	return l.reconcileSlskdResource(ctx, "/api/v1/indexer", "Denyra slskd indexer", desiredProperties, desired)
 }
 
-func (l Lidarr) reconcileSlskdResource(ctx context.Context, path, name string, desiredFields map[string]any) (bool, error) {
+func (l Lidarr) reconcileSlskdResource(ctx context.Context, path, name string, desiredProperties, desiredFields map[string]any) (bool, error) {
 	var resources []map[string]any
 	if err := l.get(ctx, path, &resources); err != nil {
 		return false, err
@@ -175,6 +179,9 @@ func (l Lidarr) reconcileSlskdResource(ctx context.Context, path, name string, d
 		}
 		changed := setMapValue(resource, "name", name)
 		changed = setMapValue(resource, "enable", true) || changed
+		for property, value := range desiredProperties {
+			changed = setMapValue(resource, property, value) || changed
+		}
 		fieldsChanged, err := setNamedFields(resource, desiredFields)
 		if err != nil {
 			return false, fmt.Errorf("Lidarr Slskd schema lacks field %s", missingField(err))
@@ -200,6 +207,9 @@ func (l Lidarr) reconcileSlskdResource(ctx context.Context, path, name string, d
 		}
 		setMapValue(schema, "name", name)
 		setMapValue(schema, "enable", true)
+		for property, value := range desiredProperties {
+			setMapValue(schema, property, value)
+		}
 		if _, err := setNamedFields(schema, desiredFields); err != nil {
 			return false, fmt.Errorf("Lidarr Slskd schema lacks field %s", missingField(err))
 		}

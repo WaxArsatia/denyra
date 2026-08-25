@@ -203,9 +203,12 @@ func TestLidarrApplyCreatesOwnedContractAndIsIdempotent(t *testing.T) {
 	assertSlskdResource(t, f.downloadClients, "Denyra slskd", map[string]any{
 		"host": "slskd", "port": float64(5030), "useSsl": false, "urlBase": "", "apiKey": "slskd-secret", "repairConfiguration": false,
 	})
-	assertSlskdResource(t, f.indexers, "Denyra slskd indexer", map[string]any{
+	slskdIndexer := assertSlskdResource(t, f.indexers, "Denyra slskd indexer", map[string]any{
 		"baseUrl": "http://slskd:5030/", "apiKey": "slskd-secret", "minimumPeerUploadSpeed": float64(0), "maximumPeerQueueLength": float64(0), "allowIncompleteReleases": false, "verifyDurations": true,
 	})
+	if slskdIndexer["enableAutomaticSearch"] != true || slskdIndexer["enableInteractiveSearch"] != true {
+		t.Errorf("slskd indexer search modes=%v", slskdIndexer)
+	}
 	if f.downloadClients[0]["unrelated"] != "keep" || f.indexers[0]["unrelated"] != "keep" {
 		t.Fatal("unrelated resources were changed")
 	}
@@ -218,6 +221,29 @@ func TestLidarrRejectsIncompleteSlskdSchema(t *testing.T) {
 	_, err := lidarr.Apply(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "Lidarr Slskd schema lacks field repairConfiguration") {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestLidarrApplyEnablesSearchModesOnExistingSlskdIndexer(t *testing.T) {
+	f := newLidarrFixture(t)
+	existing := slskdSchema("SlskdIndexerSettings", []string{"baseUrl", "apiKey", "minimumPeerUploadSpeed", "maximumPeerQueueLength", "allowIncompleteReleases", "verifyDurations"})
+	existing["id"] = 7
+	existing["name"] = "Denyra slskd indexer"
+	existing["enable"] = true
+	existing["enableAutomaticSearch"] = false
+	existing["enableInteractiveSearch"] = false
+	f.indexers = append(f.indexers, existing)
+
+	lidarr := Lidarr{BaseURL: f.server.URL, APIKey: "lidarr-secret", SlskdURL: "http://slskd:5030", SlskdAPIKey: "slskd-secret", HTTP: f.server.Client()}
+	if _, err := lidarr.Apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	slskdIndexer := assertSlskdResource(t, f.indexers, "Denyra slskd indexer", map[string]any{
+		"baseUrl": "http://slskd:5030/", "apiKey": "slskd-secret", "minimumPeerUploadSpeed": float64(0), "maximumPeerQueueLength": float64(0), "allowIncompleteReleases": false, "verifyDurations": true,
+	})
+	if slskdIndexer["enableAutomaticSearch"] != true || slskdIndexer["enableInteractiveSearch"] != true {
+		t.Errorf("slskd indexer search modes=%v", slskdIndexer)
 	}
 }
 
@@ -238,7 +264,7 @@ func TestLidarrErrorIncludesBoundedResponseBody(t *testing.T) {
 	}
 }
 
-func assertSlskdResource(t *testing.T, resources []map[string]any, name string, fields map[string]any) {
+func assertSlskdResource(t *testing.T, resources []map[string]any, name string, fields map[string]any) map[string]any {
 	t.Helper()
 	for _, resource := range resources {
 		if resource["implementation"] != "Slskd" {
@@ -252,9 +278,10 @@ func assertSlskdResource(t *testing.T, resources []map[string]any, name string, 
 				t.Errorf("field %s=%v want=%v", field, got, want)
 			}
 		}
-		return
+		return resource
 	}
 	t.Fatalf("missing Slskd resource %q", name)
+	return nil
 }
 
 func fieldValue(resource map[string]any, name string) any {
