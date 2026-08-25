@@ -285,6 +285,33 @@ func TestSetupCreatesExternalDeploymentState(t *testing.T) {
 	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
 }
 
+func TestSetupAndCredentialsReportApprovedHostPorts(t *testing.T) {
+	f := newManagementFixture(t)
+	t.Cleanup(func() { _ = os.Remove(filepath.Join(f.repo, ".denyra-home")) })
+	f.runSetup()
+
+	stored, err := os.ReadFile(filepath.Join(f.home, "credentials.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandOutput := f.run("credentials")
+	for _, want := range []string{
+		"http://localhost:4000",
+		"http://localhost:4002",
+		"http://localhost:4003",
+		"http://localhost:4004",
+		"localhost:4005",
+		"localhost:50300",
+	} {
+		if !strings.Contains(string(stored), want) {
+			t.Errorf("stored credentials missing %q:\n%s", want, stored)
+		}
+		if !strings.Contains(commandOutput, want) {
+			t.Errorf("credentials output missing %q:\n%s", want, commandOutput)
+		}
+	}
+}
+
 func TestSetupUsesContainersWithoutHostCompilerSteps(t *testing.T) {
 	root := repositoryRoot(t)
 	scripts := readText(t, filepath.Join(root, "scripts/manage/setup.sh")) + readText(t, filepath.Join(root, "scripts/manage/smoke.sh"))

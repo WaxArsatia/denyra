@@ -34,7 +34,7 @@ func TestLiveCompatibility(t *testing.T) {
 		t.Fatalf("MusicBrainz search releases=%d evidence=%d err=%v", len(search.Releases), len(search.Evidence), err)
 	}
 
-	navidromeURL := strings.TrimRight(liveValue("DENYRA_LIVE_NAVIDROME_URL", "http://localhost:4533"), "/")
+	navidromeURL := strings.TrimRight(liveValue("DENYRA_LIVE_NAVIDROME_URL", "http://localhost:4000"), "/")
 	navidromeUser := liveValue("DENYRA_LIVE_NAVIDROME_USERNAME", "admin")
 	navidromePassword := readLiveSecret(t, "DENYRA_LIVE_NAVIDROME_PASSWORD_FILE")
 	loginBody, _ := json.Marshal(map[string]string{"username": navidromeUser, "password": navidromePassword})

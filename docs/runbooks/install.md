@@ -33,16 +33,19 @@ Running setup again is supported. Existing generated secrets and accounts are re
 
 Local URLs:
 
-- Denyra: `http://localhost:8090`
-- Navidrome: `http://localhost:4533`
-- SFTPGo WebAdmin: `http://localhost:8080`
-- SFTP upload: `localhost:2022`
+- Navidrome: `http://localhost:4000`
+- Lidarr: `http://localhost:4001`
+- slskd Web UI: `http://localhost:4002`
+- Denyra: `http://localhost:4003`
+- SFTPGo WebAdmin: `http://localhost:4004`
+- SFTP upload: `localhost:4005`
+- Soulseek incoming: `localhost:50300/TCP`
 
 For a private server, replace `localhost` with its LAN address. Use the Navidrome URL in Feishin.
 
 ## Import an album
 
-Open `http://localhost:8090/incoming`, then drop or select an album folder. An SFTP upload to `localhost:2022` enters the same review flow. Review metadata and artwork, choose Managed or Unmanaged, and submit the release. For an unmanaged release, open Unmanaged, run Check selected, review the durable result, and confirm only an exact match you recognize.
+Open `http://localhost:4003/incoming`, then drop or select an album folder. An SFTP upload to `localhost:4005` enters the same review flow. Review metadata and artwork, choose Managed or Unmanaged, and submit the release. For an unmanaged release, open Unmanaged, run Check selected, review the durable result, and confirm only an exact match you recognize.
 
 ## Normal lifecycle
 

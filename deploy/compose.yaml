@@ -83,7 +83,7 @@ services:
     ports:
       - name: admin-http
         target: 8090
-        published: "${DENYRA_ADMIN_HOST_PORT:-8090}"
+        published: "${DENYRA_ADMIN_HOST_PORT:-4003}"
         protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults
@@ -149,6 +149,11 @@ services:
     networks:
       denyra-acquisition: {}
       denyra-import: {}
+    ports:
+      - name: web-ui
+        target: 8686
+        published: "${DENYRA_LIDARR_HOST_PORT:-4001}"
+        protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8686/ping >/dev/null || exit 1"]
@@ -159,6 +164,8 @@ services:
     user: "${DENYRA_MEDIA_UID:-1000}:${DENYRA_MEDIA_GID:-1000}"
     entrypoint: ["/usr/bin/tini", "--", "/bin/sh", "/denyra/slskd-secret-entrypoint.sh", "/entrypoint.sh"]
     command: ["./slskd"]
+    environment:
+      SLSKD_REMOTE_CONFIGURATION: "true"
     configs:
       - source: slskd_config
         target: /app/slskd.yml
@@ -178,6 +185,15 @@ services:
         target: /data/downloads/slskd
     networks:
       denyra-acquisition: {}
+    ports:
+      - name: web-ui
+        target: 5030
+        published: "${DENYRA_SLSKD_WEB_HOST_PORT:-4002}"
+        protocol: tcp
+      - name: soulseek-listen
+        target: 50300
+        published: "${DENYRA_SLSKD_LISTEN_HOST_PORT:-50300}"
+        protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5030/health || exit 1"]
@@ -205,11 +221,11 @@ services:
     ports:
       - name: sftp
         target: 2022
-        published: "${DENYRA_SFTP_HOST_PORT:-2022}"
+        published: "${DENYRA_SFTP_HOST_PORT:-4005}"
         protocol: tcp
       - name: web-admin
         target: 8080
-        published: "${DENYRA_SFTPGO_WEB_HOST_PORT:-8080}"
+        published: "${DENYRA_SFTPGO_WEB_HOST_PORT:-4004}"
         protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults
@@ -258,7 +274,7 @@ services:
     ports:
       - name: open-subsonic
         target: 4533
-        published: "${DENYRA_NAVIDROME_HOST_PORT:-4533}"
+        published: "${DENYRA_NAVIDROME_HOST_PORT:-4000}"
         protocol: tcp
     healthcheck:
       <<: *healthcheck-defaults

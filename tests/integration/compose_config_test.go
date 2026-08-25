@@ -181,8 +181,10 @@ type composeVolume struct {
 }
 
 type composePort struct {
+	Name      string `json:"name"`
 	Target    int    `json:"target"`
 	Published string `json:"published"`
+	Protocol  string `json:"protocol"`
 }
 
 func renderCompose(t *testing.T) composeDocument {
@@ -250,7 +252,7 @@ func TestComposeUsesServiceDNSAndCompatibleTags(t *testing.T) {
 	if got := document.Services["media-pipeline"].Ports; len(got) != 1 || got[0].Target != 8090 {
 		t.Errorf("pipeline published ports = %+v", got)
 	}
-	for _, name := range []string{"acquisition-gateway", "lidarr", "slskd"} {
+	for _, name := range []string{"acquisition-gateway"} {
 		if ports := document.Services[name].Ports; len(ports) != 0 {
 			t.Errorf("service %s unexpectedly publishes ports: %+v", name, ports)
 		}
@@ -258,6 +260,34 @@ func TestComposeUsesServiceDNSAndCompatibleTags(t *testing.T) {
 	for _, name := range []string{"acquisition-gateway", "media-pipeline", "lidarr", "navidrome"} {
 		if len(document.Services[name].Build) == 0 {
 			t.Errorf("custom service %s has no Compose build definition", name)
+		}
+	}
+}
+
+func TestComposePublishesApprovedHostPorts(t *testing.T) {
+	document := renderCompose(t)
+	want := map[string][]composePort{
+		"navidrome": {
+			{Name: "open-subsonic", Target: 4533, Published: "4000", Protocol: "tcp"},
+		},
+		"lidarr": {
+			{Name: "web-ui", Target: 8686, Published: "4001", Protocol: "tcp"},
+		},
+		"slskd": {
+			{Name: "web-ui", Target: 5030, Published: "4002", Protocol: "tcp"},
+			{Name: "soulseek-listen", Target: 50300, Published: "50300", Protocol: "tcp"},
+		},
+		"media-pipeline": {
+			{Name: "admin-http", Target: 8090, Published: "4003", Protocol: "tcp"},
+		},
+		"sftpgo": {
+			{Name: "sftp", Target: 2022, Published: "4005", Protocol: "tcp"},
+			{Name: "web-admin", Target: 8080, Published: "4004", Protocol: "tcp"},
+		},
+	}
+	for service, ports := range want {
+		if got := document.Services[service].Ports; !slices.Equal(got, ports) {
+			t.Errorf("service %s published ports = %+v, want %+v", service, got, ports)
 		}
 	}
 }

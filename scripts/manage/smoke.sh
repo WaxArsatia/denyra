@@ -17,9 +17,12 @@ denyra_smoke() {
   denyra_smoke_compose exec -T navidrome /app/navidrome --version >/dev/null
 
   denyra_smoke_host=${DENYRA_DISPLAY_HOST:-localhost}
-  printf 'Denyra:      http://%s:8090\n' "$denyra_smoke_host"
-  printf 'Navidrome:   http://%s:4533\n' "$denyra_smoke_host"
-  printf 'SFTPGo:      http://%s:8080\n' "$denyra_smoke_host"
-  printf 'SFTP:        %s:2022\n' "$denyra_smoke_host"
+  printf 'Navidrome:   http://%s:4000\n' "$denyra_smoke_host"
+  printf 'Lidarr:      http://%s:4001\n' "$denyra_smoke_host"
+  printf 'slskd:       http://%s:4002\n' "$denyra_smoke_host"
+  printf 'Denyra:      http://%s:4003\n' "$denyra_smoke_host"
+  printf 'SFTPGo:      http://%s:4004\n' "$denyra_smoke_host"
+  printf 'SFTP:        %s:4005\n' "$denyra_smoke_host"
+  printf 'Soulseek:    %s:50300/TCP\n' "$denyra_smoke_host"
   printf 'Credentials: ./denyra credentials\n'
 }

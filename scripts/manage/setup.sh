@@ -179,11 +179,12 @@ denyra_setup() {
   } | denyra_atomic_file "$DENYRA_CONFIG_DIR/denyra.env" 0640
 
   {
-    printf 'Denyra | http://localhost:8090 | admin | %s/bootstrap_admin\n' "$DENYRA_SECRETS_DIR"
-    printf 'Navidrome | http://localhost:4533 | admin | %s/navidrome_admin\n' "$DENYRA_SECRETS_DIR"
-    printf 'SFTPGo | http://localhost:8080 | admin | %s/sftpgo_admin\n' "$DENYRA_SECRETS_DIR"
-    printf 'SFTP | localhost:2022 | upload | %s/sftpgo_upload\n' "$DENYRA_SECRETS_DIR"
-    printf 'slskd | internal only | admin | %s/slskd_web_password\n' "$DENYRA_SECRETS_DIR"
+    printf 'Denyra | http://localhost:4003 | admin | %s/bootstrap_admin\n' "$DENYRA_SECRETS_DIR"
+    printf 'Navidrome | http://localhost:4000 | admin | %s/navidrome_admin\n' "$DENYRA_SECRETS_DIR"
+    printf 'SFTPGo | http://localhost:4004 | admin | %s/sftpgo_admin\n' "$DENYRA_SECRETS_DIR"
+    printf 'SFTP | localhost:4005 | upload | %s/sftpgo_upload\n' "$DENYRA_SECRETS_DIR"
+    printf 'slskd | http://localhost:4002 | admin | %s/slskd_web_password\n' "$DENYRA_SECRETS_DIR"
+    printf 'Soulseek | localhost:50300 | inbound TCP | %s/soulseek_username\n' "$DENYRA_SECRETS_DIR"
     printf 'Run ./denyra credentials to display current values.\n'
   } | denyra_atomic_file "$DENYRA_HOME/credentials.txt" 0600
 

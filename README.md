@@ -50,8 +50,8 @@ Lihat akun yang dibuat:
 
 ## Upload album yang belum ada di Lidarr
 
-1. Buka `http://localhost:8090/incoming`.
-2. Drop atau pilih satu folder album. Upload SFTP ke `localhost:2022` juga masuk ke alur review yang sama.
+1. Buka `http://localhost:4003/incoming`.
+2. Drop atau pilih satu folder album. Upload SFTP ke `localhost:4005` juga masuk ke alur review yang sama.
 3. Periksa metadata dan cover, lalu pilih Unmanaged dan tekan Submit.
 4. Buka Unmanaged, pilih album, lalu tekan Check selected.
 5. Tinjau hasilnya. Hanya hasil Exact candidate yang dapat dipilih pada form Confirm selected migrations.
@@ -62,10 +62,13 @@ Check selected hanya membaca katalog. File baru dipindahkan ke Lidarr setelah ko
 
 | Fungsi | URL atau alamat |
 | --- | --- |
-| Denyra | `http://localhost:8090` |
-| Navidrome dan Feishin | `http://localhost:4533` |
-| SFTPGo WebAdmin | `http://localhost:8080` |
-| Upload SFTP | `localhost:2022` |
+| Navidrome dan Feishin | `http://localhost:4000` |
+| Lidarr | `http://localhost:4001` |
+| slskd Web UI | `http://localhost:4002` |
+| Denyra | `http://localhost:4003` |
+| SFTPGo WebAdmin | `http://localhost:4004` |
+| Upload SFTP | `localhost:4005` |
+| Soulseek incoming | `localhost:50300/TCP` |
 
 Untuk server lain di LAN, ganti `localhost` dengan alamat LAN server. Jangan memakai alamat container internal pada client.
 

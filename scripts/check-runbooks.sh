@@ -50,10 +50,15 @@ for reference in $references; do
   esac
 done
 
-grep -q '0.0.0.0:8090' "$runbook_root/security-boundary.md"
+grep -q '0.0.0.0:4003' "$runbook_root/security-boundary.md"
 grep -q 'accepted security risk' "$runbook_root/security-boundary.md"
-grep -q 'http://localhost:4533' "$runbook_root/clients.md"
-grep -q 'http://localhost:8090' "$runbook_root/clients.md"
+grep -q 'http://localhost:4000' "$runbook_root/clients.md"
+grep -q 'http://localhost:4001' "$runbook_root/clients.md"
+grep -q 'http://localhost:4002' "$runbook_root/clients.md"
+grep -q 'http://localhost:4003' "$runbook_root/clients.md"
+grep -q 'http://localhost:4004' "$runbook_root/clients.md"
+grep -q 'localhost:4005' "$runbook_root/clients.md"
+grep -q '50300/TCP' "$runbook_root/security-boundary.md"
 grep -q 'opus-256' "$runbook_root/clients.md"
 grep -q 'opus-160' "$runbook_root/clients.md"
 grep -q 'restore drill' "$runbook_root/backup.md"
