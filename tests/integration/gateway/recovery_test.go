@@ -87,6 +87,41 @@ func (runner zeroResultRunner) Run(_ context.Context, request spotiflac.RunReque
 	return spotiflac.RunResult{EngineVersion: "test", Providers: providers, StartedAt: completed, CompletedAt: completed}, nil
 }
 
+func TestFallbackRetryAfterOverallDeadlineRecoveryRestartsPrimary(t *testing.T) {
+	db, store, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, store, now)
+	prepareFallbackState(t, store, job, now)
+	if _, err := store.SetOverallDeadline(context.Background(), job.ID, 4, now.Add(-time.Second), now); err != nil {
+		t.Fatal(err)
+	}
+	ready := now
+	if _, err := store.UpdateState(context.Background(), persistence.TransitionCommand{JobID: job.ID, Expected: 4, To: domain.StateFallbackRetryableError, Actor: "test", Reason: "process interrupted", NextRetryAt: &ready, OccurredAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fallbackRunner{}
+	worker := application.AcquisitionWorker{
+		Store: store,
+		Admission: application.AdmissionController{Store: store, DataRoot: t.TempDir(), Capacity: func(string) (application.Capacity, error) {
+			return application.Capacity{FreeBytes: 1 << 40, TotalBytes: 1 << 40}, nil
+		}},
+		Fallback: application.FallbackService{
+			Runner: runner, Store: store,
+			Policy:    domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour},
+			Providers: []string{"ext:tidal-web"}, OutputRoot: "/data/downloads/spotiflac", OverallTimeout: 6 * time.Hour,
+			Now: func() time.Time { return now },
+		},
+		Lease: time.Minute, MaxInlineTransitions: 4, Now: func() time.Time { return now },
+	}
+	if err := worker.ProcessOne(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertRestartedPrimaryCycle(t, store, job.ID, now.Add(time.Minute))
+	if runner.calls != 0 {
+		t.Fatalf("recovery started provider %d times", runner.calls)
+	}
+}
+
 func TestAcquisitionRecoveryReconcilesLeaseInterruptedFallbackAndOrphan(t *testing.T) {
 	db, store, now := gatewayRepositories(t)
 	defer db.Close()

@@ -55,6 +55,9 @@ func (service FallbackService) Run(ctx context.Context, jobID string) error {
 			return err
 		}
 	}
+	if !now.Before(overallDeadline) {
+		return service.restartCycle(ctx, job, now)
+	}
 	request := spotiflac.RunRequest{
 		JobID:           job.ID,
 		ReleaseGroupID:  job.ReleaseGroupMBID,
@@ -136,9 +139,13 @@ func (service FallbackService) Run(ctx context.Context, jobID string) error {
 		command.NextRetryAt = &deadline
 	case domain.StateFallbackRetryableError:
 		command.Reason = "fallback provider or runtime operational error"
-		deadline, err := service.Policy.FallbackDeadline(service.now(), job.FallbackAttempt)
+		retryNow := service.now()
+		deadline, err := service.Policy.FallbackDeadline(retryNow, job.FallbackAttempt)
 		if err != nil {
 			return err
+		}
+		if !retryNow.Before(overallDeadline) || deadline.After(overallDeadline) {
+			return service.restartCycle(ctx, job, retryNow)
 		}
 		command.NextRetryAt = &deadline
 		command.IncrementFallbackAttempt = true
@@ -155,6 +162,15 @@ func (service FallbackService) Run(ctx context.Context, jobID string) error {
 		}
 	}
 	return runErr
+}
+
+func (service FallbackService) restartCycle(ctx context.Context, job domain.Job, at time.Time) error {
+	deadline, err := service.Policy.PrimaryDeadline(at, job.PrimaryAttempt)
+	if err != nil {
+		return err
+	}
+	_, err = service.Store.RestartAcquisitionCycle(ctx, job.ID, job.Revision, deadline, at)
+	return err
 }
 
 func (service FallbackService) persistCompletedCandidate(ctx context.Context, job domain.Job, request spotiflac.RunRequest, result spotiflac.RunResult, provenanceJSON []byte, provenanceHash [sha256.Size]byte) (persistence.Candidate, contracts.AcquisitionProvenance, error) {

@@ -167,6 +167,9 @@ func (worker *AcquisitionWorker) processStep(ctx context.Context, job *domain.Jo
 		}
 		return worker.Fallback.Run(ctx, job.ID)
 	case domain.StateFallbackRetryableError:
+		if job.OverallDeadline != nil && !worker.now().Before(*job.OverallDeadline) {
+			return worker.Fallback.restartCycle(ctx, *job, worker.now())
+		}
 		event, err := worker.Store.UpdateState(ctx, persistence.TransitionCommand{JobID: job.ID, Expected: job.Revision, To: domain.StateFallbackRunning, Actor: "gateway-worker", Reason: "fallback retry deadline reached", OccurredAt: worker.now()})
 		if err != nil {
 			return err

@@ -149,6 +149,39 @@ func (r *Repositories) UpdateState(ctx context.Context, command TransitionComman
 	})
 	return event, err
 }
+
+func (r *Repositories) RestartAcquisitionCycle(ctx context.Context, jobID string, expected uint64, nextRetryAt, at time.Time) (domain.Transition, error) {
+	var event domain.Transition
+	err := denysqlite.WithinTx(ctx, r.DB, func(tx *sql.Tx) error {
+		job, err := jobQuery(ctx, tx, jobID)
+		if err != nil {
+			return err
+		}
+		event, err = job.Transition(expected, domain.StatePrimaryRetryableError, "gateway-fallback", "fallback acquisition cycle deadline expired", at)
+		if err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `UPDATE acquisition_jobs SET state='PRIMARY_RETRYABLE_ERROR',state_revision=?,primary_attempt=primary_attempt+1,fallback_attempt=0,next_retry_at=?,queue_watermark=NULL,history_watermark=NULL,command_id=NULL,correlation_started_at=NULL,command_deadline=NULL,grace_deadline=NULL,overall_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, event.Revision, formatTime(nextRetryAt), formatTime(at), jobID, expected)
+		if err != nil {
+			return err
+		}
+		count, _ := result.RowsAffected()
+		if count != 1 {
+			current, loadErr := jobQuery(ctx, tx, jobID)
+			if loadErr != nil {
+				return loadErr
+			}
+			return &domain.StaleRevisionError{Expected: expected, Current: current.Revision, State: current.State}
+		}
+		id, err := ids.NewToken(16)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `INSERT INTO state_transitions(id,job_id,actor,reason,previous_state,new_state,previous_revision,revision,occurred_at) VALUES(?,?,?,?,?,?,?,?,?)`, id, jobID, event.Actor, event.Reason, event.Previous, event.Next, event.PreviousRevision, event.Revision, formatTime(event.OccurredAt))
+		return err
+	})
+	return event, err
+}
 func (r *Repositories) SetSearchContext(ctx context.Context, jobID string, expected uint64, queueWatermark, historyWatermark, commandID string, started, commandDeadline time.Time) error {
 	result, err := r.DB.ExecContext(ctx, `UPDATE acquisition_jobs SET queue_watermark=?,history_watermark=?,command_id=?,correlation_started_at=?,command_deadline=?,grace_deadline=NULL,updated_at=? WHERE id=? AND state_revision=?`, queueWatermark, historyWatermark, commandID, formatTime(started), formatTime(commandDeadline), formatTime(started), jobID, expected)
 	if err != nil {

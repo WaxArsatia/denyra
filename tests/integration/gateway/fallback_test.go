@@ -14,11 +14,78 @@ import (
 type fallbackRunner struct {
 	result  spotiflac.RunResult
 	request spotiflac.RunRequest
+	calls   int
 }
 
 func (runner *fallbackRunner) Run(_ context.Context, request spotiflac.RunRequest) (spotiflac.RunResult, error) {
+	runner.calls++
 	runner.request = request
 	return runner.result, nil
+}
+
+func TestFallbackDeadlineRestartsPrimaryBeforeProviderRun(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET selected_release_mbid=? WHERE id=?`, releaseMBID, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	prepareFallbackState(t, repositories, job, now)
+	if _, err := repositories.SetOverallDeadline(context.Background(), job.ID, 4, now.Add(-time.Second), now); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fallbackRunner{}
+	service := fallbackDeadlineService(repositories, runner, now)
+	if err := service.Run(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertRestartedPrimaryCycle(t, repositories, job.ID, now.Add(time.Minute))
+	if runner.calls != 0 {
+		t.Fatalf("expired cycle ran provider %d times", runner.calls)
+	}
+}
+
+func TestFallbackRetryAfterOverallDeadlineRestartsPrimary(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := createJob(t, repositories, now)
+	if _, err := db.Exec(`UPDATE acquisition_jobs SET selected_release_mbid=? WHERE id=?`, releaseMBID, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	prepareFallbackState(t, repositories, job, now)
+	if _, err := repositories.SetOverallDeadline(context.Background(), job.ID, 4, now.Add(2*time.Minute), now); err != nil {
+		t.Fatal(err)
+	}
+	completed := now.Add(time.Second)
+	runner := &fallbackRunner{result: spotiflac.RunResult{StartedAt: now, CompletedAt: completed, Providers: []spotiflac.ProviderExecution{{Provider: "ext:tidal-web", Outcome: domain.OutcomeRetryableError, StartedAt: now, CompletedAt: &completed, ErrorClass: "NETWORK"}}}}
+	service := fallbackDeadlineService(repositories, runner, now)
+	if err := service.Run(context.Background(), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertRestartedPrimaryCycle(t, repositories, job.ID, now.Add(time.Minute))
+	if runner.calls != 1 {
+		t.Fatalf("provider calls=%d", runner.calls)
+	}
+}
+
+func fallbackDeadlineService(repositories *persistence.Repositories, runner *fallbackRunner, now time.Time) application.FallbackService {
+	return application.FallbackService{
+		Runner: runner, Store: repositories,
+		Policy:    domain.RetryPolicy{Primary: []time.Duration{time.Minute}, Fallback: []time.Duration{5 * time.Minute}, NoCandidate: 24 * time.Hour},
+		Providers: []string{"ext:tidal-web"}, OutputRoot: "/data/downloads/spotiflac", OverallTimeout: 6 * time.Hour,
+		Now: func() time.Time { return now },
+	}
+}
+
+func assertRestartedPrimaryCycle(t *testing.T, repositories *persistence.Repositories, jobID string, retry time.Time) {
+	t.Helper()
+	stored, err := repositories.Job(context.Background(), jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.StatePrimaryRetryableError || stored.OverallDeadline != nil || stored.FallbackAttempt != 0 || stored.PrimaryAttempt != 1 || stored.NextRetryAt == nil || !stored.NextRetryAt.Equal(retry) {
+		t.Fatalf("job=%+v", stored)
+	}
 }
 
 func TestSpotiFLACFallbackPersistsStrictOutcomeAndDeadline(t *testing.T) {
