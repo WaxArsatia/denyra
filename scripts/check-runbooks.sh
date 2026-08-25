@@ -3,7 +3,7 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runbook_root="$repo_root/docs/runbooks"
 
-required="install.md backup.md restore.md upgrade.md incidents.md clients.md security-boundary.md acceptance-evidence.md"
+required="install.md upgrade.md incidents.md clients.md security-boundary.md acceptance-evidence.md"
 for name in $required; do
   [ -s "$runbook_root/$name" ] || { echo "missing runbook: $name" >&2; exit 1; }
 done
@@ -12,10 +12,24 @@ if grep -Rin 'denisonic' "$runbook_root"; then
   echo "old product name found in runbooks" >&2
   exit 1
 fi
-operator_docs="$repo_root/README.md $runbook_root/install.md $runbook_root/upgrade.md $runbook_root/backup.md"
-for command in './denyra setup' './denyra update' './denyra rollback' './denyra credentials' './denyra backup'; do
+
+operator_docs="$repo_root/README.md $runbook_root/install.md $runbook_root/upgrade.md"
+for command in './denyra setup' './denyra update' './denyra credentials' './denyra cleanup legacy-lifecycle'; do
   grep -Fq "$command" $operator_docs || { echo "supported command missing from operator docs: $command" >&2; exit 1; }
 done
+
+current_surfaces="$repo_root/README.md $runbook_root $repo_root/denyra $repo_root/scripts/manage $repo_root/deploy/compose.yaml"
+for forbidden in './denyra backup' './denyra restore' './denyra rollback' 'prior-images.yaml' 'prior-compose.yaml' 'automatic rollback' 'DENYRA_RESTIC_' 'restic/restic:'; do
+  if grep -RFqn "$forbidden" $current_surfaces; then
+    echo "retired lifecycle surface found: $forbidden" >&2
+    exit 1
+  fi
+done
+
+for removed in "$runbook_root/backup.md" "$runbook_root/restore.md"; do
+  [ ! -e "$removed" ] || { echo "retired runbook remains: $removed" >&2; exit 1; }
+done
+
 obsolete_dependency='dependencies''.lock.json'
 obsolete_images='images''.lock.json'
 obsolete_pin_check='verify''-pins'
@@ -61,11 +75,8 @@ grep -q 'localhost:4005' "$runbook_root/clients.md"
 grep -q '50300/TCP' "$runbook_root/security-boundary.md"
 grep -q 'opus-256' "$runbook_root/clients.md"
 grep -q 'opus-160' "$runbook_root/clients.md"
-grep -q 'restore drill' "$runbook_root/backup.md"
-grep -q 'library-unmanaged' "$repo_root/scripts/backup/backup.sh"
 grep -qi 'Check selected' "$repo_root/README.md" "$runbook_root/install.md"
 grep -qi 'Confirm selected migrations' "$repo_root/README.md" "$runbook_root/install.md"
-grep -qi 'incomplete.*upload' "$runbook_root/backup.md" "$runbook_root/restore.md"
 grep -qi 'Managed.*Unmanaged' "$runbook_root/clients.md"
 
 echo "runbooks verified"

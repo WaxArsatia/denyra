@@ -9,17 +9,17 @@ Preserve service state, SQLite databases, quarantine content, and logs before ch
 
 ## Failed update
 
-An unhealthy candidate should roll back automatically before `./denyra update` exits. Check the newest directory under the deployment's `updates` directory. A rolled-back snapshot contains prior config and state plus `failed-config` and `failed-state` from the candidate.
+Read the phase and service log command printed by `./denyra update`. A failure before activation leaves the running release and release environment unchanged. A failure during recreation or smoke keeps the selected commit and candidate containers for diagnosis.
 
-Do not prune the prior image IDs referenced by that snapshot. If automatic rollback reports a missing image, recover that exact image before retrying.
+Fix the candidate and run `./denyra update` again. The command reconciles an unhealthy stack even when Git HEAD already equals the deployed commit. Do not copy database files, replace service state, or start older images as part of this retry.
 
 ## Low disk
 
-Denyra stops new claims, acquisitions, and imports when free space falls below its admission threshold. Remove confirmed disposable downloads or cache. Do not remove active processing work, quarantine evidence, SQLite WAL files, update snapshots needed for rollback, or unverified backup workspaces.
+Denyra stops new claims, acquisitions, and imports when free space falls below its admission threshold. Remove confirmed disposable downloads or cache. Do not remove active processing work, quarantine evidence, SQLite WAL files, or unresolved acquisition directories.
 
 ## Database corruption
 
-Stop stateful services if they still respond. Preserve the database and WAL files and follow the restore runbook into a new directory. Do not run an ad hoc repair against the only copy.
+Stop stateful services if they still respond. Preserve the database and WAL files. Do not run an ad hoc repair against the only copy. This active-development lifecycle has no automated restore command.
 
 ## External provider outage
 

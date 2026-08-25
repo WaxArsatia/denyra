@@ -81,23 +81,17 @@ Untuk server lain di LAN, ganti `localhost` dengan alamat LAN server. Jangan mem
 ./denyra status
 ./denyra logs
 ./denyra update
-./denyra rollback
+./denyra cleanup legacy-lifecycle
 ./denyra credentials
 ```
 
-`./denyra update` mengambil fast-forward terbaru dan menyiapkan semua image saat stack lama masih hidup. Setelah build berhasil, command membuat snapshot config dan state, menjalankan kandidat, lalu mengecek semua service. Kandidat yang gagal sebelum sehat otomatis dikembalikan ke state dan image ID lama.
+`./denyra update` mengambil fast-forward terbaru, merender Compose, menarik image upstream, dan membangun image Denyra saat stack lama masih hidup. Cutover baru dimulai setelah semua tahap itu berhasil. Update tidak menghentikan seluruh project; Compose mengganti service yang perlu berubah lalu menjalankan health wait dan smoke checks.
 
-`./denyra rollback` memakai snapshot update sukses terbaru. Command meminta konfirmasi karena perubahan state setelah update akan dibuang. Rollback tidak memindahkan Git worktree ke commit lama.
+Jika update gagal sebelum cutover, release environment dan container aktif tidak berubah. Jika startup atau smoke gagal setelah cutover, commit baru tetap terpilih dan bukti kegagalan tetap tersedia. Perbaiki penyebabnya lalu jalankan `./denyra update` lagi. Output kegagalan mencantumkan phase, service log yang perlu dibaca, commit aktif, dan command retry.
 
-## Backup
+Media, database service, upload yang belum selesai, processing, quarantine, dan download yang belum terselesaikan tidak dihapus oleh update. Setelah deployment forward-only diterima, command berikut dapat menghapus tiga artefak lifecycle lama: direktori `updates`, direktori `backups`, dan secret Restic lokal.
 
-Snapshot update hanya untuk rollback cepat dan tidak menyimpan library. Untuk disaster recovery, siapkan repository Restic di luar `DENYRA_HOME`, lalu jalankan:
-
-```sh
-DENYRA_RESTIC_REPOSITORY_PATH=/mnt/denyra-restic ./denyra backup
-```
-
-Backup Restic terenkripsi mencakup config, secrets, kedua library, state, upload yang belum selesai, processing, quarantine, dan salinan SQLite yang konsisten. Download mentah, cache, update snapshot, dan workspace backup dikecualikan.
+`./denyra cleanup legacy-lifecycle` menampilkan path persis dan meminta token `DELETE`. Command ini tidak dipanggil oleh update dan tidak mencari repository Restic eksternal.
 
 ## Pengembangan
 
@@ -108,4 +102,4 @@ make verify
 go test ./...
 ```
 
-Lihat [runbook instalasi](docs/runbooks/install.md), [upgrade](docs/runbooks/upgrade.md), [backup](docs/runbooks/backup.md), [restore](docs/runbooks/restore.md), dan [client](docs/runbooks/clients.md) untuk detail operasional.
+Lihat [runbook instalasi](docs/runbooks/install.md), [upgrade](docs/runbooks/upgrade.md), [incident](docs/runbooks/incidents.md), dan [client](docs/runbooks/clients.md) untuk detail operasional.

@@ -6,13 +6,13 @@ The deployment workflow is checked through automated integration tests and dispo
 
 - a clean `./denyra setup` creates external config, secrets, data, and service accounts
 - a second setup reconciles without resetting accounts or secrets
-- update pulls and builds before stopping the active stack
-- an unhealthy candidate restores the prior config, state, and six running image IDs
-- update snapshots exclude the library and retain failed candidate state
-- backup includes both libraries, incomplete uploads, processing data, and durable migration state while excluding downloads, cache, and temporary backup data
-- restore verifies Managed and Unmanaged checksums, incomplete uploads, both Denyra databases, migration ledgers, ownership, and filesystem layout
+- update renders, pulls, and builds before changing the active release environment
+- pre-cutover failure leaves the active release and protected paths unchanged
+- post-cutover failure keeps the selected commit and converges through a later update retry
+- Managed and Unmanaged libraries, service state, incomplete uploads, processing, quarantine, and unresolved downloads survive update failures
+- legacy cleanup accepts only three fixed local paths and requires the exact `DELETE` token
 
-The forced-update acceptance test uses a local temporary Git remote and an acceptance-only Compose health failure. It does not add a production switch that can disable healthchecks.
+The forced-update acceptance test uses a local temporary Git remote and an acceptance-only Compose health failure. It does not add a production switch that can disable healthchecks. The test records aggregate counts and file bytes before and after each failure boundary.
 
 ## Developer verification
 

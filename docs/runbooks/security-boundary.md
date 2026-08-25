@@ -16,6 +16,6 @@ The repository does not configure TLS, a reverse proxy, host firewall, DNS, VPN 
 
 Navidrome music users, SFTPGo upload users, and Denyra administrators are separate accounts. Do not reuse passwords. SpotiFLAC does not receive personal streaming-provider credentials.
 
-Upstream services follow supported active release lines instead of promising exact build provenance for every release. Update rollback still records the actual running Docker image IDs so it can restore the previous local deployment exactly while those images remain present.
+Upstream services follow supported active release lines instead of promising exact build provenance for every release. Updates build before cutover and move forward after activation. There is no operator rollback, snapshot, or restore path.
 
 Secrets must not be committed, copied into config files, added to logs, or pasted into support messages. `./denyra credentials` reads them locally when an operator needs the generated accounts.

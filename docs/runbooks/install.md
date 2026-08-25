@@ -61,4 +61,4 @@ Use these commands as the operator interface. Compose details remain internal to
 
 ## Next steps
 
-Read the backup runbook and create a disaster backup before importing irreplaceable media. Use `./denyra update` for later releases and `./denyra rollback` only when you intend to discard state written after an update.
+Use `./denyra update` for later releases. An update builds before cutover and preserves media, service state, unresolved downloads, uploads, processing work, and quarantine content. If a deployment fails after cutover, inspect the reported service logs, fix the candidate, and run the update again.

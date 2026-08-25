@@ -1,5 +1,7 @@
 # Denyra system foundation design
 
+> Historical design. Lifecycle backup, restore, snapshot, rollback, and Restic sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
+
 ## Purpose
 
 Denyra is a Docker Compose deployment for a personal FLAC library. Lidarr is the control plane and the only component allowed to rename, move, or import files into `/data/library`. Every automated or manual acquisition passes through controlled validation before Lidarr receives a Manual Import request.

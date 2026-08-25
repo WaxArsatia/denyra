@@ -1,5 +1,7 @@
 # Simplified local-build deployment design
 
+> Historical design. Its backup, restore, update snapshot, and rollback sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`.
+
 Status: approved for implementation planning
 
 Base commit: `0d558f6`

@@ -1,5 +1,7 @@
 # Operations and clients design
 
+> Historical design. Backup, restore, and upgrade rollback sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
+
 ## Streaming service
 
 Navidrome `0.63.2` reads `/data/library` at `/music:ro`. Its database, cache, plugins, and transcoding cache live under `/data/state/navidrome` with read/write access. Navidrome cannot write to the master library.
@@ -166,4 +168,3 @@ Acceptance criteria:
 - Restic snapshot restores into a new path with valid checksums and databases
 
 Dependency compatibility tests fail closed when a version, platform, manifest, hash, Python dependency graph, Node runtime, SpotiFLAC engine, extension, or registry identity differs from `dependencies.lock.json`.
-

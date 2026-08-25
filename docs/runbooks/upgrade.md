@@ -1,4 +1,4 @@
-# Update and rollback
+# Update Denyra
 
 ## Update
 
@@ -8,30 +8,34 @@ Run from a clean checkout on its normal branch:
 ./denyra update
 ```
 
-The command refuses tracked or staged source changes. It records the active commit, rendered Compose model, and exact running image IDs before fetching the branch. Pull and build happen while the old stack remains online.
+The command refuses tracked or staged source changes. It fetches and fast-forwards the current branch, renders Compose, pulls upstream images, and builds Denyra images while the active stack remains online.
 
-After every candidate image is ready, the command stops the stack and copies only external config and service state into an update snapshot. Library, downloads, processing media, quarantine, and cache are not copied. The candidate starts with a health wait and the same smoke checks used by setup.
+After every candidate image is ready, Denyra atomically records the selected commit and image tag. Compose then recreates changed services without stopping the whole project. Health wait and smoke checks cover both custom services, Lidarr, slskd, SFTPGo, Navidrome, and the protected filesystem mounts.
 
-If startup or smoke fails before the candidate is declared healthy, Denyra restores config and state and starts the exact prior image IDs. It does not rebuild an approximation from an old tag. Failed candidate trees remain inside the snapshot for diagnosis.
+If a failure occurs before activation, the release environment and running containers stay unchanged. If recreation or smoke fails after activation, Denyra keeps the selected commit and candidate containers. The failure output reports `phase`, `affected`, `deployed_commit`, a service log command, and `retry=./denyra update`.
 
-The two newest update snapshots are retained. Docker images referenced by them are not pruned automatically.
+Run the reported log command, fix the selected release, then run `./denyra update` again. An equal Git commit is not treated as complete until the current stack passes health and smoke checks. A successful update removes only unreferenced images labeled `io.denyra.project=denyra`; it never runs a global Docker prune.
 
-## Manual rollback
+## Preservation boundary
+
+Update does not reset, replace, truncate, or delete these paths:
+
+- `library` and `library-unmanaged`
+- `state`
+- `incoming` and `processing`
+- `quarantine`
+- unresolved `downloads/slskd` and `downloads/spotiflac`
+
+Pipeline `.migration-backups/<candidateID>` directories remain part of media mutation recovery. They are not lifecycle artifacts.
+
+## One-time legacy cleanup
+
+After the forward-only release passes production acceptance:
 
 ```sh
-./denyra rollback
+./denyra cleanup legacy-lifecycle
 ```
 
-The command selects the newest successful update snapshot and prints both commits. It then asks:
+The command may list only `${DENYRA_HOME}/updates`, `${DENYRA_DATA_ROOT}/backups`, and `${DENYRA_SECRETS_DIR}/restic_password`. Check the printed paths, then type `DELETE`. Any other input cancels the cleanup. The command does not inspect or remove an external Restic repository.
 
-```text
-Rollback will discard service-state writes made after this update. Continue? [y/N]
-```
-
-Only `y` or `yes` continues. The same exact-image restore path used by automatic rollback is used here. The current Git worktree stays on its present commit; rollback controls active images, config, and service state.
-
-Rollback cannot proceed if a required prior image has been manually deleted. Keep the snapshot and restore that exact image before retrying.
-
-Use `./denyra status` and `./denyra logs` after either operation. `./denyra credentials` shows the generated login locations without changing them.
-
-Update snapshots are not disaster backups. Configure `./denyra backup` separately when the library and long-lived state need recovery protection.
+Use `./denyra status` and `./denyra logs` after an update. `./denyra credentials` shows generated login locations without changing them.

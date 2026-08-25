@@ -413,42 +413,42 @@ func TestComposePurposeNetworksCannotReachControlListeners(t *testing.T) {
 	}
 }
 
-func TestComposeVersionGate(t *testing.T) {
+func TestComposeDeploymentInterfaceGate(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("resolve repository root: %v", err)
 	}
 	binDir := t.TempDir()
 	fakeDocker := `#!/bin/sh
-case "$1 $2" in
-  "version --format") printf '%s\n' "${TEST_ENGINE_VERSION}" ;;
-  "compose version") printf '%s\n' "${TEST_COMPOSE_VERSION}" ;;
-  "buildx version") printf 'github.com/docker/buildx %s 0000000\n' "${TEST_BUILDX_VERSION}" ;;
+case "$*" in
+  "version") exit 0 ;;
+  "info") [ "${TEST_DAEMON_FAILURE:-}" != yes ] ;;
+  "compose version") printf 'Docker Compose version %s\n' "${TEST_COMPOSE_VERSION}" ;;
+  compose\ -f\ *deploy/compose.yaml\ config\ --quiet) [ "${TEST_CONFIG_FAILURE:-}" != yes ] ;;
   *) exit 2 ;;
 esac
 `
 	if err := os.WriteFile(filepath.Join(binDir, "docker"), []byte(fakeDocker), 0o755); err != nil {
 		t.Fatalf("write fake docker: %v", err)
 	}
-	run := func(engine, compose, buildx string) ([]byte, error) {
+	run := func(compose, daemonFailure, configFailure string) ([]byte, error) {
 		command := exec.Command(filepath.Join(repoRoot, "scripts", "check-compose.sh"))
 		command.Env = append(os.Environ(),
 			"PATH="+binDir+":"+os.Getenv("PATH"),
-			"TEST_ENGINE_VERSION="+engine,
 			"TEST_COMPOSE_VERSION="+compose,
-			"TEST_BUILDX_VERSION="+buildx,
+			"TEST_DAEMON_FAILURE="+daemonFailure,
+			"TEST_CONFIG_FAILURE="+configFailure,
 		)
 		return command.CombinedOutput()
 	}
-	if output, err := run("29.6.2", "v2.40.3", "v0.36.1"); err != nil {
-		t.Fatalf("exact toolchain rejected: %v\n%s", err, output)
+	if output, err := run("v5.5.0", "", ""); err != nil {
+		t.Fatalf("supported Compose interface rejected: %v\n%s", err, output)
 	}
-	output, err := run("29.7.2", "v5.5.0", "v0.36.1")
-	if err == nil {
-		t.Fatal("mismatched Engine and Compose versions accepted")
+	if _, err := run("v5.5.0", "yes", ""); err == nil {
+		t.Fatal("unavailable Docker daemon accepted")
 	}
-	if !strings.Contains(string(output), "approved Compose-v2 compatibility exception") {
-		t.Fatalf("mismatch output omits compatibility exception: %s", output)
+	if _, err := run("v5.5.0", "", "yes"); err == nil {
+		t.Fatal("invalid Compose model accepted")
 	}
 }
 
