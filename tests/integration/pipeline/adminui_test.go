@@ -238,6 +238,60 @@ func TestUnmanagedUISeparatesReadOnlyChecksFromExplicitMigrationConfirmation(t *
 	}
 }
 
+func TestAdminAcquisitionIndexAndDetailAreStructuredAndBounded(t *testing.T) {
+	db, repository, now := pipelineRepositories(t)
+	defer db.Close()
+	if _, err := application.BootstrapAdmin(context.Background(), repository, "admin", "password123", "", 8, now); err != nil {
+		t.Fatal(err)
+	}
+	bundle, _ := assets.New()
+	auth := application.AuthService{Repository: repository, AbsoluteExpiry: 30 * 24 * time.Hour, PasswordMinLen: 8, Now: func() time.Time { return now }}
+	reader := adminAcquisitionReader{now: now}
+	handler, err := handlers.New(handlers.Dependencies{Auth: auth, Reader: repository, Acquisition: reader, Assets: bundle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, csrf := loginAdmin(t, handler)
+	indexRequest := httptest.NewRequest(http.MethodGet, "/acquisitions?state=NO_CANDIDATE", nil)
+	indexRequest.AddCookie(session)
+	indexRequest.AddCookie(csrf)
+	index := httptest.NewRecorder()
+	handler.ServeHTTP(index, indexRequest)
+	if index.Code != http.StatusOK || !strings.Contains(index.Body.String(), `href="/acquisitions"`) || !strings.Contains(index.Body.String(), `href="/acquisitions/job-1"`) || !strings.Contains(index.Body.String(), "NO_CANDIDATE") || !strings.Contains(index.Body.String(), "Next page") {
+		t.Fatalf("acquisition index=%d %s", index.Code, index.Body.String())
+	}
+	detailRequest := httptest.NewRequest(http.MethodGet, "/acquisitions/job-1", nil)
+	detailRequest.AddCookie(session)
+	detailRequest.AddCookie(csrf)
+	detail := httptest.NewRecorder()
+	handler.ServeHTTP(detail, detailRequest)
+	for _, heading := range []string{"State timeline", "Provider attempts", "Candidates", "Correlation evidence"} {
+		if !strings.Contains(detail.Body.String(), heading) {
+			t.Fatalf("acquisition detail missing %q: %s", heading, detail.Body.String())
+		}
+	}
+	if strings.Contains(detail.Body.String(), `<code>{"job":`) || strings.Contains(detail.Body.String(), "provider-stderr") || !strings.Contains(detail.Body.String(), "redacted provider failure") {
+		t.Fatalf("acquisition detail exposed opaque/raw evidence: %s", detail.Body.String())
+	}
+}
+
+type adminAcquisitionReader struct{ now time.Time }
+
+func (r adminAcquisitionReader) ListAcquisitions(context.Context, int, string, string) (application.AcquisitionPage, error) {
+	return application.AcquisitionPage{Items: []application.AcquisitionSummary{{JobID: "job-1", State: "NO_CANDIDATE", AlbumID: 42, PrimaryAttempt: 2, FallbackAttempt: 1, UpdatedAt: r.now}}, Next: "next-cursor"}, nil
+}
+
+func (r adminAcquisitionReader) AcquisitionEvidence(context.Context, string) (application.AcquisitionEvidence, error) {
+	completed := r.now.Add(time.Minute)
+	return application.AcquisitionEvidence{
+		JobID: "job-1", State: "NO_CANDIDATE", Revision: 4, AlbumID: 42, ReleaseGroupID: releaseGroupMBID, ObservedAt: r.now,
+		Transitions:  []application.AcquisitionTransition{{Actor: "gateway", Reason: "no provider result", PreviousState: "FALLBACK_RUNNING", NewState: "NO_CANDIDATE", Revision: 4, OccurredAt: r.now}},
+		Attempts:     []application.AcquisitionAttempt{{ID: "attempt-1", Kind: "SPOTIFLAC", Provider: "tidal-web", Outcome: "NO_RESULT", Message: "redacted provider failure", Number: 1, StartedAt: r.now, CompletedAt: &completed}},
+		Candidates:   []application.AcquisitionCandidate{{CandidateID: "candidate-1", Source: "slskd", DownloadID: "download-1", OutputSHA256: strings.Repeat("a", 64), CompletedAt: &completed, CreatedAt: r.now}},
+		Correlations: []application.AcquisitionCorrelation{{SourceKind: "history", SourceRecordID: "record-1", EvidenceSHA256: strings.Repeat("b", 64), ObservedAt: r.now}},
+	}, nil
+}
+
 func TestAdminUIEditsPreviewAndSubmitsSealedDecision(t *testing.T) {
 	db, repository, now := pipelineRepositories(t)
 	defer db.Close()

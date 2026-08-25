@@ -1,20 +1,58 @@
 package views
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 templ Acquisition(page AcquisitionPage) {
-	@Layout("Acquisition " + page.Evidence.JobID, "reviews", page.Shell, AcquisitionContent(page))
+	@Layout("Acquisition " + page.Evidence.JobID, "acquisitions", page.Shell, AcquisitionContent(page))
 }
 
-	templ AcquisitionContent(page AcquisitionPage) {
-	<section id="acquisition-fragment" aria-live="polite"><h1>Acquisition evidence</h1>
+templ AcquisitionContent(page AcquisitionPage) {
+	<section id="acquisition-fragment" aria-live="polite"><h1>Acquisition detail</h1>
 		if page.Degraded {
-			<p class="notice" role="status">Gateway evidence is degraded. Pipeline candidate state is unaffected.</p>
+			<p class="notice" role="status">Gateway access is degraded. Pipeline candidate state is unaffected.</p>
 		}
 		if page.Error != "" {
 			<p class="notice error" role="alert">{ page.Error }</p>
 		} else {
-			<dl class="evidence"><dt>Job</dt><dd class="mono">{ page.Evidence.JobID }</dd><dt>State</dt><dd>{ page.Evidence.State }</dd><dt>Revision</dt><dd class="mono">{ fmt.Sprint(page.Evidence.Revision) }</dd><dt>Lidarr album</dt><dd class="mono">{ fmt.Sprint(page.Evidence.AlbumID) }</dd><dt>Release group</dt><dd class="mono">{ page.Evidence.ReleaseGroupID }</dd><dt>Observed</dt><dd><time>{ FormatTime(page.Evidence.ObservedAt) }</time></dd><dt>Evidence</dt><dd><code>{ string(page.Evidence.Evidence) }</code></dd></dl>
+			<dl class="evidence"><dt>Job</dt><dd class="mono">{ page.Evidence.JobID }</dd><dt>State</dt><dd><span class={ "status " + StateClass(page.Evidence.State) }>{ page.Evidence.State }</span></dd><dt>Revision</dt><dd class="mono">{ fmt.Sprint(page.Evidence.Revision) }</dd><dt>Lidarr album</dt><dd class="mono">{ fmt.Sprint(page.Evidence.AlbumID) }</dd><dt>Release group</dt><dd class="mono">{ page.Evidence.ReleaseGroupID }</dd><dt>Selected release</dt><dd class="mono">{ page.Evidence.SelectedReleaseID }</dd><dt>Primary attempts</dt><dd class="mono">{ fmt.Sprint(page.Evidence.PrimaryAttempt) }</dd><dt>Fallback attempts</dt><dd class="mono">{ fmt.Sprint(page.Evidence.FallbackAttempt) }</dd><dt>Next retry</dt><dd><time>{ FormatOptionalTime(page.Evidence.NextRetryAt) }</time></dd><dt>Observed</dt><dd><time>{ FormatTime(page.Evidence.ObservedAt) }</time></dd></dl>
+			if len(page.Evidence.TruncatedSections) > 0 {
+				<p class="notice" role="status">Bounded view: additional rows exist in { strings.Join(page.Evidence.TruncatedSections, ", ") }.</p>
+			}
+			<h2>State timeline</h2>
+			if len(page.Evidence.Transitions) == 0 {
+				<p class="empty">No transitions recorded.</p>
+			} else {
+				<ol class="timeline">
+					for _, item := range page.Evidence.Transitions {
+						<li><time>{ FormatTime(item.OccurredAt) }</time> <span class="mono">{ item.PreviousState }</span> → <span class="mono">{ item.NewState }</span><br/><span>{ item.Reason }</span> <span class="muted">by { item.Actor }</span></li>
+					}
+				</ol>
+			}
+			<h2>Provider attempts</h2>
+			<div class="table-wrap"><table><caption>Bounded provider outcomes</caption><thead><tr><th>Provider</th><th>Kind</th><th>Attempt</th><th>Outcome</th><th>Error class</th><th>Started</th><th>Completed</th><th>Summary</th></tr></thead><tbody>
+				for _, item := range page.Evidence.Attempts {
+					<tr><td>{ item.Provider }</td><td>{ item.Kind }</td><td class="mono">{ fmt.Sprint(item.Number) }</td><td><span class={ "status " + StateClass(item.Outcome) }>{ item.Outcome }</span></td><td>{ item.ErrorClass }</td><td><time>{ FormatTime(item.StartedAt) }</time></td><td><time>{ FormatOptionalTime(item.CompletedAt) }</time></td><td class="wrap">
+						if item.Message != "" {
+							<details><summary>Redacted detail</summary><p class="wrap">{ item.Message }</p></details>
+						}
+					</td></tr>
+				}
+			</tbody></table></div>
+			<h2>Candidates</h2>
+			<div class="table-wrap"><table><caption>Candidate handoff evidence</caption><thead><tr><th>Candidate</th><th>Source</th><th>Download</th><th>Output SHA-256</th><th>Completed</th></tr></thead><tbody>
+				for _, item := range page.Evidence.Candidates {
+					<tr><td class="mono">{ item.CandidateID }</td><td>{ item.Source }</td><td class="mono">{ item.DownloadID }</td><td class="checksum">{ item.OutputSHA256 }</td><td><time>{ FormatOptionalTime(item.CompletedAt) }</time></td></tr>
+				}
+			</tbody></table></div>
+			<h2>Correlation evidence</h2>
+			<div class="table-wrap"><table><caption>Hashed correlation records</caption><thead><tr><th>Kind</th><th>Record</th><th>Command</th><th>Download</th><th>Evidence SHA-256</th><th>Observed</th></tr></thead><tbody>
+				for _, item := range page.Evidence.Correlations {
+					<tr><td>{ item.SourceKind }</td><td class="mono">{ item.SourceRecordID }</td><td class="mono">{ item.CommandID }</td><td class="mono">{ item.DownloadID }</td><td class="checksum">{ item.EvidenceSHA256 }</td><td><time>{ FormatTime(item.ObservedAt) }</time></td></tr>
+				}
+			</tbody></table></div>
 		}
 	</section>
 }

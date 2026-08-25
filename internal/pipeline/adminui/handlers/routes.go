@@ -19,7 +19,7 @@ type Dependencies struct {
 	Auth                 application.AuthService
 	LoginThrottle        *LoginThrottle
 	Reader               application.AdminReader
-	Acquisition          application.AcquisitionEvidenceReader
+	Acquisition          application.AcquisitionReader
 	Reviews              application.ReviewDecisionService
 	Submissions          application.SubmissionService
 	Uploads              *application.UploadService
@@ -51,6 +51,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 	private.HandleFunc("GET /reviews/{candidateID}", console.review)
 	private.HandleFunc("POST /reviews/{candidateID}/{action}", console.reviewAction)
 	private.HandleFunc("GET /incoming", console.incoming)
+	private.HandleFunc("GET /acquisitions", console.acquisitions)
 	private.HandleFunc("GET /unmanaged", console.unmanaged)
 	private.HandleFunc("POST /unmanaged/check", console.checkUnmanaged)
 	private.HandleFunc("GET /migration-batches/{batchID}", console.migrationBatch)
@@ -204,6 +205,22 @@ func (c Console) acquisition(w http.ResponseWriter, r *http.Request) {
 		page.Degraded = page.Error != ""
 	}
 	c.render(w, r, views.Acquisition(page), views.AcquisitionContent(page))
+}
+
+func (c Console) acquisitions(w http.ResponseWriter, r *http.Request) {
+	page := views.AcquisitionsPage{Shell: c.shell(r), State: r.URL.Query().Get("state")}
+	if c.dependencies.Acquisition == nil {
+		page.Error = "Gateway acquisition endpoint is unavailable."
+		page.Degraded = true
+	} else {
+		items, err := c.dependencies.Acquisition.ListAcquisitions(r.Context(), 50, r.URL.Query().Get("cursor"), page.State)
+		page.Items, page.Next = items.Items, items.Next
+		if err != nil {
+			page.Error = "Unable to load acquisitions."
+			page.Degraded = true
+		}
+	}
+	c.render(w, r, views.Acquisitions(page), views.AcquisitionsContent(page))
 }
 func (c Console) loadAcquisition(r *http.Request) (application.AcquisitionEvidence, string) {
 	item, err := c.dependencies.Acquisition.AcquisitionEvidence(r.Context(), r.PathValue("jobID"))

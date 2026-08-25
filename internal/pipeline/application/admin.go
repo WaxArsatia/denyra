@@ -2,7 +2,6 @@ package application
 
 import (
 	"context"
-	"encoding/json"
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
@@ -137,15 +136,58 @@ type AdminReader interface {
 }
 
 type AcquisitionEvidence struct {
-	JobID          string          `json:"job_id"`
-	State          string          `json:"state"`
-	Revision       uint64          `json:"state_revision"`
-	AlbumID        int64           `json:"lidarr_album_id"`
-	ReleaseGroupID string          `json:"release_group_mbid"`
-	Evidence       json.RawMessage `json:"evidence"`
-	ObservedAt     time.Time       `json:"observed_at"`
+	JobID, State, ReleaseGroupID, SelectedReleaseID string
+	Revision                                        uint64
+	PrimaryAttempt, FallbackAttempt                 int
+	AlbumID                                         int64
+	NextRetryAt                                     *time.Time
+	ObservedAt                                      time.Time
+	Transitions                                     []AcquisitionTransition
+	Attempts                                        []AcquisitionAttempt
+	Candidates                                      []AcquisitionCandidate
+	Correlations                                    []AcquisitionCorrelation
+	TruncatedSections                               []string
 }
 
-type AcquisitionEvidenceReader interface {
+type AcquisitionSummary struct {
+	JobID, State, ReleaseGroupID, SelectedReleaseID string
+	Revision                                        uint64
+	AlbumID                                         int64
+	PrimaryAttempt, FallbackAttempt                 int
+	NextRetryAt                                     *time.Time
+	UpdatedAt                                       time.Time
+}
+
+type AcquisitionPage struct {
+	Items []AcquisitionSummary
+	Next  string
+}
+
+type AcquisitionTransition struct {
+	Actor, Reason, PreviousState, NewState string
+	Revision                               uint64
+	OccurredAt                             time.Time
+}
+
+type AcquisitionAttempt struct {
+	ID, Kind, Provider, Outcome, ErrorClass, Message string
+	Number                                           int
+	StartedAt                                        time.Time
+	CompletedAt                                      *time.Time
+}
+
+type AcquisitionCandidate struct {
+	CandidateID, Source, SourceLocator, DownloadID, OutputSHA256 string
+	CompletedAt                                                  *time.Time
+	CreatedAt                                                    time.Time
+}
+
+type AcquisitionCorrelation struct {
+	SourceKind, SourceRecordID, CommandID, DownloadID, EvidenceSHA256 string
+	ObservedAt                                                        time.Time
+}
+
+type AcquisitionReader interface {
+	ListAcquisitions(context.Context, int, string, string) (AcquisitionPage, error)
 	AcquisitionEvidence(context.Context, string) (AcquisitionEvidence, error)
 }

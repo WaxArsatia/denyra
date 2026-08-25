@@ -1,0 +1,38 @@
+package views
+
+import (
+	"fmt"
+	"net/url"
+)
+
+templ Acquisitions(page AcquisitionsPage) {
+	@Layout("Acquisitions", "acquisitions", page.Shell, AcquisitionsContent(page))
+}
+
+templ AcquisitionsContent(page AcquisitionsPage) {
+	<section id="acquisitions-fragment" aria-live="polite"><h1>Acquisitions</h1><p class="muted">Durable Gateway jobs, primary search, and fallback outcomes.</p>
+		if page.Degraded {
+			<p class="notice" role="status">Gateway access is degraded. Previously loaded Pipeline state remains available.</p>
+		}
+		if page.Error != "" {
+			<p class="notice error" role="alert">{ page.Error }</p>
+		}
+		<form class="actions filter-bar" method="get" action="/acquisitions"><label>State <select name="state"><option value="">All</option>
+			for _, state := range []string{"DISCOVERED", "PRIMARY_SEARCH_REQUESTED", "PRIMARY_SEARCH_RUNNING", "PRIMARY_RECONCILING", "PRIMARY_ACTIVE", "PRIMARY_RETRYABLE_ERROR", "FALLBACK_RUNNING", "FALLBACK_RETRYABLE_ERROR", "NO_CANDIDATE", "DUAL_CANDIDATE", "ARBITRATING", "WINNER_LOCKED", "HANDED_OFF", "CANCELLED"} {
+				<option value={ state } selected?={ page.State == state }>{ state }</option>
+			}
+		</select></label><button type="submit">Filter</button></form>
+		if len(page.Items) > 0 {
+			<div class="table-wrap"><table><caption>Acquisition jobs</caption><thead><tr><th>Job</th><th>State</th><th>Album</th><th>Primary</th><th>Fallback</th><th>Next retry</th><th>Updated</th></tr></thead><tbody>
+				for _, item := range page.Items {
+					<tr><td><a class="mono" href={ templ.SafeURL("/acquisitions/" + item.JobID) }>{ item.JobID }</a></td><td><span class={ "status " + StateClass(item.State) }>{ item.State }</span></td><td class="mono">{ fmt.Sprint(item.AlbumID) }</td><td class="mono">{ fmt.Sprint(item.PrimaryAttempt) }</td><td class="mono">{ fmt.Sprint(item.FallbackAttempt) }</td><td><time>{ FormatOptionalTime(item.NextRetryAt) }</time></td><td><time>{ FormatTime(item.UpdatedAt) }</time></td></tr>
+				}
+			</tbody></table></div>
+		} else if page.Error == "" {
+			<p class="empty">No acquisition jobs match this state.</p>
+		}
+		if page.Next != "" {
+			<p><a href={ templ.SafeURL("/acquisitions?state=" + url.QueryEscape(page.State) + "&cursor=" + url.QueryEscape(page.Next)) }>Next page</a></p>
+		}
+	</section>
+}

@@ -62,6 +62,14 @@ type AcquisitionPage struct {
 	Error    string
 	Degraded bool
 }
+type AcquisitionsPage struct {
+	Shell    Shell
+	Items    []application.AcquisitionSummary
+	State    string
+	Next     string
+	Error    string
+	Degraded bool
+}
 type AccountPage struct {
 	Shell Shell
 	Error string
@@ -94,11 +102,24 @@ func StateClass(value any) string {
 		return "blocked"
 	case "approved", "imported", "exact_match", "migrated":
 		return "approved"
+	case "handed_off":
+		return "approved"
+	case "primary_search_running", "primary_reconciling", "primary_active", "fallback_running", "dual_candidate", "arbitrating", "winner_locked":
+		return "active"
+	case "primary_retryable_error", "fallback_retryable_error", "no_candidate":
+		return "review"
 	case "superseded", "cancelled":
 		return "settled"
 	default:
 		return ""
 	}
+}
+
+func FormatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return "—"
+	}
+	return FormatTime(*value)
 }
 
 func MigrationStateLabel(state string) string {
