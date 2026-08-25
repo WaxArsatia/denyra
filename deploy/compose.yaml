@@ -38,6 +38,11 @@ services:
     networks:
       denyra-control: {}
       denyra-acquisition: {}
+    depends_on:
+      lidarr:
+        condition: service_healthy
+      media-pipeline:
+        condition: service_healthy
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "/app/acquisition-gateway", "healthcheck", "--address", "127.0.0.1:8081"]

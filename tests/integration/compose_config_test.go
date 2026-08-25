@@ -32,6 +32,11 @@ type composeService struct {
 	Healthcheck map[string]any                   `json:"healthcheck"`
 	Configs     []composeConfig                  `json:"configs"`
 	Secrets     []composeSecret                  `json:"secrets"`
+	DependsOn   map[string]composeDependency     `json:"depends_on"`
+}
+
+type composeDependency struct {
+	Condition string `json:"condition"`
 }
 
 type composeConfig struct {
@@ -261,6 +266,17 @@ func TestComposeUsesServiceDNSAndCompatibleTags(t *testing.T) {
 	for _, name := range []string{"acquisition-gateway", "media-pipeline", "lidarr", "navidrome"} {
 		if len(document.Services[name].Build) == 0 {
 			t.Errorf("custom service %s has no Compose build definition", name)
+		}
+	}
+}
+
+func TestGatewayWaitsForRequiredLocalDependencies(t *testing.T) {
+	document := renderCompose(t)
+	dependencies := document.Services["acquisition-gateway"].DependsOn
+	for _, service := range []string{"lidarr", "media-pipeline"} {
+		dependency, ok := dependencies[service]
+		if !ok || dependency.Condition != "service_healthy" {
+			t.Errorf("acquisition-gateway dependency %s = %+v", service, dependency)
 		}
 	}
 }
