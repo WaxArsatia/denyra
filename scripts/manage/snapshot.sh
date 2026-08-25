@@ -194,6 +194,10 @@ denyra_snapshot_retain_two() {
     [ "$denyra_snapshot_count" -le 2 ] && continue
     denyra_snapshot_remove=$DENYRA_UPDATES_DIR/$denyra_snapshot_entry
     denyra_snapshot_validate_path "$denyra_snapshot_remove"
+    if find "$denyra_snapshot_remove" -type d ! -writable -print -quit | grep -q .; then
+      printf 'denyra: snapshot contains directories not writable by the operator: %s\n' "$denyra_snapshot_remove" >&2
+      return 1
+    fi
     rm -rf -- "$denyra_snapshot_remove"
   done
 }

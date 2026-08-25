@@ -78,8 +78,9 @@ denyra_update() {
 
   denyra_update_healthy=true
   denyra_snapshot_set_status "$denyra_update_snapshot" successful
-  trap - EXIT HUP INT TERM
-  denyra_snapshot_retain_two
+  if ! denyra_snapshot_retain_two; then
+    printf 'denyra: snapshot retention failed; old snapshots were retained\n' >&2
+  fi
   denyra_unlock
   denyra_update_elapsed=$(($(date +%s) - denyra_update_started))
   printf 'Updated %s -> %s in %ss\n' "$denyra_update_active" "$denyra_update_new" "$denyra_update_elapsed"

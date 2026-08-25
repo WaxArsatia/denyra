@@ -169,6 +169,40 @@ func TestUpdateOrderBuildsBeforeStop(t *testing.T) {
 	}
 }
 
+func TestSuccessfulUpdateReleasesLockWhenSnapshotRetentionCannotDeleteOldState(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareUpdateFixture(t, f)
+	oldest := filepath.Join(f.home, "updates", "20200101T000000Z-oldest", "state", "lidarr", "plugins")
+	newer := filepath.Join(f.home, "updates", "20210101T000000Z-newer")
+	if err := os.MkdirAll(oldest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldest, "plugin.dll"), []byte("plugin"), 0o444); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(oldest, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(oldest, 0o755) })
+	if err := os.MkdirAll(newer, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := f.updateCommand("").CombinedOutput()
+	if err != nil {
+		t.Fatalf("healthy update failed during snapshot retention: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "snapshot retention failed") {
+		t.Fatalf("missing retention warning: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(f.home, ".operation-lock")); !os.IsNotExist(err) {
+		t.Fatalf("operation lock remains after healthy update: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(oldest, "plugin.dll")); err != nil {
+		t.Fatalf("old snapshot was partially removed: %v", err)
+	}
+}
+
 func TestDirtyTreeStopsUpdateBeforeFetch(t *testing.T) {
 	f := newManagementFixture(t)
 	prepareUpdateFixture(t, f)
