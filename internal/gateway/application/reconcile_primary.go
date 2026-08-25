@@ -186,6 +186,17 @@ func correlationRequest(job domain.Job, search persistence.PrimarySearchContext)
 	return request, request.Validate()
 }
 
+func lateCorrelationRequest(job domain.Job, search persistence.PrimarySearchContext) (domain.CorrelationRequest, error) {
+	request, err := correlationRequest(job, search)
+	if err != nil {
+		return domain.CorrelationRequest{}, err
+	}
+	if job.OverallDeadline != nil && job.OverallDeadline.After(request.Deadline) {
+		request.Deadline = job.OverallDeadline.UTC()
+	}
+	return request, request.Validate()
+}
+
 func (service PrimaryReconciler) correlatedEvidence(ctx context.Context, job domain.Job, search persistence.PrimarySearchContext, request domain.CorrelationRequest) ([]persistence.CorrelationEvidence, error) {
 	queues, err := service.Lidarr.QueueAfter(ctx, search.QueueWatermark, service.PageSize)
 	if err != nil {
@@ -285,7 +296,7 @@ func (service PrimaryReconciler) LateEvidence(ctx context.Context, jobID string)
 	if err != nil {
 		return nil, err
 	}
-	request, err := correlationRequest(job, search)
+	request, err := lateCorrelationRequest(job, search)
 	if err != nil {
 		return nil, err
 	}

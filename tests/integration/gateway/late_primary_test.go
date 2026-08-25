@@ -2,15 +2,121 @@ package gateway_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/waxarsatia/denyra/internal/gateway/adapters/lidarr"
 	"github.com/waxarsatia/denyra/internal/gateway/application"
 	"github.com/waxarsatia/denyra/internal/gateway/domain"
 	"github.com/waxarsatia/denyra/internal/gateway/persistence"
 )
+
+type latePrimaryObservations struct {
+	history []lidarr.HistoryRecord
+	album   lidarr.WantedAlbum
+}
+
+func (observations latePrimaryObservations) QueueAfter(context.Context, string, int) ([]lidarr.QueueRecord, error) {
+	return nil, nil
+}
+func (observations latePrimaryObservations) HistoryAfter(context.Context, string, int) ([]lidarr.HistoryRecord, error) {
+	return observations.history, nil
+}
+func (observations latePrimaryObservations) Album(context.Context, int64) (lidarr.WantedAlbum, error) {
+	return observations.album, nil
+}
+
+func TestLatePrimaryMonitorPostGraceUsesOverallDeadline(t *testing.T) {
+	db, repositories, now := gatewayRepositories(t)
+	defer db.Close()
+	job := prepareLatePrimaryJob(t, db, repositories, now)
+	record := matchingLateHistory(job, now.Add(2*time.Minute), 21)
+	monitor := latePrimaryMonitor(repositories, job, now.Add(3*time.Minute), []lidarr.HistoryRecord{record})
+	changed, err := monitor.Reconcile(context.Background())
+	if err != nil || changed != 1 {
+		t.Fatalf("changed=%d err=%v", changed, err)
+	}
+	var pending, evidence int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pending_acquisition_candidates WHERE job_id=? AND source='slskd'`, job.ID).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM correlation_evidence WHERE job_id=?`, job.ID).Scan(&evidence); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 1 || evidence != 1 {
+		t.Fatalf("pending=%d evidence=%d", pending, evidence)
+	}
+}
+
+func TestLatePrimaryMonitorRejectsUnrelatedOrLateEvidence(t *testing.T) {
+	tests := map[string]func(domain.Job, time.Time) lidarr.HistoryRecord{
+		"wrong album": func(job domain.Job, observed time.Time) lidarr.HistoryRecord {
+			record := matchingLateHistory(job, observed, 21)
+			record.AlbumID++
+			return record
+		},
+		"wrong release group": func(job domain.Job, observed time.Time) lidarr.HistoryRecord {
+			record := matchingLateHistory(job, observed, 21)
+			record.Data["releaseGroupId"] = "87654321-4321-4321-4321-cba987654321"
+			return record
+		},
+		"stale watermark": func(job domain.Job, observed time.Time) lidarr.HistoryRecord {
+			return matchingLateHistory(job, observed, 20)
+		},
+		"after overall deadline": func(job domain.Job, _ time.Time) lidarr.HistoryRecord {
+			return matchingLateHistory(job, time.Date(2026, 8, 24, 7, 0, 0, 0, time.UTC), 21)
+		},
+	}
+	for name, build := range tests {
+		t.Run(name, func(t *testing.T) {
+			db, repositories, now := gatewayRepositories(t)
+			defer db.Close()
+			job := prepareLatePrimaryJob(t, db, repositories, now)
+			monitor := latePrimaryMonitor(repositories, job, now.Add(3*time.Minute), []lidarr.HistoryRecord{build(job, now.Add(2*time.Minute))})
+			changed, err := monitor.Reconcile(context.Background())
+			if err != nil || changed != 0 {
+				t.Fatalf("changed=%d err=%v", changed, err)
+			}
+			var pending int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM pending_acquisition_candidates WHERE job_id=?`, job.ID).Scan(&pending); err != nil {
+				t.Fatal(err)
+			}
+			if pending != 0 {
+				t.Fatalf("pending=%d", pending)
+			}
+		})
+	}
+}
+
+func prepareLatePrimaryJob(t *testing.T, db interface {
+	Exec(string, ...any) (sql.Result, error)
+}, repositories *persistence.Repositories, now time.Time) domain.Job {
+	t.Helper()
+	job := createJob(t, repositories, now)
+	job.SelectedReleaseMBID = releaseMBID
+	_, err := db.Exec(`UPDATE acquisition_jobs SET selected_release_mbid=?,state='FALLBACK_RUNNING',state_revision=4,queue_watermark='10',history_watermark='20',command_id='77',correlation_started_at=?,command_deadline=?,grace_deadline=?,overall_deadline=?,updated_at=? WHERE id=?`,
+		releaseMBID, now.Format(time.RFC3339Nano), now.Add(10*time.Minute).Format(time.RFC3339Nano), now.Add(time.Minute).Format(time.RFC3339Nano), now.Add(6*time.Hour).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return job
+}
+
+func matchingLateHistory(job domain.Job, observed time.Time, id int64) lidarr.HistoryRecord {
+	return lidarr.HistoryRecord{ID: id, AlbumID: job.LidarrAlbumID, DownloadID: "late-download", EventType: "grabbed", Date: observed.Format(time.RFC3339Nano), Data: map[string]any{"commandId": "77", "releaseGroupId": job.ReleaseGroupMBID, "releaseId": job.SelectedReleaseMBID, "downloadId": "late-download"}}
+}
+
+func latePrimaryMonitor(repositories *persistence.Repositories, job domain.Job, now time.Time, history []lidarr.HistoryRecord) application.LatePrimaryMonitor {
+	observations := latePrimaryObservations{history: history, album: lidarr.WantedAlbum{AlbumID: job.LidarrAlbumID, ReleaseGroupMBID: job.ReleaseGroupMBID, SelectedReleaseMBID: job.SelectedReleaseMBID, Monitored: true}}
+	return application.LatePrimaryMonitor{
+		Store:      repositories,
+		Reconciler: application.PrimaryReconciler{Lidarr: observations, Store: repositories, PageSize: 100, Now: func() time.Time { return now }},
+		Handler:    application.LatePrimaryService{Store: repositories, Canceller: &fakeSupersededCanceller{}, Now: func() time.Time { return now }},
+	}
+}
 
 type fakeSupersededCanceller struct {
 	calls int
