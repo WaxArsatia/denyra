@@ -163,6 +163,77 @@ func TestManagementRetiredLifecycleCommandsReturnUsage(t *testing.T) {
 	}
 }
 
+func TestCleanTreeHygienePolicyFixtures(t *testing.T) {
+	retired := "deni" + "sonic"
+	unfinished := "TO" + "DO"
+	tests := map[string]struct {
+		files map[string]string
+		pass  bool
+	}{
+		"clean checker source": {
+			files: map[string]string{"README.md": "clean project\n"},
+			pass:  true,
+		},
+		"retired product": {
+			files: map[string]string{"README.md": "old " + retired + " name\n"},
+		},
+		"unfinished marker": {
+			files: map[string]string{"main.go": "package main // " + unfinished + " finish\n"},
+		},
+		"approved floating selectors": {
+			files: map[string]string{
+				".github/workflows/ci.yml":           "jobs:\n  verify:\n    steps:\n      - run: go run github.com/a-h/templ/cmd/templ@latest generate\n",
+				"deploy/compose.yaml":                "services:\n  slskd:\n    image: slskd/slskd:latest\n  sftpgo:\n    image: drakkan/sftpgo:latest\n",
+				"deploy/docker/navidrome.Dockerfile": "FROM deluan/navidrome:latest\nRUN wget https://github.com/J0R6IT0/navidrome-lyrics-plugin/releases/latest/download/nd-lyrics.ndp\n",
+				"deploy/docker/lidarr.Dockerfile":    "RUN curl https://github.com/allquiet-hub/Lidarr.Plugin.Slskd/releases/latest/download/plugin.zip\nFROM lscr.io/linuxserver/lidarr:nightly\n",
+			},
+			pass: true,
+		},
+		"unknown floating selector": {
+			files: map[string]string{"deploy/compose.yaml": "services:\n  db:\n    image: example/database:latest\n"},
+		},
+		"unknown floating source release": {
+			files: map[string]string{"deploy/docker/other.Dockerfile": "RUN curl https://example.invalid/tool/releases/latest/download/tool\n"},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			checker, err := os.ReadFile(filepath.Join(newManagementFixture(t).repo, "scripts", "check-clean-tree.sh"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			test.files["scripts/check-clean-tree.sh"] = string(checker)
+			for path, content := range test.files {
+				full := filepath.Join(root, filepath.FromSlash(path))
+				if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(full, []byte(content), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, args := range [][]string{{"init", "-q"}, {"add", "."}} {
+				command := exec.Command("git", args...)
+				command.Dir = root
+				if output, err := command.CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v: %s", args, err, output)
+				}
+			}
+			command := exec.Command(filepath.Join(root, "scripts", "check-clean-tree.sh"))
+			command.Dir = root
+			command.Env = append(os.Environ(), "DENYRA_CHECK_ROOT="+root)
+			output, err := command.CombinedOutput()
+			if test.pass && err != nil {
+				t.Fatalf("clean fixture failed: %v: %s", err, output)
+			}
+			if !test.pass && err == nil {
+				t.Fatalf("invalid fixture passed: %s", output)
+			}
+		})
+	}
+}
+
 func TestLegacyLifecycleCleanup(t *testing.T) {
 	t.Run("cancellation preserves exact targets and protected data", func(t *testing.T) {
 		f := newManagementFixture(t)

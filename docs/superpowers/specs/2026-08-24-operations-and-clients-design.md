@@ -1,6 +1,6 @@
 # Operations and clients design
 
-> Historical design. Backup, restore, and upgrade rollback sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
+> Historical design. Dependency-pin readiness requirements in `Health and degraded state` are superseded by `plans/001-simplified-local-deployment-design.md`. The complete `Backup`, `Restore`, and `Upgrades and rollback` sections, plus backup and restore permissions in `Health and degraded state`, are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
 
 ## Streaming service
 

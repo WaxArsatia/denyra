@@ -1,6 +1,6 @@
 # Denyra system foundation design
 
-> Historical design. Lifecycle backup, restore, snapshot, rollback, and Restic sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
+> Historical design. `Dependency locking` and the dependency-pin requirements in `Central configuration` are superseded by `plans/001-simplified-local-deployment-design.md`. The Restic topology in `Component topology`, `/data/backups` entries in `Filesystem layout`, and all backup, restore, snapshot, rollback, and Restic requirements are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. Current operator instructions are in `docs/runbooks/upgrade.md`.
 
 ## Purpose
 

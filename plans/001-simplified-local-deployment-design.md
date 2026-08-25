@@ -1,6 +1,6 @@
 # Simplified local-build deployment design
 
-> Historical design. Its backup, restore, update snapshot, and rollback sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`.
+> Historical design with current dependency-policy sections. The failed-update restoration goal in `Goals`, retired commands and the `updates/` tree in `Deployment model`, snapshot behavior in `Update flow`, and the complete `Rollback` and `Backup and restore` sections are superseded by `docs/superpowers/specs/2026-08-25-forward-only-active-development-lifecycle-design.md`. `Dependency policy` remains the active-development floating-selector policy, subject to the explicit CI allowlist.
 
 Status: approved for implementation planning
 

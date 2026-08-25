@@ -20,8 +20,8 @@ func TestEmbeddedMigrationsAreOrderedAndComplete(t *testing.T) {
 		if len(loaded) == 0 || loaded[0].Sequence != 1 || loaded[0].Name != "foundation" {
 			t.Fatalf("unexpected %s migrations: %+v", service, loaded)
 		}
-		if service == "pipeline" && loaded[len(loaded)-1].Sequence != 11 {
-			t.Fatalf("pipeline migration tail = %+v, want sequence 11", loaded[len(loaded)-1])
+		if service == "pipeline" && loaded[len(loaded)-1].Sequence != 13 {
+			t.Fatalf("pipeline migration tail = %+v, want sequence 13", loaded[len(loaded)-1])
 		}
 	}
 	if _, err := migrations.For("unknown"); err == nil {
