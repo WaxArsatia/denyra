@@ -159,6 +159,7 @@ func TestUpdateOrderBuildsBeforeStop(t *testing.T) {
 		" pull --policy always slskd sftpgo restic",
 		" build --pull",
 		" stop",
+		" up -d --wait --wait-timeout 1 lidarr slskd sftpgo navidrome",
 		" up -d --remove-orphans --wait --wait-timeout 1",
 		" ps",
 	})

@@ -124,6 +124,15 @@ func TestStatusUsesOneComposeContext(t *testing.T) {
 	}
 }
 
+func TestStartWaitsForDependenciesBeforeControlPlane(t *testing.T) {
+	f := newManagementFixture(t)
+	f.run("start")
+	assertOrderedFragments(t, f.log(), []string{
+		" up -d --wait --wait-timeout 180 lidarr slskd sftpgo navidrome",
+		" up -d --remove-orphans --wait --wait-timeout 180",
+	})
+}
+
 func TestUnknownCommandReturnsUsage(t *testing.T) {
 	f := newManagementFixture(t)
 	cmd := f.command("unknown")

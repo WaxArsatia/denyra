@@ -126,6 +126,15 @@ denyra_compose_snapshot() {
     -f "$denyra_compose_snapshot_path/prior-images.yaml" "$@"
 }
 
+denyra_start_dependencies() {
+  denyra_compose up -d --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}" lidarr slskd sftpgo navidrome
+}
+
+denyra_start_all() {
+  denyra_start_dependencies
+  denyra_compose up -d --remove-orphans --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}"
+}
+
 denyra_set_release_env() {
   denyra_release_commit=$1
   denyra_release_tag=$2

@@ -20,11 +20,11 @@ case "$command" in
     . "$repo_root/scripts/manage/$command.sh"
     "denyra_$command" "$@"
     ;;
-  start) denyra_compose up -d --remove-orphans --wait ;;
+  start) denyra_start_all ;;
   stop) denyra_compose stop ;;
   restart)
-    denyra_compose restart
-    denyra_compose up -d --wait
+    denyra_compose stop
+    denyra_start_all
     ;;
   status) denyra_compose ps ;;
   logs) denyra_compose logs --tail 200 "$@" ;;

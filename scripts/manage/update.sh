@@ -73,7 +73,7 @@ denyra_update() {
   denyra_compose stop
   denyra_snapshot_capture "$denyra_update_snapshot"
   denyra_set_release_env "$denyra_update_new" "$denyra_update_tag" "$DENYRA_RELEASE_REFRESH"
-  denyra_compose up -d --remove-orphans --wait --wait-timeout "${DENYRA_WAIT_SECONDS:-180}"
+  denyra_start_all
   denyra_smoke
 
   denyra_update_healthy=true
