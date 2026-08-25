@@ -84,6 +84,41 @@ func TestPipelineRecoveryReconcilesLeaseOrphansAndManualDiscovery(t *testing.T) 
 	}
 }
 
+func TestRecoveryClassifiesImportIntentStatuses(t *testing.T) {
+	tests := map[string]bool{
+		application.ImportPending:     true,
+		application.ImportReconciling: true,
+		application.ImportSubmitted:   true,
+		application.ImportImported:    false,
+		application.ImportFailed:      false,
+	}
+	for status, wantUnresolved := range tests {
+		t.Run(status, func(t *testing.T) {
+			db, repository, now := pipelineRepositories(t)
+			defer db.Close()
+			candidate := createPersistedCandidate(t, repository, now)
+			intent := domain.ImportIntent{ID: "intent-" + status, CandidateID: candidate.ID, IdempotencyKey: "key-" + status, TargetReleaseMBID: "00000000-0000-0000-0000-000000000001", RequestHash: "hash"}
+			if err := repository.PutImportIntent(context.Background(), intent, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := repository.MarkImportStatus(context.Background(), intent.ID, status, nil, now); err != nil {
+				t.Fatal(err)
+			}
+			effects, err := repository.UnresolvedEffects(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, effect := range effects {
+				found = found || effect.Kind == "IMPORT_PENDING" && effect.ResourceID == intent.ID
+			}
+			if found != wantUnresolved {
+				t.Fatalf("status %s unresolved = %t, want %t; effects=%+v", status, found, wantUnresolved, effects)
+			}
+		})
+	}
+}
+
 func TestSubmissionRejectsTreeChangedAfterPreview(t *testing.T) {
 	db, repository, now := pipelineRepositories(t)
 	defer db.Close()

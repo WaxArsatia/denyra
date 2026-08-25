@@ -26,7 +26,7 @@ func (s ImportService) Reconcile(ctx context.Context, intent domain.ImportIntent
 		now = s.Now
 	}
 	if !verification.Complete {
-		if err := s.Store.MarkImportStatus(ctx, intent.ID, "IMPORT_RECONCILING", MarshalImportEvidence(verification), now().UTC()); err != nil {
+		if err := s.Store.MarkImportStatus(ctx, intent.ID, ImportReconciling, MarshalImportEvidence(verification), now().UTC()); err != nil {
 			return verification, err
 		}
 		return verification, nil
@@ -39,7 +39,7 @@ func (s ImportService) Reconcile(ctx context.Context, intent domain.ImportIntent
 	if err := remove(approvedPath); err != nil {
 		return verification, fmt.Errorf("delete verified staging source: %w", err)
 	}
-	if err := s.Store.MarkImportStatus(ctx, intent.ID, "IMPORTED", MarshalImportEvidence(verification), now().UTC()); err != nil {
+	if err := s.Store.MarkImportStatus(ctx, intent.ID, ImportImported, MarshalImportEvidence(verification), now().UTC()); err != nil {
 		return verification, err
 	}
 	return verification, nil

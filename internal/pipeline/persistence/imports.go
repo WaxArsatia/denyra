@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/waxarsatia/denyra/internal/contracts"
+	"github.com/waxarsatia/denyra/internal/pipeline/application"
 	"github.com/waxarsatia/denyra/internal/pipeline/domain"
 )
 
@@ -20,8 +21,8 @@ func (r *Repositories) PutImportIntent(ctx context.Context, intent domain.Import
 		return err
 	}
 	result, err := r.DB.ExecContext(ctx, `INSERT INTO import_intents(id,candidate_id,idempotency_key,target_release_mbid,request_hash,release_manifest_json,plan_json,download_id,status,created_at,updated_at)
-		VALUES(?,?,?,?,?,?,?,NULLIF(?,''),'PENDING',?,?) ON CONFLICT(idempotency_key) DO NOTHING`, intent.ID, intent.CandidateID, intent.IdempotencyKey,
-		intent.TargetReleaseMBID, intent.RequestHash, manifest, plan, intent.DownloadID, formatTime(at), formatTime(at))
+		VALUES(?,?,?,?,?,?,?,NULLIF(?,''),?,?,?) ON CONFLICT(idempotency_key) DO NOTHING`, intent.ID, intent.CandidateID, intent.IdempotencyKey,
+		intent.TargetReleaseMBID, intent.RequestHash, manifest, plan, intent.DownloadID, application.ImportPending, formatTime(at), formatTime(at))
 	if err != nil {
 		return fmt.Errorf("persist import intent: %w", err)
 	}

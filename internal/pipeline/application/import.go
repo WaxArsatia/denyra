@@ -25,6 +25,14 @@ const (
 	ImportGatewayWinner  ImportAuthorization = "GATEWAY_WINNER"
 )
 
+const (
+	ImportPending     = "PENDING"
+	ImportReconciling = "IMPORT_RECONCILING"
+	ImportSubmitted   = "IMPORT_SUBMITTED"
+	ImportImported    = "IMPORTED"
+	ImportFailed      = "FAILED"
+)
+
 type ImportIntentStore interface {
 	PutImportIntent(context.Context, domain.ImportIntent, time.Time) error
 	MarkImportStatus(context.Context, string, string, []byte, time.Time) error
@@ -127,10 +135,10 @@ func (s ImportService) Submit(ctx context.Context, candidateID, releaseMBID, dow
 		return ImportSubmission{Intent: intent, ApprovedPath: approvedPath}, err
 	}
 	if err := s.Importer.Submit(ctx, plan); err != nil {
-		_ = s.Store.MarkImportStatus(ctx, intent.ID, "IMPORT_RECONCILING", []byte(err.Error()), now().UTC())
+		_ = s.Store.MarkImportStatus(ctx, intent.ID, ImportReconciling, []byte(err.Error()), now().UTC())
 		return ImportSubmission{Intent: intent, ApprovedPath: approvedPath, ReconcileRequired: true}, nil
 	}
-	if err := s.Store.MarkImportStatus(ctx, intent.ID, "IMPORT_SUBMITTED", nil, now().UTC()); err != nil {
+	if err := s.Store.MarkImportStatus(ctx, intent.ID, ImportSubmitted, nil, now().UTC()); err != nil {
 		return ImportSubmission{Intent: intent, ApprovedPath: approvedPath, ReconcileRequired: true}, err
 	}
 	return ImportSubmission{Intent: intent, ApprovedPath: approvedPath, ReconcileRequired: true}, nil

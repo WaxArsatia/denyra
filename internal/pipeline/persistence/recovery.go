@@ -60,7 +60,7 @@ func (r *Repositories) AppendRecoveryFinding(ctx context.Context, finding applic
 }
 
 func (r *Repositories) UnresolvedEffects(ctx context.Context) ([]application.UnresolvedEffect, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT 'IDEMPOTENCY_PENDING',key FROM idempotency_records WHERE response_status IS NULL UNION ALL SELECT 'IMPORT_PENDING',id FROM import_intents WHERE status NOT IN ('VERIFIED','FAILED') UNION ALL SELECT 'UNMANAGED_IMPORT_PENDING',id FROM unmanaged_import_intents WHERE status NOT IN ('COMPLETED','REVIEW_REQUIRED') UNION ALL SELECT 'MUTATION_INCOMPLETE',id FROM mutations WHERE completed_at IS NULL ORDER BY 1,2`)
+	rows, err := r.DB.QueryContext(ctx, `SELECT 'IDEMPOTENCY_PENDING',key FROM idempotency_records WHERE response_status IS NULL UNION ALL SELECT 'IMPORT_PENDING',id FROM import_intents WHERE status NOT IN (?,?) UNION ALL SELECT 'UNMANAGED_IMPORT_PENDING',id FROM unmanaged_import_intents WHERE status NOT IN ('COMPLETED','REVIEW_REQUIRED') UNION ALL SELECT 'MUTATION_INCOMPLETE',id FROM mutations WHERE completed_at IS NULL ORDER BY 1,2`, application.ImportImported, application.ImportFailed)
 	if err != nil {
 		return nil, err
 	}

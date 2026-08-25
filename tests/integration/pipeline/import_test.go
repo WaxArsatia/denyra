@@ -100,7 +100,7 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 		Now: func() time.Time { return time.Date(2026, 8, 24, 4, 0, 0, 0, time.UTC) },
 	}
 	submission, err := service.Submit(context.Background(), "candidate-1", releaseMBID, "download-1", application.ImportGatewayWinner, 11)
-	if err != nil || !submission.ReconcileRequired || postCount != 1 || store.status != "IMPORT_SUBMITTED" {
+	if err != nil || !submission.ReconcileRequired || postCount != 1 || store.status != application.ImportSubmitted {
 		t.Fatalf("import submission = %+v store=%+v posts=%d error=%v", submission, store, postCount, err)
 	}
 	if err := os.MkdirAll(filepath.Join(libraryRoot, "Artist", "Album"), 0o750); err != nil {
@@ -114,7 +114,7 @@ func TestImportPersistsIntentBeforeOneManualImportAndVerifiesFinalLibrary(t *tes
 		t.Fatal(err)
 	}
 	verification, err := service.Reconcile(context.Background(), submission.Intent)
-	if err != nil || !verification.Complete || store.status != "IMPORTED" || postCount != 1 {
+	if err != nil || !verification.Complete || store.status != application.ImportImported || postCount != 1 {
 		t.Fatalf("import verification = %+v store=%+v posts=%d error=%v", verification, store, postCount, err)
 	}
 	if _, err := os.Stat(submission.ApprovedPath); !os.IsNotExist(err) {
@@ -253,7 +253,7 @@ func TestImportAmbiguousAcknowledgementEntersReconciliationWithoutRetry(t *testi
 	importer := &fakeAmbiguousImporter{}
 	service := application.ImportService{WorkRoot: filepath.Join(root, "work"), ApprovedRoot: filepath.Join(root, "approved"), Configuration: passingConfig{}, Importer: importer, Store: store}
 	submission, err := service.Submit(context.Background(), "candidate", releaseMBID, "", application.ImportManualApproved, 2)
-	if err != nil || !submission.ReconcileRequired || importer.calls != 1 || store.status != "IMPORT_RECONCILING" {
+	if err != nil || !submission.ReconcileRequired || importer.calls != 1 || store.status != application.ImportReconciling {
 		t.Fatalf("ambiguous submit = %+v store=%+v calls=%d err=%v", submission, store, importer.calls, err)
 	}
 }
