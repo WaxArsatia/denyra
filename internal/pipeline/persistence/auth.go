@@ -149,6 +149,15 @@ func (r *Repositories) ChangePasswordAndRevoke(ctx context.Context, userID, pass
 	})
 }
 
+func (r *Repositories) AppendLoginThrottleAudit(ctx context.Context, actor string, at time.Time) error {
+	id, err := ids.NewToken(16)
+	if err != nil {
+		return err
+	}
+	_, err = r.DB.ExecContext(ctx, `INSERT INTO audit_events(id,actor,action,reason,details_json,occurred_at) VALUES(?,?,?,?,?,?)`, id, actor, "LOGIN_THROTTLED", "authentication attempt limit reached", []byte("{}"), formatTime(at))
+	return err
+}
+
 func appendAuthAuditTx(ctx context.Context, tx *sql.Tx, actorID, action, reason string, at time.Time) error {
 	id, err := ids.NewToken(16)
 	if err != nil {

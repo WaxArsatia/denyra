@@ -30,6 +30,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 		"acquisition lease": {time.Duration(cfg.Acquisition.LeaseDuration), 15 * time.Minute},
 		"arbitration":       {time.Duration(cfg.Arbitration.Window), 30 * time.Minute},
 		"session expiry":    {time.Duration(cfg.Sessions.AbsoluteExpiry), 30 * 24 * time.Hour},
+		"login window":      {time.Duration(cfg.Sessions.LoginThrottle.Window), 15 * time.Minute},
+		"login base delay":  {time.Duration(cfg.Sessions.LoginThrottle.BaseDelay), time.Second},
+		"login max delay":   {time.Duration(cfg.Sessions.LoginThrottle.MaximumDelay), time.Minute},
 		"ffprobe":           {time.Duration(cfg.Validation.FFProbeTimeout), 30 * time.Second},
 		"flac test":         {time.Duration(cfg.Validation.FLACTestTimeout), 2 * time.Minute},
 		"metaflac":          {time.Duration(cfg.Validation.MetaFLACTimeout), time.Minute},
@@ -68,6 +71,9 @@ func TestDefaultsExposeApprovedPolicy(t *testing.T) {
 	}
 	if cfg.Acquisition.MaxInlineTransitions != 8 {
 		t.Fatalf("unexpected maximum inline transitions: %d", cfg.Acquisition.MaxInlineTransitions)
+	}
+	if cfg.Sessions.LoginThrottle.Failures != 5 || cfg.Sessions.LoginThrottle.Capacity != 4096 {
+		t.Fatalf("unexpected login throttle policy: %+v", cfg.Sessions.LoginThrottle)
 	}
 	if got, want := durations(cfg.Acquisition.PrimaryRetry), []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute, time.Hour, 6 * time.Hour}; !equalDurations(got, want) {
 		t.Fatalf("primary retry = %v, want %v", got, want)
@@ -169,6 +175,9 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 		"database conns":     {toml: "[database]\nmax_open_conns = 0\n"},
 		"concurrency":        {toml: "[concurrency]\nacquisition = 3\n"},
 		"validation timeout": {toml: "[validation]\nffprobe_timeout = \"0s\"\n"},
+		"login failures":     {toml: "[sessions.login_throttle]\nfailures = 0\n"},
+		"login capacity":     {toml: "[sessions.login_throttle]\ncapacity = 127\n"},
+		"login delay order":  {toml: "[sessions.login_throttle]\nbase_delay = \"2m\"\nmax_delay = \"1m\"\n"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

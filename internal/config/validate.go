@@ -27,6 +27,9 @@ func (c Config) Validate() error {
 		"acquisition.no_candidate_retry":       c.Acquisition.NoCandidateRetry,
 		"arbitration.window":                   c.Arbitration.Window,
 		"sessions.absolute_expiry":             c.Sessions.AbsoluteExpiry,
+		"sessions.login_throttle.window":       c.Sessions.LoginThrottle.Window,
+		"sessions.login_throttle.base_delay":   c.Sessions.LoginThrottle.BaseDelay,
+		"sessions.login_throttle.max_delay":    c.Sessions.LoginThrottle.MaximumDelay,
 		"scanners.recovery_interval":           c.Scanners.RecoveryInterval,
 		"scanners.stability_interval":          c.Scanners.StabilityInterval,
 		"scanners.navidrome_schedule":          c.Scanners.NavidromeSchedule,
@@ -107,6 +110,15 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.Sessions.BootstrapUsername) == "" {
 		return fmt.Errorf("sessions.bootstrap_username is required")
+	}
+	if c.Sessions.LoginThrottle.Failures <= 0 {
+		return fmt.Errorf("sessions.login_throttle.failures must be positive")
+	}
+	if c.Sessions.LoginThrottle.Capacity < 128 {
+		return fmt.Errorf("sessions.login_throttle.capacity must be at least 128")
+	}
+	if c.Sessions.LoginThrottle.MaximumDelay < c.Sessions.LoginThrottle.BaseDelay {
+		return fmt.Errorf("sessions.login_throttle.max_delay must not be lower than base_delay")
 	}
 	validationValues := map[string]int64{
 		"validation.track_auto_floor_ms":                 c.Validation.TrackAutoFloorMS,

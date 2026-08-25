@@ -125,9 +125,18 @@ type ArbitrationConfig struct {
 }
 
 type SessionConfig struct {
-	AbsoluteExpiry    Duration `toml:"absolute_expiry" json:"absolute_expiry"`
-	PasswordMinLen    int      `toml:"password_min_length" json:"password_min_length"`
-	BootstrapUsername string   `toml:"bootstrap_username" json:"bootstrap_username"`
+	AbsoluteExpiry    Duration            `toml:"absolute_expiry" json:"absolute_expiry"`
+	PasswordMinLen    int                 `toml:"password_min_length" json:"password_min_length"`
+	BootstrapUsername string              `toml:"bootstrap_username" json:"bootstrap_username"`
+	LoginThrottle     LoginThrottleConfig `toml:"login_throttle" json:"login_throttle"`
+}
+
+type LoginThrottleConfig struct {
+	Failures     int      `toml:"failures" json:"failures"`
+	Window       Duration `toml:"window" json:"window"`
+	BaseDelay    Duration `toml:"base_delay" json:"base_delay"`
+	MaximumDelay Duration `toml:"max_delay" json:"max_delay"`
+	Capacity     int      `toml:"capacity" json:"capacity"`
 }
 
 type ScannerConfig struct {

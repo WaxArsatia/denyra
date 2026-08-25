@@ -67,6 +67,10 @@ func Defaults() Config {
 			AbsoluteExpiry:    Duration(30 * 24 * time.Hour),
 			PasswordMinLen:    8,
 			BootstrapUsername: "admin",
+			LoginThrottle: LoginThrottleConfig{
+				Failures: 5, Window: Duration(15 * time.Minute), BaseDelay: Duration(time.Second),
+				MaximumDelay: Duration(time.Minute), Capacity: 4096,
+			},
 		},
 		Scanners: ScannerConfig{
 			RecoveryInterval:  Duration(30 * time.Second),

@@ -43,6 +43,7 @@ type SessionRepository interface {
 	RevokeSession(context.Context, string, string, string, time.Time) error
 	RevokeAllSessions(context.Context, string, string, string, time.Time) error
 	ChangePasswordAndRevoke(context.Context, string, string, string, time.Time) error
+	AppendLoginThrottleAudit(context.Context, string, time.Time) error
 }
 
 type SessionCredentials struct {

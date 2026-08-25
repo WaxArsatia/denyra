@@ -17,6 +17,7 @@ import (
 
 type Dependencies struct {
 	Auth                 application.AuthService
+	LoginThrottle        *LoginThrottle
 	Reader               application.AdminReader
 	Acquisition          application.AcquisitionEvidenceReader
 	Reviews              application.ReviewDecisionService
@@ -38,7 +39,7 @@ func New(dependencies Dependencies) (http.Handler, error) {
 		return nil, fmt.Errorf("admin UI reader and assets are required")
 	}
 	console := Console{dependencies: dependencies}
-	login := Login{Auth: dependencies.Auth, Assets: dependencies.Assets.Paths}
+	login := Login{Auth: dependencies.Auth, Assets: dependencies.Assets.Paths, Throttle: dependencies.LoginThrottle}
 	account := Account{Auth: dependencies.Auth}
 	public := http.NewServeMux()
 	public.Handle("/static/", dependencies.Assets.Handler())

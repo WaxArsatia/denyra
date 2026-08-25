@@ -167,6 +167,8 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				return nil, err
 			}
 			auth := application.AuthService{Repository: repositories, AbsoluteExpiry: time.Duration(prepared.Config.Sessions.AbsoluteExpiry), PasswordMinLen: prepared.Config.Sessions.PasswordMinLen}
+			throttlePolicy := prepared.Config.Sessions.LoginThrottle
+			loginThrottle := handlers.NewLoginThrottle(throttlePolicy.Failures, time.Duration(throttlePolicy.Window), time.Duration(throttlePolicy.BaseDelay), time.Duration(throttlePolicy.MaximumDelay), throttlePolicy.Capacity)
 			gatewayClient := gatewayadapter.Client{BaseURL: prepared.Config.Services.GatewayURL, Bearer: prepared.Config.Secrets.InternalBearer.Value, HTTP: &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}, ResponseLimit: prepared.Config.HTTP.ExternalResponseLimit}
 			previewInspector := media.FFProbe{Binary: "ffprobe", Version: "deployment-release", Timeout: time.Duration(prepared.Config.Validation.FFProbeTimeout), Runner: media.Runner{MaxOutput: int(prepared.Config.Acquisition.ProcessOutputLimit)}}
 			previewHTTP := &http.Client{Timeout: time.Duration(prepared.Config.HTTP.ExternalRequestTimeout)}
@@ -191,7 +193,7 @@ func run(ctx context.Context, logger *slog.Logger, arguments []string) error {
 				UploadingRoot: prepared.Config.Filesystem.IncomingUploading, IncomingRoot: prepared.Config.Filesystem.IncomingManual,
 				Policy: prepared.Config.Uploads,
 			}
-			return handlers.New(handlers.Dependencies{Auth: auth, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
+			return handlers.New(handlers.Dependencies{Auth: auth, LoginThrottle: loginThrottle, Reader: repositories, Assets: bundle, ConfigSnapshot: fmt.Sprintf("%x", snapshot.Hash[:8]),
 				Acquisition:     gatewayClient,
 				MigrationReader: repositories, MigrationChecks: migrationChecks, Migrations: migrationService, NotifyMigrationBatch: runtime.NotifyMigrationBatch,
 				Reviews:     application.ReviewDecisionService{Store: repositories, WorkRoot: prepared.Config.Filesystem.Work, QuarantineRoot: prepared.Config.Filesystem.Quarantine},

@@ -40,6 +40,13 @@ musicbrainz_rate_interval = "1s"
 [sessions]
 bootstrap_username = "admin"
 
+[sessions.login_throttle]
+failures = 5
+window = "15m"
+base_delay = "1s"
+max_delay = "1m"
+capacity = 4096
+
 [uploads]
 max_file_bytes = 8589934592
 max_session_bytes = 107374182400
