@@ -106,6 +106,26 @@ func TestForwardUpdateEqualCommitReconcilesUnhealthyStack(t *testing.T) {
 	assertProtectedTrees(t, before)
 }
 
+func TestForwardUpdatePullsOnlyExternalImages(t *testing.T) {
+	f := newManagementFixture(t)
+	prepareForwardUpdateFixture(t, f, false)
+	if out, err := f.updateCommand("").CombinedOutput(); err != nil {
+		t.Fatalf("update: %v\n%s", err, out)
+	}
+	log := f.log()
+	if !strings.Contains(log, " pull --policy always slskd sftpgo") {
+		t.Fatalf("external image pull missing:\n%s", log)
+	}
+	for _, localImage := range []string{"navidrome", "acquisition-gateway", "media-pipeline", "lidarr", "restic"} {
+		if strings.Contains(log, " pull --policy always slskd sftpgo "+localImage) {
+			t.Fatalf("locally built or retired image %q was pulled:\n%s", localImage, log)
+		}
+	}
+	if !strings.Contains(log, " build --pull") {
+		t.Fatalf("local image build missing:\n%s", log)
+	}
+}
+
 func TestImageCleanupRemovesOnlyUnreferencedDenyraImages(t *testing.T) {
 	f := newManagementFixture(t)
 	prepareForwardUpdateFixture(t, f, false)
@@ -182,7 +202,7 @@ printf '%s\n' "$*" >> "$DENYRA_TEST_LOG"
 case "$*" in
   "compose version"*) exit 0 ;;
   *" config"*|*" config --quiet"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != render ] ;;
-  *" pull --policy always slskd sftpgo navidrome"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != pull ] ;;
+  *" pull --policy always slskd sftpgo"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != pull ] ;;
   *" pull --policy always slskd sftpgo restic"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != pull ] ;;
   *" build --pull"*) [ "${DENYRA_TEST_UPDATE_FAILURE:-}" != build ] ;;
   *" ps -q "*) for service do :; done; echo "cid-$service" ;;

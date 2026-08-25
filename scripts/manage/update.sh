@@ -105,7 +105,7 @@ denyra_update() {
 
   denyra_update_phase=pull
   denyra_update_affected=external-images
-  denyra_compose pull --policy always slskd sftpgo navidrome
+	denyra_compose pull --policy always slskd sftpgo
 
   denyra_update_phase=build
   denyra_update_affected=denyra-images
